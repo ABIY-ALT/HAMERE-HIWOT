@@ -10,12 +10,12 @@ import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 
 const galleryImages = [
-  { src: 'https://picsum.photos/seed/church-interior/600/400', alt: 'Church interior', hint: 'church interior' },
-  { src: 'https://picsum.photos/seed/congregation/600/400', alt: 'Congregation during service', hint: 'church congregation' },
-  { src: 'https://picsum.photos/seed/students-learning/600/400', alt: 'Sabbath school students', hint: 'students classroom' },
-  { src: 'https://picsum.photos/seed/church-event/600/400', alt: 'Special church event', hint: 'community event' },
-  { src: 'https://picsum.photos/seed/volunteer-group/600/400', alt: 'Church volunteers', hint: 'volunteer group' },
-  { src: 'https://picsum.photos/seed/church-building-day/600/400', alt: 'Church building exterior', hint: 'church building' },
+  { src: 'https://picsum.photos/seed/church-interior/600/400', altKey: 'churchInterior', hint: 'church interior' },
+  { src: 'https://picsum.photos/seed/congregation/600/400', altKey: 'congregationService', hint: 'church congregation' },
+  { src: 'https://picsum.photos/seed/students-learning/600/400', altKey: 'sabbathSchoolStudents', hint: 'students classroom' },
+  { src: 'https://picsum.photos/seed/church-event/600/400', altKey: 'specialChurchEvent', hint: 'community event' },
+  { src: 'https://picsum.photos/seed/volunteer-group/600/400', altKey: 'churchVolunteers', hint: 'volunteer group' },
+  { src: 'https://picsum.photos/seed/church-building-day/600/400', altKey: 'churchBuildingExterior', hint: 'church building' },
 ];
 
 export default function AboutPage() {
@@ -29,16 +29,16 @@ export default function AboutPage() {
             <Button variant="outline" asChild>
                 <Link href="/dashboard">
                     <ArrowLeft className="mr-2 h-4 w-4" />
-                    Back to Dashboard
+                    {t('backToDashboard')}
                 </Link>
             </Button>
         </div>
         <Card>
           <CardHeader>
             <CardTitle className="text-3xl font-headline">
-              About <span className="font-bold">Salo</span> Debre Tsehay St. George Church
+              {t('aboutSaloKidusGiyorgis')}
             </CardTitle>
-            <CardDescription>and <span className="font-bold">Hamere Hiwot</span> Sabbath School</CardDescription>
+            <CardDescription>{t('andHamereHiwot')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-4">
@@ -58,7 +58,7 @@ export default function AboutPage() {
                   <div key={index} className="overflow-hidden rounded-lg shadow-lg hover:shadow-xl transition-shadow duration-300">
                     <Image
                       src={image.src}
-                      alt={image.alt}
+                      alt={t(image.altKey as any)}
                       width={600}
                       height={400}
                       className="w-full h-full object-cover"

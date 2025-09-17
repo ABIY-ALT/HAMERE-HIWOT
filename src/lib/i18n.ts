@@ -284,6 +284,13 @@ export const translations = {
     mastersdegree: "Masters Degree",
     phd: "PhD",
     other: "Other",
+    backToDashboard: "Back to Dashboard",
+    churchInterior: "Church interior",
+    congregationService: "Congregation during service",
+    sabbathSchoolStudents: "Sabbath school students",
+    specialChurchEvent: "Special church event",
+    churchVolunteers: "Church volunteers",
+    churchBuildingExterior: "Church building exterior",
   },
   am: {
     appName: 'ፀሐይ LMS',
@@ -569,6 +576,13 @@ export const translations = {
     mastersdegree: "ማስተርስ ዲግሪ",
     phd: "ዶክትሬት",
     other: "ሌላ",
+    backToDashboard: "ወደ ዳሽቦርድ ተመለስ",
+    churchInterior: "የቤተክርስቲያን ውስጥ",
+    congregationService: "ምዕመናን በአገልግሎት ጊዜ",
+    sabbathSchoolStudents: "የሰንበት ትምህርት ቤት ተማሪዎች",
+    specialChurchEvent: "ልዩ የቤተክርስቲያን ዝግጅት",
+    churchVolunteers: "የቤተክርስቲያን በጎ ፈቃደኞች",
+    churchBuildingExterior: "የቤተክርስቲያን ሕንፃ ውጫዊ ገጽታ",
   },
 };
 
