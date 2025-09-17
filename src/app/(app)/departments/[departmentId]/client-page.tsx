@@ -7,7 +7,8 @@ import { useTranslation } from '@/hooks/use-translation';
 import { ArrowLeft, FileText, Send, Paperclip, Download, X } from 'lucide-react';
 import Link from 'next/link';
 import { Separator } from '@/components/ui/separator';
-import React, { useState, useEffect } from 'react';
+import React,
+{ useState, useEffect } from 'react';
 import { allReports, departmentDetails, addReport, departmentsData } from '@/lib/mock-data';
 import type { DepartmentReport } from '@/types';
 import type { TranslationKey } from '@/lib/i18n';
@@ -19,7 +20,7 @@ import { Badge } from '@/components/ui/badge';
 
 export default function DepartmentDetailsClientPage({ departmentId }: { departmentId: string }) {
   const { t, language } = useTranslation();
-  const details = departmentDetails[departmentId] || { name: 'Unknown Department' as TranslationKey };
+  const details = departmentDetails[departmentId];
   
   const [newReport, setNewReport] = useState('');
   const [attachment, setAttachment] = useState<File | null>(null);
@@ -52,7 +53,7 @@ export default function DepartmentDetailsClientPage({ departmentId }: { departme
   };
 
   const handleSubmitReport = () => {
-    if (newReport.trim() === '' && !attachment) return;
+    if (!details || (newReport.trim() === '' && !attachment)) return;
 
     const newReportData: DepartmentReport = {
       id: Date.now(),
@@ -78,6 +79,29 @@ export default function DepartmentDetailsClientPage({ departmentId }: { departme
         description: "Your report has been successfully submitted.",
     });
   };
+
+  if (!details) {
+    return (
+      <div className="flex min-h-screen w-full flex-col">
+        <Header title="Department Not Found" />
+        <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
+          <div className="flex justify-between items-center">
+            <Button variant="outline" asChild>
+              <Link href="/departments">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                {t('backToDepartments')}
+              </Link>
+            </Button>
+          </div>
+          <Card>
+            <CardContent className="pt-6">
+              <p>The department you are looking for does not exist.</p>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    );
+  }
 
   const isSecretariat = departmentId === 'secretariat';
 
