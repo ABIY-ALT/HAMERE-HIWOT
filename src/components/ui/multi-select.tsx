@@ -11,6 +11,7 @@ import {
   CommandItem,
 } from "@/components/ui/command";
 import { Command as CommandPrimitive } from "cmdk";
+import { cn } from "@/lib/utils";
 
 type Option = Record<"value" | "label", string>;
 
@@ -122,9 +123,4 @@ export function MultiSelect({
       </div>
     </Command>
   )
-}
-
-function cn(...inputs: any[]) {
-    // A simplified version of the original cn function
-    return inputs.filter(Boolean).join(' ');
 }
