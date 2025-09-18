@@ -3,7 +3,6 @@ export const translations = {
   en: {
     appName: 'Tsehay LMS',
     dashboard: 'Dashboard',
-    members: 'Member Registrations',
     students: 'Students',
     classes: 'Classes',
     finance: 'Finance',
@@ -295,7 +294,6 @@ export const translations = {
   am: {
     appName: 'ፀሐይ LMS',
     dashboard: 'ዳሽቦርድ',
-    members: 'የአባላት ምዝገባ',
     students: 'ተማሪዎች',
     classes: 'ክፍሎች',
     finance: 'ፋይናንስ',
@@ -592,5 +590,3 @@ export type Language = keyof typeof translations;
 // It will throw a type error if a key is missing in one of the languages.
 type TranslationKeys = keyof (typeof translations)['en'] & keyof (typeof translations)['am'];
 export type TranslationKey = TranslationKeys;
-
-    

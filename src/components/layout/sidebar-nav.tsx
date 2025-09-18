@@ -15,7 +15,6 @@ import {
   Building2,
   Settings,
   Info,
-  UserPlus
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -26,7 +25,6 @@ import React from 'react';
 
 const navConfig: { permission: Permission, href: string, icon: React.ElementType }[] = [
     { permission: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    { permission: 'Members', href: '/members', icon: UserPlus },
     { permission: 'Students', href: '/students', icon: Users },
     { permission: 'Classes', href: '/classes', icon: BookCopy },
     { permission: 'Finance', href: '/finance', icon: Banknote },
