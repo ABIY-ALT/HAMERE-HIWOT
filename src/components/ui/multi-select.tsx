@@ -9,9 +9,11 @@ import {
   Command,
   CommandGroup,
   CommandItem,
+  CommandList,
 } from "@/components/ui/command";
 import { Command as CommandPrimitive } from "cmdk";
 import { cn } from "@/lib/utils";
+import type { TranslationKey } from "@/lib/i18n";
 
 type Option = Record<"value" | "label", string>;
 
@@ -97,26 +99,28 @@ export function MultiSelect({
       <div className="relative mt-2">
         {open && selectables.length > 0 ?
           <div className="absolute w-full z-10 top-0 rounded-md border bg-popover text-popover-foreground shadow-md outline-none animate-in">
-            <CommandGroup className="h-full overflow-auto">
-              {selectables.map((option) => {
-                return (
-                  <CommandItem
-                    key={option.value}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
-                    onSelect={() => {
-                      setInputValue("")
-                      onChange([...selected, option.value]);
-                    }}
-                    className={"cursor-pointer"}
-                  >
-                    {option.label}
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
+            <CommandList>
+              <CommandGroup className="h-full overflow-auto">
+                {selectables.map((option) => {
+                  return (
+                    <CommandItem
+                      key={option.value}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      onSelect={() => {
+                        setInputValue("")
+                        onChange([...selected, option.value]);
+                      }}
+                      className={"cursor-pointer"}
+                    >
+                      {option.label}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            </CommandList>
           </div>
           : null
         }
