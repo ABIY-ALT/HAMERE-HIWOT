@@ -13,7 +13,6 @@ import {
 } from "@/components/ui/command";
 import { Command as CommandPrimitive } from "cmdk";
 import { cn } from "@/lib/utils";
-import type { TranslationKey } from "@/lib/i18n";
 
 type Option = Record<"value" | "label", string>;
 
