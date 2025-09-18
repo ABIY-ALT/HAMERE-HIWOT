@@ -34,7 +34,7 @@ import { MultiSelect } from '@/components/ui/multi-select';
 const userFormSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   email: z.string().email('Invalid email address'),
-  phone: z.string().regex(/^\d{10}$/, 'Phone number must be 10 digits'),
+  phone: z.string().min(1, 'Phone number is required'),
   role: z.string().min(1, 'Please select a role'),
   assignedClasses: z.array(z.string()).optional(),
 });
@@ -837,4 +837,5 @@ export default function SettingsPage() {
 }
 
     
+
 
