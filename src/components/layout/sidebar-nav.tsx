@@ -15,6 +15,7 @@ import {
   Building2,
   Settings,
   Info,
+  UserPlus,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -23,14 +24,15 @@ import { rolesData } from '@/lib/mock-data';
 import type { Permission } from '@/types';
 import React from 'react';
 
-const navConfig: { permission: Permission, href: string, icon: React.ElementType }[] = [
-    { permission: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    { permission: 'Students', href: '/students', icon: Users },
-    { permission: 'Classes', href: '/classes', icon: BookCopy },
-    { permission: 'Finance', href: '/finance', icon: Banknote },
-    { permission: 'Departments', href: '/departments', icon: Building2 },
-    { permission: 'About', href: '/about', icon: Info },
-    { permission: 'Settings', href: '/settings', icon: Settings },
+const navConfig: { permission: Permission, href: string, icon: React.ElementType, labelKey: any }[] = [
+    { permission: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, labelKey: 'dashboard' },
+    { permission: 'Students', href: '/students', icon: Users, labelKey: 'students' },
+    { permission: 'Members', href: '/members', icon: UserPlus, labelKey: 'members' },
+    { permission: 'Classes', href: '/classes', icon: BookCopy, labelKey: 'classes' },
+    { permission: 'Finance', href: '/finance', icon: Banknote, labelKey: 'finance' },
+    { permission: 'Departments', href: '/departments', icon: Building2, labelKey: 'departments' },
+    { permission: 'About', href: '/about', icon: Info, labelKey: 'aboutUs' },
+    { permission: 'Settings', href: '/settings', icon: Settings, labelKey: 'settings' },
 ];
 
 export function SidebarNav() {
@@ -42,13 +44,22 @@ export function SidebarNav() {
   const userPermissions = userRole?.permissions || [];
 
   const navItems = React.useMemo(() => {
+    // Add 'Members' permission for Admin and Chief Officer for display
+    let permissions = [...userPermissions];
+    if (user?.role === 'Admin' || user?.role === 'Chief Officer') {
+      if (!permissions.includes('Members')) {
+        permissions.push('Members');
+      }
+    }
+
+
     return navConfig
-      .filter(item => userPermissions.includes(item.permission))
+      .filter(item => permissions.includes(item.permission as Permission))
       .map(item => ({
         ...item,
-        label: t(item.permission === 'About' ? 'aboutUs' : (item.permission.toLowerCase() as any)),
+        label: t(item.labelKey),
       }));
-  }, [userPermissions, t]);
+  }, [userPermissions, user?.role, t]);
 
 
   return (

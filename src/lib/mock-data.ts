@@ -318,7 +318,7 @@ export const addTransaction = (transaction: Transaction) => {
 export let rolesData: Role[] = [
     { id: 'admin', name: 'Admin', permissions: ['Dashboard', 'Members', 'Students', 'Classes', 'Finance', 'Departments', 'About', 'Settings', 'Reports'] },
     { id: 'teacher', name: 'Teacher', permissions: ['Dashboard', 'Students', 'Classes', 'About', 'Reports'] },
-    { id: 'chiefofficer', name: 'Chief Officer', permissions: ['Dashboard', 'Finance', 'Departments', 'About', 'Reports'] },
+    { id: 'chiefofficer', name: 'Chief Officer', permissions: ['Dashboard', 'Members', 'Finance', 'Departments', 'About', 'Reports'] },
 ];
 
 export const addRole = (role: Role) => {
