@@ -431,7 +431,7 @@ function DepartmentDialog({
 export default function SettingsPage() {
   const { t } = useTranslation();
   const { toast } = useToast();
-  const [users, setUsers] = useState<AppUser[]>(appUsers);
+  const [users, setUsers] = useState<AppUser[]>([]);
   const [roles, setRoles] = useState<Role[]>(rolesData);
   const [departments, setDepartments] = useState([...mockDepartments]);
   const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
@@ -445,6 +445,10 @@ export default function SettingsPage() {
   const [isDepartmentDialogOpen, setIsDepartmentDialogOpen] = useState(false);
   const [currentDepartment, setCurrentDepartment] = useState<{ id: string; name: TranslationKey } | null>(null);
   const [departmentToDelete, setDepartmentToDelete] = useState<{ id: string; name: TranslationKey } | null>(null);
+
+  useEffect(() => {
+    setUsers([...appUsers]);
+  }, []);
 
   const getBadgeVariant = (roleName: string) => {
     const role = roles.find(r => r.name === roleName);
@@ -480,14 +484,17 @@ export default function SettingsPage() {
 
   const handleSaveUser = (data: UserFormValues, id?: number) => {
     if (id) {
-      updateUser(id, data as Partial<AppUser>);
+      const updatedUser = { ...data, id };
+      updateUser(id, updatedUser);
+      setUsers(users.map(u => u.id === id ? { ...u, ...updatedUser } : u));
       toast({ title: t('userUpdated'), description: t('userUpdatedSuccessMessage') });
     } else {
-      const newUser = { id: Date.now(), ...data };
-      addUser(newUser as AppUser);
+      const newId = Date.now();
+      const newUser: AppUser = { ...data, id: newId, password: 'password123', isFirstLogin: true };
+      addUser(newUser);
+      setUsers([newUser, ...users]);
       toast({ title: t('userAdded'), description: t('userAddedSuccessMessage') });
     }
-    setUsers([...appUsers]);
   };
   
   const handleSaveRole = (data: RoleFormValues, id?: string) => {
@@ -528,7 +535,7 @@ export default function SettingsPage() {
   const confirmDeleteUser = () => {
     if (userToDelete) {
       deleteUserFromDb(userToDelete.id);
-      setUsers([...appUsers]);
+      setUsers(users.filter(u => u.id !== userToDelete.id));
       toast({ title: "User Deleted", description: `${userToDelete.name} has been removed.` });
       setUserToDelete(null);
     }
@@ -835,7 +842,3 @@ export default function SettingsPage() {
     </div>
   );
 }
-
-    
-
-
