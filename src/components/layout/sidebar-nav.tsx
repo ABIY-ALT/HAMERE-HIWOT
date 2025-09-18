@@ -40,7 +40,11 @@ export function SidebarNav() {
   const pathname = usePathname();
   const { user } = useAuth();
 
-  const userRole = rolesData.find(role => role.name === user?.role);
+  const userRole = React.useMemo(() => {
+    if (!user) return null;
+    return rolesData.find(role => role.name === user.role);
+  }, [user]);
+
   const userPermissions = userRole?.permissions || [];
 
   const navItems = React.useMemo(() => {
