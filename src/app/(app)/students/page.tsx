@@ -259,7 +259,7 @@ export default function StudentsPage() {
                   {t('import')}
                 </Button>
                 <Button size="sm" asChild>
-                  <Link href="/members/register">
+                  <Link href="/students/register">
                     <PlusCircle className="mr-2 h-4 w-4" />
                     {t('registerStudent')}
                   </Link>
