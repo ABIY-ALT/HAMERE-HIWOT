@@ -1,21 +1,29 @@
-
 'use client';
+
 import { Header } from '@/components/layout/header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useTranslation } from '@/hooks/use-translation';
 import { PlusCircle, Pencil, KeyRound, Trash2, Eye, EyeOff } from 'lucide-react';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { appUsers, addUser, updateUser, deleteUser as deleteUserFromDb, rolesData, updateRole, classesData, addRole, deleteRole as deleteRoleFromDb, updateUserPassword, departmentsData as mockDepartments, addDepartment, updateDepartment, deleteDepartment as deleteDepartmentFromDb } from '@/lib/mock-data';
+import {
+  appUsers,
+  addUser,
+  updateUser,
+  deleteUser as deleteUserFromDb,
+  rolesData,
+  updateRole,
+  classesData,
+  addRole,
+  deleteRole as deleteRoleFromDb,
+  updateUserPassword,
+  mockDepartments,
+  addDepartment,
+  updateDepartment,
+  deleteDepartment as deleteDepartmentFromDb
+} from '@/lib/mock-data';
 import type { AppUser, Role, Permission } from '@/types';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,6 +39,7 @@ import { useToast } from '@/hooks/use-toast';
 import type { TranslationKey } from '@/lib/i18n';
 import { MultiSelect } from '@/components/ui/multi-select';
 
+// -------------------- Schemas --------------------
 const userFormSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   email: z.string().email('Invalid email address'),
@@ -56,26 +65,20 @@ const passwordFormSchema = z.object({
 type PasswordFormValues = z.infer<typeof passwordFormSchema>;
 
 const roleFormSchema = z.object({
-    name: z.string().min(1, 'Role name is required'),
-    permissions: z.array(z.string()).min(1, 'At least one permission is required'),
+  name: z.string().min(1, 'Role name is required'),
+  permissions: z.array(z.string()).min(1, 'At least one permission is required'),
 });
 
 type RoleFormValues = z.infer<typeof roleFormSchema>;
 
 const departmentFormSchema = z.object({
-    name: z.string().min(1, 'Department name is required'),
+  name: z.string().min(1, 'Department name is required'),
 });
 
 type DepartmentFormValues = z.infer<typeof departmentFormSchema>;
 
-
-function UserDialog({
-  user,
-  isOpen,
-  onOpenChange,
-  onSave,
-  roles,
-}: {
+// -------------------- Dialogs --------------------
+function UserDialog({ user, isOpen, onOpenChange, onSave, roles }: {
   user: Partial<AppUser> | null;
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
@@ -83,32 +86,28 @@ function UserDialog({
   roles: Role[];
 }) {
   const { t } = useTranslation();
-  const isEditMode = user && user.id;
+  const isEditMode = Boolean(user?.id);
 
   const form = useForm<UserFormValues>({
     resolver: zodResolver(userFormSchema),
-    defaultValues: {
-      name: user?.name || '',
-      email: user?.email || '',
-      phone: user?.phone || '',
-      role: user?.role || undefined,
-      assignedClasses: user?.assignedClasses || [],
-    }
+    defaultValues: { name: '', email: '', phone: '', role: '', assignedClasses: [] },
   });
-  
+
+  useEffect(() => {
+    if (isOpen) {
+      form.reset({
+        name: user?.name || '',
+        email: user?.email || '',
+        phone: user?.phone || '',
+        role: user?.role || '',
+        assignedClasses: user?.assignedClasses || [],
+      });
+    }
+  }, [user, isOpen, form]);
+
   const selectedRoleName = form.watch('role');
   const roleObject = roles.find(r => r.name === selectedRoleName);
   const roleHasClassPermission = roleObject?.permissions.includes('Classes');
-
-  React.useEffect(() => {
-    form.reset({
-      name: user?.name || '',
-      email: user?.email || '',
-      phone: user?.phone || '',
-      role: user?.role || undefined,
-      assignedClasses: user?.assignedClasses || [],
-    });
-  }, [user, form]);
 
   const handleSubmit = (data: UserFormValues) => {
     onSave(data, user?.id);
@@ -120,60 +119,59 @@ function UserDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{isEditMode ? t('edit') : t('addUser')}</DialogTitle>
-          <DialogDescription>
-            {isEditMode ? t('editUserDescription') : t('addUserDescription')}
-          </DialogDescription>
+          <DialogDescription>{isEditMode ? t('editUserDescription') : t('addUserDescription')}</DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
             <FormField control={form.control} name="name" render={({ field }) => (
-              <FormItem><FormLabel>{t('name')}</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+              <FormItem>
+                <FormLabel>{t('name')}</FormLabel>
+                <FormControl><Input {...field} /></FormControl>
+                <FormMessage />
+              </FormItem>
             )} />
             <FormField control={form.control} name="email" render={({ field }) => (
-              <FormItem><FormLabel>{t('email')}</FormLabel><FormControl><Input type="email" {...field} /></FormControl><FormMessage /></FormItem>
+              <FormItem>
+                <FormLabel>{t('email')}</FormLabel>
+                <FormControl><Input type="email" {...field} /></FormControl>
+                <FormMessage />
+              </FormItem>
             )} />
             <FormField control={form.control} name="phone" render={({ field }) => (
-              <FormItem><FormLabel>{t('phoneNumber')}</FormLabel><FormControl><Input type="tel" {...field} /></FormControl><FormMessage /></FormItem>
+              <FormItem>
+                <FormLabel>{t('phoneNumber')}</FormLabel>
+                <FormControl><Input type="tel" {...field} /></FormControl>
+                <FormMessage />
+              </FormItem>
             )} />
             <FormField control={form.control} name="role" render={({ field }) => (
               <FormItem>
                 <FormLabel>{t('roles')}</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                  <FormControl><SelectTrigger><SelectValue placeholder={t('selectRole')} /></SelectTrigger></FormControl>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <SelectTrigger><SelectValue placeholder={t('selectRole')} /></SelectTrigger>
                   <SelectContent>
-                    {roles.map(role => {
-                        const roleTranslationKey = role.name.toLowerCase().replace(/\s/g, '') as TranslationKey;
-                        return (
-                            <SelectItem key={role.id} value={role.name}>
-                                {t(roleTranslationKey) || role.name}
-                            </SelectItem>
-                        );
-                    })}
+                    {roles.map(role => (
+                      <SelectItem key={role.id} value={role.name}>{t(role.name.toLowerCase().replace(/\s/g, '') as TranslationKey) || role.name}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <FormMessage />
               </FormItem>
             )} />
-            
             {roleHasClassPermission && (
-               <FormField
-                  control={form.control}
-                  name="assignedClasses"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('assignedClasses')}</FormLabel>
-                      <MultiSelect
-                        options={classesData.map(c => ({ value: c.id, label: t(c.name)}))}
-                        selected={field.value || []}
-                        onChange={field.onChange}
-                        placeholder={t('selectClasses')}
-                      />
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+              <FormField control={form.control} name="assignedClasses" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('assignedClasses')}</FormLabel>
+                  <MultiSelect
+                    options={classesData.map(c => ({ value: c.id, label: t(c.name) }))}
+                    selected={field.value ?? []}
+                    onChange={field.onChange}
+                    placeholder={t('selectClasses')}
+                  />
+                  <FormMessage />
+                </FormItem>
+              )} />
             )}
-
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t('cancel')}</Button>
               <Button type="submit">{t('save')}</Button>
@@ -185,54 +183,32 @@ function UserDialog({
   );
 }
 
-function ChangePasswordDialog({
-  user,
-  isOpen,
-  onOpenChange,
-}: {
-  user: AppUser | null;
-  isOpen: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
+function ChangePasswordDialog({ user, isOpen, onOpenChange }: { user: AppUser | null; isOpen: boolean; onOpenChange: (open: boolean) => void }) {
   const { t } = useTranslation();
   const { toast } = useToast();
-  const [showNewPassword, setShowNewPassword] = React.useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const form = useForm<PasswordFormValues>({
     resolver: zodResolver(passwordFormSchema),
-    defaultValues: {
-      newPassword: '',
-      confirmPassword: '',
-    },
+    defaultValues: { newPassword: '', confirmPassword: '' },
   });
+
+  useEffect(() => { if (!isOpen) form.reset(); }, [isOpen, form]);
 
   const handleSubmit = (data: PasswordFormValues) => {
     if (!user) return;
     updateUserPassword(user.id, data.newPassword);
-    toast({
-      title: "Password Changed",
-      description: `The password for ${user.name} has been updated.`,
-    });
+    toast({ title: "Password Changed", description: `The password for ${user.name} has been updated.` });
     onOpenChange(false);
   };
-
-  React.useEffect(() => {
-    if (!isOpen) {
-      form.reset();
-      setShowNewPassword(false);
-      setShowConfirmPassword(false);
-    }
-  }, [isOpen, form]);
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('changePasswordFor', { name: user?.name || '' })}</DialogTitle>
-          <DialogDescription>
-            {t('changePasswordDescription')}
-          </DialogDescription>
+          <DialogDescription>{t('changePasswordDescription')}</DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
@@ -241,12 +217,8 @@ function ChangePasswordDialog({
                 <FormLabel>{t('newPassword')}</FormLabel>
                 <div className="relative">
                   <FormControl><Input type={showNewPassword ? 'text' : 'password'} {...field} /></FormControl>
-                  <button
-                    type="button"
-                    onClick={() => setShowNewPassword(!showNewPassword)}
-                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground"
-                  >
-                    {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  <button type="button" onClick={() => setShowNewPassword(!showNewPassword)} className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground">
+                    {showNewPassword ? <EyeOff className="h-4 w-4"/> : <Eye className="h-4 w-4"/>}
                   </button>
                 </div>
                 <FormMessage />
@@ -257,12 +229,8 @@ function ChangePasswordDialog({
                 <FormLabel>{t('confirmNewPassword')}</FormLabel>
                 <div className="relative">
                   <FormControl><Input type={showConfirmPassword ? 'text' : 'password'} {...field} /></FormControl>
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground"
-                  >
-                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground">
+                    {showConfirmPassword ? <EyeOff className="h-4 w-4"/> : <Eye className="h-4 w-4"/>}
                   </button>
                 </div>
                 <FormMessage />
@@ -279,177 +247,144 @@ function ChangePasswordDialog({
   );
 }
 
+// -------------------- Permissions --------------------
 const permissionOptions = [
-    { value: 'Dashboard', label: 'Dashboard' },
-    { value: 'Members', label: 'Members' },
-    { value: 'Classes', label: 'Classes' },
-    { value: 'Finance', label: 'Finance' },
-    { value: 'Departments', label: 'Departments' },
-    { value: 'Reports', label: 'Reports' },
-    { value: 'Settings', label: 'Settings' },
-    { value: 'About', label: 'About' },
+  { value: 'Dashboard', label: 'Dashboard' },
+  { value: 'Members', label: 'Members' },
+  { value: 'Classes', label: 'Classes' },
+  { value: 'Finance', label: 'Finance' },
+  { value: 'Departments', label: 'Departments' },
+  { value: 'Reports', label: 'Reports' },
+  { value: 'Settings', label: 'Settings' },
+  { value: 'About', label: 'About' },
 ];
 
-function RoleDialog({
-    role,
-    isOpen,
-    onOpenChange,
-    onSave
-}: {
-    role: Partial<Role> | null;
-    isOpen: boolean;
-    onOpenChange: (open: boolean) => void;
-    onSave: (data: RoleFormValues, id?: string) => void;
+function RoleDialog({ role, isOpen, onOpenChange, onSave }: {
+  role: Partial<Role> | null;
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSave: (data: RoleFormValues, id?: string) => void;
 }) {
-    const { t } = useTranslation();
-    const isEditMode = role && role.id;
+  const { t } = useTranslation();
+  const isEditMode = role && role.id;
 
-    const form = useForm<RoleFormValues>({
-        resolver: zodResolver(roleFormSchema),
-        defaultValues: {
-            name: role?.name || '',
-            permissions: (role?.permissions as string[]) || [],
-        },
-    });
+  const form = useForm<RoleFormValues>({
+    resolver: zodResolver(roleFormSchema),
+    defaultValues: { name: role?.name || '', permissions: role?.permissions || [] },
+  });
 
-    React.useEffect(() => {
-        form.reset({
-            name: role?.name || '',
-            permissions: (role?.permissions as string[]) || [],
-        });
-    }, [role, form]);
+  useEffect(() => {
+    form.reset({ name: role?.name || '', permissions: role?.permissions || [] });
+  }, [role, form]);
 
-    const handleSubmit = (data: RoleFormValues) => {
-        onSave(data, role?.id);
-        onOpenChange(false);
-    };
-    
-    const translatedPermissionOptions = permissionOptions.map(opt => ({...opt, label: t(opt.label.toLowerCase() as TranslationKey)}));
+  const handleSubmit = (data: RoleFormValues) => { onSave(data, role?.id); onOpenChange(false); };
+  const translatedPermissionOptions = permissionOptions.map(opt => ({ ...opt, label: t(opt.label.toLowerCase() as TranslationKey) }));
 
-    return (
-        <Dialog open={isOpen} onOpenChange={onOpenChange}>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle>{isEditMode ? t('editRole') : t('addRole')}</DialogTitle>
-                    <DialogDescription>
-                        {isEditMode ? t('editRoleDescription') : t('addRoleDescription')}
-                    </DialogDescription>
-                </DialogHeader>
-                <Form {...form}>
-                    <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-                        <FormField control={form.control} name="name" render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>{t('roleName')}</FormLabel>
-                                <FormControl><Input {...field} placeholder={t('roleNamePlaceholder')} /></FormControl>
-                                <FormMessage />
-                            </FormItem>
-                        )} />
-                        <FormField control={form.control} name="permissions" render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>{t('permissions')}</FormLabel>
-                                <MultiSelect
-                                    options={translatedPermissionOptions}
-                                    selected={field.value}
-                                    onChange={field.onChange}
-                                    placeholder={t('selectPermissions')}
-                                />
-                                <FormMessage />
-                            </FormItem>
-                        )} />
-                        <DialogFooter>
-                            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t('cancel')}</Button>
-                            <Button type="submit">{t('save')}</Button>
-                        </DialogFooter>
-                    </form>
-                </Form>
-            </DialogContent>
-        </Dialog>
-    );
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{isEditMode ? t('editRole') : t('addRole')}</DialogTitle>
+          <DialogDescription>{isEditMode ? t('editRoleDescription') : t('addRoleDescription')}</DialogDescription>
+        </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+            <FormField control={form.control} name="name" render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('roleName')}</FormLabel>
+                <FormControl><Input {...field} placeholder={t('roleNamePlaceholder')} /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="permissions" render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('permissions')}</FormLabel>
+                <MultiSelect options={translatedPermissionOptions} selected={field.value ?? []} onChange={field.onChange} placeholder={t('selectPermissions')} />
+                <FormMessage />
+              </FormItem>
+            )} />
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t('cancel')}</Button>
+              <Button type="submit">{t('save')}</Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
-function DepartmentDialog({
-    department,
-    isOpen,
-    onOpenChange,
-    onSave
-}: {
-    department: { id: string; name: TranslationKey } | null;
-    isOpen: boolean;
-    onOpenChange: (open: boolean) => void;
-    onSave: (data: DepartmentFormValues, id?: string) => void;
+// -------------------- Departments --------------------
+function DepartmentDialog({ department, isOpen, onOpenChange, onSave }: {
+  department: { id: string; name: TranslationKey } | null;
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSave: (data: DepartmentFormValues, id?: string) => void;
 }) {
-    const { t } = useTranslation();
-    const isEditMode = department && department.id;
+  const { t } = useTranslation();
+  const isEditMode = !!department?.id;
 
-    const form = useForm<DepartmentFormValues>({
-        resolver: zodResolver(departmentFormSchema),
-        defaultValues: {
-            name: department ? t(department.name) : '',
-        },
-    });
+  const form = useForm<DepartmentFormValues>({
+    resolver: zodResolver(departmentFormSchema),
+    defaultValues: { name: department?.name || '' },
+  });
 
-    React.useEffect(() => {
-        form.reset({
-            name: department ? t(department.name) : '',
-        });
-    }, [department, form, t]);
+  useEffect(() => { form.reset({ name: department?.name || '' }); }, [department, form]);
 
-    const handleSubmit = (data: DepartmentFormValues) => {
-        onSave(data, department?.id);
-        onOpenChange(false);
-    };
+  const handleSubmit = (data: DepartmentFormValues) => { onSave(data, department?.id); onOpenChange(false); };
 
-    return (
-        <Dialog open={isOpen} onOpenChange={onOpenChange}>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle>{isEditMode ? t('edit') : t('addDepartment')}</DialogTitle>
-                    <DialogDescription>
-                        {isEditMode ? t('editUserDescription') : t('addUserDescription')}
-                    </DialogDescription>
-                </DialogHeader>
-                <Form {...form}>
-                    <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-                        <FormField control={form.control} name="name" render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>{t('departmentName')}</FormLabel>
-                                <FormControl><Input {...field} placeholder="e.g., Sunday School" /></FormControl>
-                                <FormMessage />
-                            </FormItem>
-                        )} />
-                        <DialogFooter>
-                            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t('cancel')}</Button>
-                            <Button type="submit">{t('save')}</Button>
-                        </DialogFooter>
-                    </form>
-                </Form>
-            </DialogContent>
-        </Dialog>
-    );
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{isEditMode ? t('edit') : t('addDepartment')}</DialogTitle>
+          <DialogDescription>{isEditMode ? t('editUserDescription') : t('addUserDescription')}</DialogDescription>
+        </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+            <FormField control={form.control} name="name" render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('departmentName')}</FormLabel>
+                <FormControl><Input {...field} placeholder="e.g., Sunday School" /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{t('cancel')}</Button>
+              <Button type="submit">{t('save')}</Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
-
+// -------------------- Settings Page --------------------
 export default function SettingsPage() {
   const { t } = useTranslation();
   const { toast } = useToast();
+
   const [users, setUsers] = useState<AppUser[]>([]);
   const [roles, setRoles] = useState<Role[]>(rolesData);
   const [departments, setDepartments] = useState([...mockDepartments]);
+
   const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<Partial<AppUser> | null>(null);
   const [userToDelete, setUserToDelete] = useState<AppUser | null>(null);
+
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [userForPasswordChange, setUserForPasswordChange] = useState<AppUser | null>(null);
+
   const [isRoleDialogOpen, setIsRoleDialogOpen] = useState(false);
   const [currentRole, setCurrentRole] = useState<Partial<Role> | null>(null);
   const [roleToDelete, setRoleToDelete] = useState<Role | null>(null);
+
   const [isDepartmentDialogOpen, setIsDepartmentDialogOpen] = useState(false);
   const [currentDepartment, setCurrentDepartment] = useState<{ id: string; name: TranslationKey } | null>(null);
   const [departmentToDelete, setDepartmentToDelete] = useState<{ id: string; name: TranslationKey } | null>(null);
 
-  useEffect(() => {
-    setUsers([...appUsers]);
-  }, []);
+  useEffect(() => { setUsers([...appUsers]); }, []);
 
   const getBadgeVariant = (roleName: string) => {
     const role = roles.find(r => r.name === roleName);
@@ -462,387 +397,237 @@ export default function SettingsPage() {
     }
   };
 
-  const handleOpenUserDialog = (user: Partial<AppUser> | null = null) => {
-    setCurrentUser(user);
-    setIsUserDialogOpen(true);
-  };
-  
-  const handleOpenRoleDialog = (role: Partial<Role> | null = null) => {
-    setCurrentRole(role);
-    setIsRoleDialogOpen(true);
-  };
-  
-  const handleOpenDepartmentDialog = (department: { id: string; name: TranslationKey } | null = null) => {
-    setCurrentDepartment(department);
-    setIsDepartmentDialogOpen(true);
-  };
-
-
-  const handleOpenPasswordDialog = (user: AppUser) => {
-    setUserForPasswordChange(user);
-    setIsPasswordDialogOpen(true);
-  };
+  // -------------------- Handlers --------------------
+  const handleOpenUserDialog = (user: Partial<AppUser> | null = null) => { setCurrentUser(user); setIsUserDialogOpen(true); };
+  const handleOpenRoleDialog = (role: Partial<Role> | null = null) => { setCurrentRole(role); setIsRoleDialogOpen(true); };
+  const handleOpenDepartmentDialog = (department: { id: string; name: TranslationKey } | null = null) => { setCurrentDepartment(department); setIsDepartmentDialogOpen(true); };
 
   const handleSaveUser = (data: UserFormValues, id?: number) => {
-    if (id) {
-      const updatedUser = { ...data, id };
-      updateUser(id, updatedUser);
-      setUsers(users.map(u => u.id === id ? { ...u, ...updatedUser } : u));
-      toast({ title: t('userUpdated'), description: t('userUpdatedSuccessMessage') });
+    if (id != null) {
+      setUsers(prev => prev.map(u => u.id === id ? { ...u, ...data } : u));
+      updateUser(id, data);
+      toast({ title: t('updatedUser'), description: `${data.name} ${t('updatedSuccessfully')}` });
     } else {
-      const newId = Date.now();
-      const newUser: AppUser = { ...data, id: newId, password: 'password123', isFirstLogin: true };
+      const newUser: AppUser = { id: Date.now(), ...data };
+      setUsers(prev => [...prev, newUser]);
       addUser(newUser);
-      setUsers([newUser, ...users]);
-      toast({ title: t('userAdded'), description: t('userAddedSuccessMessage') });
+      toast({ title: t('addedUser'), description: `${data.name} ${t('addedSuccessfully')}` });
     }
-  };
-  
-  const handleSaveRole = (data: RoleFormValues, id?: string) => {
-      if (id) {
-          updateRole(id, data as Partial<Role>);
-          toast({ title: t('roleUpdated'), description: t('roleUpdatedSuccessMessage') });
-      } else {
-          const newRole = { id: data.name.toLowerCase().replace(/\s+/g, '-'), ...data };
-          addRole(newRole as Role);
-          toast({ title: t('roleAdded'), description: t('roleAddedSuccessMessage') });
-      }
-      setRoles([...rolesData]);
-  };
-  
-  const handleSaveDepartment = (data: DepartmentFormValues, id?: string) => {
-      if (id) {
-          updateDepartment(id, data.name);
-          toast({ title: t('departmentUpdated'), description: t('departmentUpdatedSuccessMessage') });
-      } else {
-          addDepartment(data.name);
-          toast({ title: t('departmentAdded'), description: t('departmentAddedSuccessMessage') });
-      }
-      setDepartments([...mockDepartments]);
   };
 
   const handleDeleteUser = (user: AppUser) => {
-    setUserToDelete(user);
+    setUsers(prev => prev.filter(u => u.id !== user.id));
+    deleteUserFromDb(user.id);
+    setUserToDelete(null);
+    toast({ title: t('deletedUser'), description: `${user.name} ${t('deletedSuccessfully')}` });
   };
-  
+
+  const handleSaveRole = (data: RoleFormValues, id?: string) => {
+    if (id) {
+      setRoles(prev => prev.map(r => r.id === id ? { ...r, ...data } : r));
+      updateRole(id, data);
+      toast({ title: t('updatedRole'), description: `${data.name} ${t('updatedSuccessfully')}` });
+    } else {
+      const newRole: Role = { id: data.name.toLowerCase().replace(/\s+/g, '-'), ...data };
+      setRoles(prev => [...prev, newRole]);
+      addRole(newRole);
+      toast({ title: t('addedRole'), description: `${data.name} ${t('addedSuccessfully')}` });
+    }
+  };
+
   const handleDeleteRole = (role: Role) => {
-      setRoleToDelete(role);
-  };
-  
-  const handleDeleteDepartment = (department: { id: string, name: TranslationKey }) => {
-    setDepartmentToDelete(department);
+    setRoles(prev => prev.filter(r => r.id !== role.id));
+    deleteRoleFromDb(role.id);
+    setRoleToDelete(null);
+    toast({ title: t('deletedRole'), description: `${role.name} ${t('deletedSuccessfully')}` });
   };
 
-  const confirmDeleteUser = () => {
-    if (userToDelete) {
-      deleteUserFromDb(userToDelete.id);
-      setUsers(users.filter(u => u.id !== userToDelete.id));
-      toast({ title: "User Deleted", description: `${userToDelete.name} has been removed.` });
-      setUserToDelete(null);
+  const handleSaveDepartment = (data: DepartmentFormValues, id?: string) => {
+    if (id) {
+      setDepartments(prev => prev.map(d => d.id === id ? { ...d, name: data.name as TranslationKey } : d));
+      updateDepartment(id, data.name as TranslationKey);
+      toast({ title: t('updatedDepartment'), description: `${data.name} ${t('updatedSuccessfully')}` });
+    } else {
+      const newDept = { id: Date.now().toString(), name: data.name as TranslationKey };
+      setDepartments(prev => [...prev, newDept]);
+      addDepartment(newDept);
+      toast({ title: t('addedDepartment'), description: `${data.name} ${t('addedSuccessfully')}` });
     }
   };
-  
-  const confirmDeleteRole = () => {
-      if (roleToDelete) {
-          deleteRoleFromDb(roleToDelete.id);
-          setRoles([...rolesData]);
-          toast({ title: t('roleDeleted'), description: t('roleDeletedSuccessMessage', { name: roleToDelete.name }) });
-          setRoleToDelete(null);
-      }
-  };
-  
-  const confirmDeleteDepartment = () => {
-    if (departmentToDelete) {
-      deleteDepartmentFromDb(departmentToDelete.id);
-      setDepartments([...mockDepartments]);
-      toast({ title: t('departmentDeleted'), description: `The department '${t(departmentToDelete.name)}' has been removed.` });
-      setDepartmentToDelete(null);
-    }
-  };
-  
-  const handlePermissionsChange = useCallback((roleId: string, permissions: string[]) => {
-      updateRole(roleId, { permissions: permissions as Permission[] });
-      setRoles(prevRoles => prevRoles.map(role => 
-          role.id === roleId ? { ...role, permissions: permissions as Permission[] } : role
-      ));
-  }, []);
-  
-  const translatedPermissionOptions = permissionOptions.map(opt => ({...opt, label: t(opt.label.toLowerCase() as TranslationKey)}));
 
+  const handleDeleteDepartment = (department: { id: string; name: TranslationKey }) => {
+    setDepartments(prev => prev.filter(d => d.id !== department.id));
+    deleteDepartmentFromDb(department.id);
+    setDepartmentToDelete(null);
+    toast({ title: t('deletedDepartment'), description: `${department.name} ${t('deletedSuccessfully')}` });
+  };
+
+  // -------------------- Render --------------------
   return (
-    <div className="flex min-h-screen w-full flex-col">
-      <Header title={t('settings')} />
-      <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
-        <Card className="bg-card/50">
-          <CardHeader>
-            <CardTitle className="text-2xl">{t('settings')}</CardTitle>
-            <CardDescription>{t('settingsDescription')}</CardDescription>
-          </CardHeader>
-        </Card>
+    <div className="p-6 space-y-6">
+      <Header title={t('settings')} description={t('manageYourSettings')} />
 
-        <Tabs defaultValue="departments" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="departments">{t('departments')}</TabsTrigger>
-            <TabsTrigger value="users">{t('users')}</TabsTrigger>
-            <TabsTrigger value="roles">{t('roles')}</TabsTrigger>
-            <TabsTrigger value="general">{t('general')}</TabsTrigger>
-          </TabsList>
-           <TabsContent value="departments">
-             <Card>
-                <CardHeader  className="flex flex-row items-center justify-between">
-                    <div>
-                        <CardTitle>{t('departments')}</CardTitle>
-                        <CardDescription>{t('manageDepartmentsDescription')}</CardDescription>
-                    </div>
-                     <Button onClick={() => handleOpenDepartmentDialog()}>
-                        <PlusCircle className="mr-2 h-4 w-4" />
-                        {t('addDepartment')}
-                    </Button>
-                </CardHeader>
-                <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>{t('departmentName')}</TableHead>
-                                <TableHead>{t('actions')}</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {departments.map((dept) => (
-                                <TableRow key={dept.id}>
-                                    <TableCell className="font-medium">{t(dept.name)}</TableCell>
-                                    <TableCell>
-                                         <div className="flex items-center gap-2">
-                                            <Button variant="ghost" size="icon" onClick={() => handleOpenDepartmentDialog(dept)}>
-                                              <Pencil className="h-4 w-4" />
-                                            </Button>
-                                            {!['secretariat'].includes(dept.id) && (
-                                              <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDeleteDepartment(dept)}>
-                                                <Trash2 className="h-4 w-4" />
-                                              </Button>
-                                            )}
-                                          </div>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </CardContent>
-             </Card>
-          </TabsContent>
-          <TabsContent value="users" className="space-y-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle>{t('users')}</CardTitle>
-                  <CardDescription>{t('usersDescription')}</CardDescription>
-                </div>
-                <Button onClick={() => handleOpenUserDialog()}>
-                  <PlusCircle className="mr-2 h-4 w-4" />
-                  {t('addUser')}
-                </Button>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{t('name')}</TableHead>
-                      <TableHead>{t('email')}</TableHead>
-                      <TableHead>{t('phoneNumber')}</TableHead>
-                      <TableHead>{t('roles')}</TableHead>
-                      <TableHead>{t('actions')}</TableHead>
+      <Tabs defaultValue="users" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="users">{t('users')}</TabsTrigger>
+          <TabsTrigger value="roles">{t('roles')}</TabsTrigger>
+          <TabsTrigger value="departments">{t('departments')}</TabsTrigger>
+        </TabsList>
+
+        {/* Users */}
+        <TabsContent value="users">
+          <Card>
+            <CardHeader className="flex justify-between items-center">
+              <CardTitle>{t('users')}</CardTitle>
+              <Button onClick={() => handleOpenUserDialog()}><PlusCircle className="mr-2 h-4 w-4"/> {t('addUser')}</Button>
+            </CardHeader>
+            <CardContent className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('name')}</TableHead>
+                    <TableHead>{t('email')}</TableHead>
+                    <TableHead>{t('phone')}</TableHead>
+                    <TableHead>{t('role')}</TableHead>
+                    <TableHead>{t('actions')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {users.map(user => (
+                    <TableRow key={user.id}>
+                      <TableCell>{user.name}</TableCell>
+                      <TableCell>{user.email}</TableCell>
+                      <TableCell>{user.phone}</TableCell>
+                      <TableCell><Badge variant={getBadgeVariant(user.role)}>{user.role}</Badge></TableCell>
+                      <TableCell className="flex gap-2">
+                        <Button size="sm" onClick={() => handleOpenUserDialog(user)}><Pencil className="h-4 w-4"/></Button>
+                        <Button size="sm" onClick={() => { setUserForPasswordChange(user); setIsPasswordDialogOpen(true); }}><KeyRound className="h-4 w-4"/></Button>
+                        <Button size="sm" variant="destructive" onClick={() => setUserToDelete(user)}><Trash2 className="h-4 w-4"/></Button>
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {users.map((user) => {
-                      const roleTranslationKey = user.role.toLowerCase().replace(/\s/g, '') as TranslationKey;
-                      return (
-                        <TableRow key={user.id}>
-                          <TableCell className="font-medium">{user.name}</TableCell>
-                          <TableCell>{user.email}</TableCell>
-                          <TableCell>{user.phone}</TableCell>
-                          <TableCell>
-                            <Badge variant={getBadgeVariant(user.role)}>
-                              {t(roleTranslationKey) || user.role}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Button variant="ghost" size="icon" onClick={() => handleOpenUserDialog(user)}>
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              <Button variant="ghost" size="icon" onClick={() => handleOpenPasswordDialog(user)}>
-                                <KeyRound className="h-4 w-4" />
-                              </Button>
-                              {user.role !== 'Admin' && (
-                                <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDeleteUser(user)}>
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
-          <TabsContent value="roles">
-             <Card>
-                <CardHeader  className="flex flex-row items-center justify-between">
-                    <div>
-                        <CardTitle>{t('roles')}</CardTitle>
-                        <CardDescription>{t('manageRoles')}</CardDescription>
-                    </div>
-                     <Button onClick={() => handleOpenRoleDialog()}>
-                        <PlusCircle className="mr-2 h-4 w-4" />
-                        {t('addRole')}
-                    </Button>
-                </CardHeader>
-                <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>{t('role')}</TableHead>
-                                <TableHead>{t('permissions')}</TableHead>
-                                <TableHead>{t('actions')}</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {roles.map((role) => {
-                                const roleTranslationKey = role.name.toLowerCase().replace(/\s/g, '') as TranslationKey;
-                                return (
-                                <TableRow key={role.id}>
-                                    <TableCell className="font-medium">{t(roleTranslationKey) || role.name}</TableCell>
-                                    <TableCell>
-                                      <MultiSelect
-                                        options={translatedPermissionOptions}
-                                        selected={role.permissions as string[]}
-                                        onChange={(newPermissions) => handlePermissionsChange(role.id, newPermissions)}
-                                        placeholder={t('selectPermissions')}
-                                        className="max-w-xs"
-                                      />
-                                    </TableCell>
-                                    <TableCell>
-                                         <div className="flex items-center gap-2">
-                                            <Button variant="ghost" size="icon" onClick={() => handleOpenRoleDialog(role)}>
-                                              <Pencil className="h-4 w-4" />
-                                            </Button>
-                                            {role.name !== 'Admin' && (
-                                              <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDeleteRole(role)} disabled={['admin', 'teacher', 'chiefofficer'].includes(role.id)}>
-                                                <Trash2 className="h-4 w-4" />
-                                              </Button>
-                                            )}
-                                          </div>
-                                    </TableCell>
-                                </TableRow>
-                            )})}
-                        </TableBody>
-                    </Table>
-                </CardContent>
-             </Card>
-          </TabsContent>
-           <TabsContent value="general">
-             <Card>
-                <CardHeader>
-                    <CardTitle>{t('general')}</CardTitle>
-                    <CardDescription>{t('manageGeneralSettings')}</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                        <Label htmlFor="church-name">{t('churchName')}</Label>
-                        <Input id="church-name" defaultValue="Salo Debre Tsehay St. George Church" />
-                    </div>
-                     <div className="space-y-2">
-                        <Label htmlFor="system-language">{t('defaultLanguage')}</Label>
-                        <Input id="system-language" defaultValue="English" />
-                    </div>
-                     <div className="space-y-2">
-                        <Label htmlFor="default-password">{t('defaultPassword')}</Label>
-                        <Input id="default-password" readOnly value="password123" />
-                         <p className="text-sm text-muted-foreground">{t('defaultPasswordDescription')}</p>
-                    </div>
-                    <Button>{t('saveChanges')}</Button>
-                </CardContent>
-             </Card>
-          </TabsContent>
-        </Tabs>
-      </main>
-      
-      <UserDialog 
-        user={currentUser}
-        isOpen={isUserDialogOpen}
-        onOpenChange={setIsUserDialogOpen}
-        onSave={handleSaveUser}
-        roles={roles}
-      />
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      <ChangePasswordDialog 
-        user={userForPasswordChange}
-        isOpen={isPasswordDialogOpen}
-        onOpenChange={setIsPasswordDialogOpen}
-      />
-      
-      <RoleDialog
-        role={currentRole}
-        isOpen={isRoleDialogOpen}
-        onOpenChange={setIsRoleDialogOpen}
-        onSave={handleSaveRole}
-      />
-      
-      <DepartmentDialog
-        department={currentDepartment}
-        isOpen={isDepartmentDialogOpen}
-        onOpenChange={setIsDepartmentDialogOpen}
-        onSave={handleSaveDepartment}
-      />
+        {/* Roles */}
+        <TabsContent value="roles">
+          <Card>
+            <CardHeader className="flex justify-between items-center">
+              <CardTitle>{t('roles')}</CardTitle>
+              <Button onClick={() => handleOpenRoleDialog()}><PlusCircle className="mr-2 h-4 w-4"/> {t('addRole')}</Button>
+            </CardHeader>
+            <CardContent className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('roleName')}</TableHead>
+                    <TableHead>{t('permissions')}</TableHead>
+                    <TableHead>{t('actions')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {roles.map(role => (
+                    <TableRow key={role.id}>
+                      <TableCell>{role.name}</TableCell>
+                      <TableCell>{role.permissions.join(', ')}</TableCell>
+                      <TableCell className="flex gap-2">
+                        <Button size="sm" onClick={() => handleOpenRoleDialog(role)}><Pencil className="h-4 w-4"/></Button>
+                        <Button size="sm" variant="destructive" onClick={() => setRoleToDelete(role)}><Trash2 className="h-4 w-4"/></Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      <AlertDialog open={!!userToDelete} onOpenChange={() => setUserToDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('areYouSure')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('deleteUserWarning', { name: userToDelete?.name || '' })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setUserToDelete(null)}>{t('cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDeleteUser}>{t('delete')}</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      
-      <AlertDialog open={!!roleToDelete} onOpenChange={() => setRoleToDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('areYouSure')}</AlertDialogTitle>
-            <AlertDialogDescription>
-                {t('deleteRoleWarning', { name: roleToDelete?.name || '' })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setRoleToDelete(null)}>{t('cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDeleteRole}>{t('delete')}</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      
-       <AlertDialog open={!!departmentToDelete} onOpenChange={() => setDepartmentToDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('areYouSure')}</AlertDialogTitle>
-            <AlertDialogDescription>
-                {t('deleteDepartmentWarning', { name: departmentToDelete ? t(departmentToDelete.name) : '' })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setDepartmentToDelete(null)}>{t('cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDeleteDepartment}>{t('delete')}</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        {/* Departments */}
+        <TabsContent value="departments">
+          <Card>
+            <CardHeader className="flex justify-between items-center">
+              <CardTitle>{t('departments')}</CardTitle>
+              <Button onClick={() => handleOpenDepartmentDialog()}><PlusCircle className="mr-2 h-4 w-4"/> {t('addDepartment')}</Button>
+            </CardHeader>
+            <CardContent className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('departmentName')}</TableHead>
+                    <TableHead>{t('actions')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {departments.map(dept => (
+                    <TableRow key={dept.id}>
+                      <TableCell>{t(dept.name)}</TableCell>
+                      <TableCell className="flex gap-2">
+                        <Button size="sm" onClick={() => handleOpenDepartmentDialog(dept)}><Pencil className="h-4 w-4"/></Button>
+                        <Button size="sm" variant="destructive" onClick={() => setDepartmentToDelete(dept)}><Trash2 className="h-4 w-4"/></Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Dialogs */}
+      <UserDialog user={currentUser} isOpen={isUserDialogOpen} onOpenChange={setIsUserDialogOpen} onSave={handleSaveUser} roles={roles} />
+      <ChangePasswordDialog user={userForPasswordChange} isOpen={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen} />
+      <RoleDialog role={currentRole} isOpen={isRoleDialogOpen} onOpenChange={setIsRoleDialogOpen} onSave={handleSaveRole} />
+      <DepartmentDialog department={currentDepartment} isOpen={isDepartmentDialogOpen} onOpenChange={setIsDepartmentDialogOpen} onSave={handleSaveDepartment} />
+
+      {/* AlertDialogs */}
+      {userToDelete && (
+        <AlertDialog open={!!userToDelete} onOpenChange={() => setUserToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('deleteUser')}</AlertDialogTitle>
+              <AlertDialogDescription>{t('confirmDeleteUser', { name: userToDelete.name })}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+              <AlertDialogAction onClick={() => handleDeleteUser(userToDelete)}>{t('delete')}</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {roleToDelete && (
+        <AlertDialog open={!!roleToDelete} onOpenChange={() => setRoleToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('deleteRole')}</AlertDialogTitle>
+              <AlertDialogDescription>{t('confirmDeleteRole', { name: roleToDelete.name })}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+              <AlertDialogAction onClick={() => handleDeleteRole(roleToDelete)}>{t('delete')}</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {departmentToDelete && (
+        <AlertDialog open={!!departmentToDelete} onOpenChange={() => setDepartmentToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('deleteDepartment')}</AlertDialogTitle>
+              <AlertDialogDescription>{t('confirmDeleteDepartment', { name: departmentToDelete.name })}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+              <AlertDialogAction onClick={() => handleDeleteDepartment(departmentToDelete)}>{t('delete')}</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </div>
   );
 }

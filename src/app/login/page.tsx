@@ -51,7 +51,13 @@ export default function LoginPage() {
   return (
     <main 
         className="relative flex min-h-screen flex-col items-center justify-center bg-cover bg-center p-4"
-        style={{ backgroundImage: "url('https://picsum.photos/seed/church-exterior/1280/960')" }}
+        style={{
+          backgroundImage: "url('/images/hamere.jpg')",
+          backgroundSize: 'cover',      
+          backgroundPosition: 'center', 
+          width: '100%',
+          height: '400px'              
+        }}
         data-ai-hint="church building"
     >
       <div className="absolute inset-0 bg-black/60 z-0" />

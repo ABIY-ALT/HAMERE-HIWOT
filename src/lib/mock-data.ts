@@ -345,3 +345,4 @@ export const classesData: { id: string, name: TranslationKey }[] = [
     { id: 'salsay', name: 'salsay' },
     { id: 'rabay', name: 'rabay' },
 ];
+export const mockDepartments = departmentsData;
