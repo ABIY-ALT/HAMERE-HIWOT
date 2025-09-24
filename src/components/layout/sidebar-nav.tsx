@@ -15,6 +15,7 @@ import {
   Building2,
   Settings,
   Info,
+  UserPlus,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -23,14 +24,19 @@ import { rolesData } from '@/lib/mock-data';
 import type { Permission } from '@/types';
 import React from 'react';
 
-const navConfig: { permission: Permission, href: string, icon: React.ElementType, labelKey: any }[] = [
-    { permission: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, labelKey: 'dashboard' },
-    { permission: 'Members', href: '/members', icon: Users, labelKey: 'members' },
-    { permission: 'Classes', href: '/classes', icon: BookCopy, labelKey: 'classes' },
-    { permission: 'Finance', href: '/finance', icon: Banknote, labelKey: 'finance' },
-    { permission: 'Departments', href: '/departments', icon: Building2, labelKey: 'departments' },
-    { permission: 'About', href: '/about', icon: Info, labelKey: 'about' },
-    { permission: 'Settings', href: '/settings', icon: Settings, labelKey: 'settings' },
+const navConfig: {
+  permission: Permission;
+  href: string;
+  icon: React.ElementType;
+  labelKey: any;
+}[] = [
+  { permission: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, labelKey: 'dashboard' },
+  { permission: 'Members', href: '/members', icon: Users, labelKey: 'members' },
+  { permission: 'Classes', href: '/classes', icon: BookCopy, labelKey: 'classes' },
+  { permission: 'Finance', href: '/finance', icon: Banknote, labelKey: 'finance' },
+  { permission: 'Departments', href: '/departments', icon: Building2, labelKey: 'departments' },
+  { permission: 'About', href: '/about', icon: Info, labelKey: 'about' },
+  { permission: 'Settings', href: '/settings', icon: Settings, labelKey: 'settings' },
 ];
 
 export function SidebarNav() {
@@ -45,31 +51,29 @@ export function SidebarNav() {
 
   const userPermissions = userRole?.permissions || [];
 
-  const navItems = React.useMemo(() => {
-    return navConfig
-      .filter(item => userPermissions.includes(item.permission as Permission));
-  }, [userPermissions]);
-
+  const navItems = navConfig
+    .filter((item) => userPermissions.includes(item.permission))
+    .map((item) => ({
+      ...item,
+      label: t(item.labelKey),
+    }));
 
   return (
     <SidebarMenu>
-      {navItems.map((item) => {
-        const label = t(item.labelKey);
-        return (
-          <SidebarMenuItem key={item.href}>
-            <SidebarMenuButton
-              asChild
-              isActive={pathname.startsWith(item.href)}
-              tooltip={{ children: label, side: 'right' }}
-            >
-              <Link href={item.href}>
-                <item.icon />
-                <span>{label}</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        )
-      })}
+      {navItems.map((item) => (
+        <SidebarMenuItem key={item.href}>
+          <SidebarMenuButton
+            asChild
+            isActive={pathname.startsWith(item.href)}
+            tooltip={{ children: item.label, side: 'right' }}
+          >
+            <Link href={item.href}>
+              <item.icon />
+              <span>{item.label}</span>
+            </Link>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      ))}
     </SidebarMenu>
   );
 }
