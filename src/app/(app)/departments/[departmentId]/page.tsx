@@ -1,3 +1,4 @@
+
 'use client';
 import { Header } from '@/components/layout/header';
 import { Button } from '@/components/ui/button';
@@ -7,27 +8,32 @@ import { useTranslation } from '@/hooks/use-translation';
 import { ArrowLeft, FileText, Send } from 'lucide-react';
 import Link from 'next/link';
 import { Separator } from '@/components/ui/separator';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { allReports, departmentDetails, addReport } from '@/lib/mock-data';
 import type { DepartmentReport } from '@/types';
+import { useToast } from '@/hooks/use-toast';
 
 export default function DepartmentDetailsPage({ params }: { params: { departmentId: string } }) {
   const { t } = useTranslation();
   const departmentId = params.departmentId;
   const details = departmentDetails[departmentId];
-  
-  const [newReport, setNewReport] = useState('');
-  const [reports, setReports] = useState<DepartmentReport[]>([]);
+  const { toast } = useToast();
 
-  useEffect(() => {
+  const [newReport, setNewReport] = useState('');
+  // This state is just to trigger re-renders when reports are added.
+  const [reportCount, setReportCount] = useState(allReports.length);
+
+  const reports = useMemo(() => {
+    // Depend on reportCount to re-evaluate when a report is added.
+    const reportsSource = [...allReports];
+    
+    const sortedReports = reportsSource.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
     if (departmentId === 'secretariat') {
-      // Secretariat sees all reports
-      setReports(allReports.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-    } else {
-      // Other departments see only their own reports
-      setReports(allReports.filter(r => r.departmentId === departmentId).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+      return sortedReports;
     }
-  }, [departmentId]);
+    return sortedReports.filter(r => r.departmentId === departmentId);
+  }, [departmentId, reportCount]);
 
 
   const handleSubmitReport = () => {
@@ -43,15 +49,12 @@ export default function DepartmentDetailsPage({ params }: { params: { department
     };
 
     addReport(newReportData);
-
-    // Refresh the reports list
-    if (departmentId === 'secretariat') {
-      setReports([...allReports].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-    } else {
-      setReports(allReports.filter(r => r.departmentId === departmentId).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-    }
-
+    setReportCount(allReports.length); // Trigger a re-render
     setNewReport('');
+    toast({
+        title: "Report Submitted",
+        description: "Your report has been successfully submitted."
+    });
   };
 
   if (!details) {
