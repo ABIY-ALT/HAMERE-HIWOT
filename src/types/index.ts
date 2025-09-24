@@ -76,7 +76,7 @@ export interface AttendanceLog {
   records: AttendanceRecord[];
 }
 
-export type Permission = 'Dashboard' | 'Students' | 'Classes' | 'Finance' | 'Departments' | 'Reports' | 'Settings' | 'About' | 'Members';
+export type Permission = 'Dashboard' | 'Classes' | 'Finance' | 'Departments' | 'Reports' | 'Settings' | 'About' | 'Members';
 
 export interface Role {
     id: string;
