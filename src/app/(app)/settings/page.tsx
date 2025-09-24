@@ -580,13 +580,56 @@ export default function SettingsPage() {
           </CardHeader>
         </Card>
 
-        <Tabs defaultValue="users" className="space-y-4">
+        <Tabs defaultValue="departments" className="space-y-4">
           <TabsList>
+            <TabsTrigger value="departments">{t('departments')}</TabsTrigger>
             <TabsTrigger value="users">{t('users')}</TabsTrigger>
             <TabsTrigger value="roles">{t('roles')}</TabsTrigger>
-            <TabsTrigger value="departments">{t('departments')}</TabsTrigger>
             <TabsTrigger value="general">{t('general')}</TabsTrigger>
           </TabsList>
+           <TabsContent value="departments">
+             <Card>
+                <CardHeader  className="flex flex-row items-center justify-between">
+                    <div>
+                        <CardTitle>{t('departments')}</CardTitle>
+                        <CardDescription>{t('manageDepartmentsDescription')}</CardDescription>
+                    </div>
+                     <Button onClick={() => handleOpenDepartmentDialog()}>
+                        <PlusCircle className="mr-2 h-4 w-4" />
+                        {t('addDepartment')}
+                    </Button>
+                </CardHeader>
+                <CardContent>
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>{t('departmentName')}</TableHead>
+                                <TableHead>{t('actions')}</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {departments.map((dept) => (
+                                <TableRow key={dept.id}>
+                                    <TableCell className="font-medium">{t(dept.name)}</TableCell>
+                                    <TableCell>
+                                         <div className="flex items-center gap-2">
+                                            <Button variant="ghost" size="icon" onClick={() => handleOpenDepartmentDialog(dept)}>
+                                              <Pencil className="h-4 w-4" />
+                                            </Button>
+                                            {!['secretariat'].includes(dept.id) && (
+                                              <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDeleteDepartment(dept)}>
+                                                <Trash2 className="h-4 w-4" />
+                                              </Button>
+                                            )}
+                                          </div>
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </CardContent>
+             </Card>
+          </TabsContent>
           <TabsContent value="users" className="space-y-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
@@ -692,49 +735,6 @@ export default function SettingsPage() {
                                     </TableCell>
                                 </TableRow>
                             )})}
-                        </TableBody>
-                    </Table>
-                </CardContent>
-             </Card>
-          </TabsContent>
-          <TabsContent value="departments">
-             <Card>
-                <CardHeader  className="flex flex-row items-center justify-between">
-                    <div>
-                        <CardTitle>{t('departments')}</CardTitle>
-                        <CardDescription>{t('manageDepartmentsDescription')}</CardDescription>
-                    </div>
-                     <Button onClick={() => handleOpenDepartmentDialog()}>
-                        <PlusCircle className="mr-2 h-4 w-4" />
-                        {t('addDepartment')}
-                    </Button>
-                </CardHeader>
-                <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>{t('departmentName')}</TableHead>
-                                <TableHead>{t('actions')}</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {departments.map((dept) => (
-                                <TableRow key={dept.id}>
-                                    <TableCell className="font-medium">{t(dept.name)}</TableCell>
-                                    <TableCell>
-                                         <div className="flex items-center gap-2">
-                                            <Button variant="ghost" size="icon" onClick={() => handleOpenDepartmentDialog(dept)}>
-                                              <Pencil className="h-4 w-4" />
-                                            </Button>
-                                            {!['secretariat'].includes(dept.id) && (
-                                              <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDeleteDepartment(dept)}>
-                                                <Trash2 className="h-4 w-4" />
-                                              </Button>
-                                            )}
-                                          </div>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
                         </TableBody>
                     </Table>
                 </CardContent>
