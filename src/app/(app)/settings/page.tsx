@@ -19,7 +19,7 @@ import { appUsers, addUser, updateUser, deleteUser as deleteUserFromDb, rolesDat
 import type { AppUser, Role, Permission } from '@/types';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useForm, Controller } from 'react-hook-form';
@@ -281,12 +281,13 @@ function ChangePasswordDialog({
 
 const permissionOptions = [
     { value: 'Dashboard', label: 'Dashboard' },
-    { value: 'Students', label: 'Students' },
+    { value: 'Members', label: 'Members' },
     { value: 'Classes', label: 'Classes' },
     { value: 'Finance', label: 'Finance' },
     { value: 'Departments', label: 'Departments' },
     { value: 'Reports', label: 'Reports' },
     { value: 'Settings', label: 'Settings' },
+    { value: 'About', label: 'About' },
 ];
 
 function RoleDialog({
@@ -559,13 +560,12 @@ export default function SettingsPage() {
     }
   };
   
-  const handlePermissionsChange = (roleId: string, permissions: string[]) => {
-      const newRoles = roles.map(role => 
-          role.id === roleId ? { ...role, permissions: permissions as Permission[] } : role
-      );
-      setRoles(newRoles);
+  const handlePermissionsChange = useCallback((roleId: string, permissions: string[]) => {
       updateRole(roleId, { permissions: permissions as Permission[] });
-  }
+      setRoles(prevRoles => prevRoles.map(role => 
+          role.id === roleId ? { ...role, permissions: permissions as Permission[] } : role
+      ));
+  }, []);
   
   const translatedPermissionOptions = permissionOptions.map(opt => ({...opt, label: t(opt.label.toLowerCase() as TranslationKey)}));
 
@@ -717,9 +717,13 @@ export default function SettingsPage() {
                                 <TableRow key={role.id}>
                                     <TableCell className="font-medium">{t(roleTranslationKey) || role.name}</TableCell>
                                     <TableCell>
-                                        <div className="flex flex-wrap gap-1">
-                                            {(role.permissions as string[]).map(p => <Badge variant="outline" key={p}>{t(p.toLowerCase() as TranslationKey)}</Badge>)}
-                                        </div>
+                                      <MultiSelect
+                                        options={translatedPermissionOptions}
+                                        selected={role.permissions as string[]}
+                                        onChange={(newPermissions) => handlePermissionsChange(role.id, newPermissions)}
+                                        placeholder={t('selectPermissions')}
+                                        className="max-w-xs"
+                                      />
                                     </TableCell>
                                     <TableCell>
                                          <div className="flex items-center gap-2">
