@@ -16,6 +16,7 @@ import {
   Percent,
   UserCheck as UserCheckIcon,
   Info,
+  UserPlus,
 } from 'lucide-react';
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, PieChart, Pie, Cell } from 'recharts';
 import { ChartContainer, ChartConfig, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
@@ -24,6 +25,7 @@ import React from 'react';
 import { studentsData } from '@/lib/mock-data';
 import { useAuth } from '@/contexts/auth-context';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import Link from 'next/link';
 
 const totalMembers = studentsData.length;
 const activeMembers = studentsData.filter(s => s.status === 'Active').length;
@@ -35,26 +37,25 @@ const summaryCards = [
     titleKey: 'totalMembers',
     value: totalMembers.toString(),
     icon: Users,
-  },
-  {
-    titleKey: 'totalStudents',
-    value: totalMembers.toString(),
-    icon: Users,
+    href: '/members',
   },
   {
     titleKey: 'activeMembers',
     value: activeMembers.toString(),
     icon: UserCheckIcon,
+    href: '/members',
   },
   {
     titleKey: 'totalClasses',
-    value: '8',
+    value: '4',
     icon: BookCopy,
+    href: '/classes',
   },
   {
     titleKey: 'attendanceRate',
     value: '92%',
     icon: Percent,
+    href: '/classes',
   },
 ] as const;
 
@@ -115,19 +116,21 @@ export default function DashboardPage() {
             </CardTitle>
           </CardHeader>
         </Card>
-        <div className="grid gap-4 md:grid-cols-2 md:gap-8 lg:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-2 md:gap-8 lg:grid-cols-4">
           {summaryCards.map((card) => (
-            <Card key={card.titleKey}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  {t(card.titleKey)}
-                </CardTitle>
-                <card.icon className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{card.value}</div>
-              </CardContent>
-            </Card>
+            <Link href={card.href} key={card.titleKey}>
+              <Card className="hover:bg-accent transition-colors">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    {t(card.titleKey)}
+                  </CardTitle>
+                  <card.icon className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{card.value}</div>
+                </CardContent>
+              </Card>
+            </Link>
           ))}
         </div>
         <div className="grid gap-4 md:grid-cols-2 md:gap-8">

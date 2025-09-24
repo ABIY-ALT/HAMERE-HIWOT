@@ -15,7 +15,6 @@ import {
   Building2,
   Settings,
   Info,
-  UserPlus,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -26,12 +25,10 @@ import React from 'react';
 
 const navConfig: { permission: Permission, href: string, icon: React.ElementType, labelKey: any }[] = [
     { permission: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, labelKey: 'dashboard' },
-    { permission: 'Students', href: '/students', icon: Users, labelKey: 'students' },
-    { permission: 'Members', href: '/members', icon: UserPlus, labelKey: 'members' },
+    { permission: 'Members', href: '/members', icon: Users, labelKey: 'members' },
     { permission: 'Classes', href: '/classes', icon: BookCopy, labelKey: 'classes' },
     { permission: 'Finance', href: '/finance', icon: Banknote, labelKey: 'finance' },
     { permission: 'Departments', href: '/departments', icon: Building2, labelKey: 'departments' },
-    { permission: 'About', href: '/about', icon: Info, labelKey: 'aboutUs' },
     { permission: 'Settings', href: '/settings', icon: Settings, labelKey: 'settings' },
 ];
 
@@ -48,22 +45,13 @@ export function SidebarNav() {
   const userPermissions = userRole?.permissions || [];
 
   const navItems = React.useMemo(() => {
-    // Add 'Members' permission for Admin and Chief Officer for display
-    let permissions = [...userPermissions];
-    if (user?.role === 'Admin' || user?.role === 'Chief Officer') {
-      if (!permissions.includes('Members')) {
-        permissions.push('Members');
-      }
-    }
-
-
     return navConfig
-      .filter(item => permissions.includes(item.permission as Permission))
+      .filter(item => userPermissions.includes(item.permission as Permission))
       .map(item => ({
         ...item,
         label: t(item.labelKey),
       }));
-  }, [userPermissions, user?.role, t]);
+  }, [userPermissions, t]);
 
 
   return (

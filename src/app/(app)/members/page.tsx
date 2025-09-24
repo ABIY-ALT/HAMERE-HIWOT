@@ -18,7 +18,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useTranslation } from '@/hooks/use-translation';
-import type { Student } from '@/types';
+import type { Student as Member } from '@/types';
 import {
   PlusCircle,
   Search,
@@ -60,8 +60,8 @@ import { studentsData, deleteStudent as deleteStudentFromDb } from '@/lib/mock-d
 
 export default function MembersPage() {
   const { t } = useTranslation();
-  const [allMembers, setAllMembers] = useState<Student[]>(studentsData);
-  const [memberToDelete, setMemberToDelete] = useState<Student | null>(null);
+  const [allMembers, setAllMembers] = useState<Member[]>(studentsData);
+  const [memberToDelete, setMemberToDelete] = useState<Member | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const router = useRouter();
@@ -84,7 +84,7 @@ export default function MembersPage() {
     router.push(`/members/${memberId}${action === 'edit' ? '/edit' : ''}`);
   };
 
-  const openDeleteDialog = (member: Student) => {
+  const openDeleteDialog = (member: Member) => {
     setMemberToDelete(member);
   };
 
@@ -117,7 +117,7 @@ export default function MembersPage() {
         const worksheet = workbook.Sheets[sheetName];
         const json = XLSX.utils.sheet_to_json<any>(worksheet);
         
-        const newMembers: Student[] = json.map((row, index) => {
+        const newMembers: Member[] = json.map((row, index) => {
           const newId = Date.now() + index;
           return {
             id: newId,
