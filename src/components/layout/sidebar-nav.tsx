@@ -1,12 +1,11 @@
-
-'use client';
+"use client";
 
 import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
-} from '@/components/ui/sidebar';
-import { useTranslation } from '@/hooks/use-translation';
+} from "@/components/ui/sidebar";
+import { useTranslation } from "@/hooks/use-translation";
 import {
   LayoutDashboard,
   Users,
@@ -16,13 +15,13 @@ import {
   Settings,
   Info,
   UserPlus,
-} from 'lucide-react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useAuth } from '@/contexts/auth-context';
-import { rolesData } from '@/lib/mock-data';
-import type { Permission } from '@/types';
-import React from 'react';
+} from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
+import { rolesData } from "@/lib/mock-data";
+import type { Permission } from "@/types";
+import React from "react";
 
 const navConfig: {
   permission: Permission;
@@ -30,13 +29,13 @@ const navConfig: {
   icon: React.ElementType;
   labelKey: any;
 }[] = [
-  { permission: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, labelKey: 'dashboard' },
-  { permission: 'Members', href: '/members', icon: Users, labelKey: 'members' },
-  { permission: 'Classes', href: '/classes', icon: BookCopy, labelKey: 'classes' },
-  { permission: 'Finance', href: '/finance', icon: Banknote, labelKey: 'finance' },
-  { permission: 'Departments', href: '/departments', icon: Building2, labelKey: 'departments' },
-  { permission: 'About', href: '/about', icon: Info, labelKey: 'about' },
-  { permission: 'Settings', href: '/settings', icon: Settings, labelKey: 'settings' },
+  { permission: "Dashboard", href: "/dashboard", icon: LayoutDashboard, labelKey: "dashboard" },
+  { permission: "Members", href: "/members", icon: UserPlus, labelKey: "members" },
+  { permission: "Classes", href: "/classes", icon: BookCopy, labelKey: "classes" },
+  { permission: "Finance", href: "/finance", icon: Banknote, labelKey: "finance" },
+  { permission: "Departments", href: "/departments", icon: Building2, labelKey: "departments" },
+  { permission: "About", href: "/about", icon: Info, labelKey: "aboutUs" },
+  { permission: "Settings", href: "/settings", icon: Settings, labelKey: "settings" },
 ];
 
 export function SidebarNav() {
@@ -46,32 +45,36 @@ export function SidebarNav() {
 
   const userRole = React.useMemo(() => {
     if (!user) return null;
-    return rolesData.find(role => role.name === user.role);
+    return rolesData.find((role) => role.name === user.role);
   }, [user]);
 
   const userPermissions = userRole?.permissions || [];
 
+  const navItems = React.useMemo(() => {
+    return navConfig
+      .filter((item) => userPermissions.includes(item.permission as Permission))
+  }, [userPermissions]);
+
   return (
     <SidebarMenu>
-      {navConfig
-        .filter(item => userPermissions.includes(item.permission))
-        .map(item => {
-          const label = t(item.labelKey);
-          return (
+      {navItems.map((item) => {
+        const label = t(item.labelKey);
+        const isActive = item.href === '/dashboard' ? pathname === item.href : pathname.startsWith(item.href);
+        return (
             <SidebarMenuItem key={item.href}>
-              <SidebarMenuButton
+            <SidebarMenuButton
                 asChild
-                isActive={pathname.startsWith(item.href)}
-                tooltip={{ children: label, side: 'right' }}
-              >
+                isActive={isActive}
+                tooltip={{ children: label, side: "right" }}
+            >
                 <Link href={item.href}>
-                  <item.icon />
-                  <span>{label}</span>
+                <item.icon />
+                <span>{label}</span>
                 </Link>
-              </SidebarMenuButton>
+            </SidebarMenuButton>
             </SidebarMenuItem>
-          );
-        })}
+        )
+    })}
     </SidebarMenu>
   );
 }
