@@ -29,6 +29,7 @@ const navConfig: { permission: Permission, href: string, icon: React.ElementType
     { permission: 'Classes', href: '/classes', icon: BookCopy, labelKey: 'classes' },
     { permission: 'Finance', href: '/finance', icon: Banknote, labelKey: 'finance' },
     { permission: 'Departments', href: '/departments', icon: Building2, labelKey: 'departments' },
+    { permission: 'About', href: '/about', icon: Info, labelKey: 'about' },
     { permission: 'Settings', href: '/settings', icon: Settings, labelKey: 'settings' },
 ];
 
