@@ -47,7 +47,7 @@ export default function AttendanceClientPage({ classId, classDetails }: { classI
     void lastSubmittedDate; 
     
     return [...attendanceHistory].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
-  }, [attendanceHistory, lastSubmittedDate]);
+  }, [lastSubmittedDate]);
 
   const handleAttendanceChange = (studentId: number, value: AttendanceStatus) => {
     setAttendance((prev) => ({ ...prev, [studentId]: value }));
