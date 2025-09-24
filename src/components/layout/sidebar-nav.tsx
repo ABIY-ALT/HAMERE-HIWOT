@@ -47,30 +47,29 @@ export function SidebarNav() {
 
   const navItems = React.useMemo(() => {
     return navConfig
-      .filter(item => userPermissions.includes(item.permission as Permission))
-      .map(item => ({
-        ...item,
-        label: t(item.labelKey),
-      }));
-  }, [userPermissions, t]);
+      .filter(item => userPermissions.includes(item.permission as Permission));
+  }, [userPermissions]);
 
 
   return (
     <SidebarMenu>
-      {navItems.map((item) => (
-        <SidebarMenuItem key={item.href}>
-          <SidebarMenuButton
-            asChild
-            isActive={pathname.startsWith(item.href)}
-            tooltip={{ children: item.label, side: 'right' }}
-          >
-            <Link href={item.href}>
-              <item.icon />
-              <span>{item.label}</span>
-            </Link>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-      ))}
+      {navItems.map((item) => {
+        const label = t(item.labelKey);
+        return (
+          <SidebarMenuItem key={item.href}>
+            <SidebarMenuButton
+              asChild
+              isActive={pathname.startsWith(item.href)}
+              tooltip={{ children: label, side: 'right' }}
+            >
+              <Link href={item.href}>
+                <item.icon />
+                <span>{label}</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        )
+      })}
     </SidebarMenu>
   );
 }
