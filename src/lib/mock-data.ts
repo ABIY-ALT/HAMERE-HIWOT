@@ -63,29 +63,17 @@ const regenerateDepartmentsData = () => {
     }));
 }
 
-export const addDepartment = (name: string) => {
-    const id = name.toLowerCase().replace(/\s+/g, '-');
-    const translationKey = id.replace(/-/g, '') as TranslationKey; // a bit of a guess, might need a better system
-    if (!departmentDetails[id]) {
-        departmentDetails[id] = { name: translationKey };
-        // This is a hack for now. In a real app, you'd add to a translation file.
-        // @ts-ignore
-        translations.en[translationKey] = name;
-        // @ts-ignore
-        translations.am[translationKey] = name; // You'd need a real translation here
+export const addDepartment = (dept: {id: string, name: TranslationKey}) => {
+    if (!departmentDetails[dept.id]) {
+        departmentDetails[dept.id] = { name: dept.name };
         regenerateDepartmentsData();
     }
 };
 
-export const updateDepartment = (id: string, name: string) => {
+export const updateDepartment = (id: string, name: TranslationKey) => {
     if (departmentDetails[id]) {
-        const translationKey = departmentDetails[id].name;
-         // This is a hack for now. In a real app, you'd add to a translation file.
-        // @ts-ignore
-        translations.en[translationKey] = name;
-        // @ts-ignore
-        translations.am[translationKey] = name; // You'd need a real translation here
-        // The key in departmentDetails remains the same, just the display value changes.
+        departmentDetails[id].name = name;
+        regenerateDepartmentsData();
     }
 };
 
@@ -147,7 +135,8 @@ export const getCurrentUser = (): AppUser | undefined => {
 };
 
 export const addUser = (user: AppUser) => {
-    appUsers.unshift(user);
+    const newUser = { ...user, id: Date.now(), isFirstLogin: true, password: 'password123' }
+    appUsers.unshift(newUser);
 };
 
 export const updateUser = (id: number, updatedData: Partial<AppUser>) => {
@@ -316,8 +305,8 @@ export const addTransaction = (transaction: Transaction) => {
 };
 
 export let rolesData: Role[] = [
-    { id: 'admin', name: 'Admin', permissions: ['Dashboard', 'Members', 'Students', 'Classes', 'Finance', 'Departments', 'About', 'Settings', 'Reports'] },
-    { id: 'teacher', name: 'Teacher', permissions: ['Dashboard', 'Students', 'Classes', 'About', 'Reports'] },
+    { id: 'admin', name: 'Admin', permissions: ['Dashboard', 'Members', 'Classes', 'Finance', 'Departments', 'About', 'Settings', 'Reports'] },
+    { id: 'teacher', name: 'Teacher', permissions: ['Dashboard', 'Classes', 'About', 'Reports'] },
     { id: 'chiefofficer', name: 'Chief Officer', permissions: ['Dashboard', 'Members', 'Finance', 'Departments', 'About', 'Reports'] },
 ];
 
