@@ -5,10 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslation } from '@/hooks/use-translation';
-import { ArrowLeft, FileText, Send } from 'lucide-react';
+import { ArrowLeft, FileText, Send, Paperclip, File } from 'lucide-react';
 import Link from 'next/link';
 import { Separator } from '@/components/ui/separator';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { allReports, departmentDetails, addReport, departmentsData } from '@/lib/mock-data';
 import type { DepartmentReport } from '@/types';
 import { useToast } from '@/hooks/use-toast';
@@ -20,9 +20,11 @@ export default function DepartmentDetailsPage({ params }: { params: { department
   const departmentId = params.departmentId;
   const details = departmentDetails[departmentId];
   const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [newReport, setNewReport] = useState('');
   const [recipientDepartmentIds, setRecipientDepartmentIds] = useState<string[]>([]);
+  const [attachment, setAttachment] = useState<File | null>(null);
   // This state is just to trigger re-renders when reports are added.
   const [reportCount, setReportCount] = useState(allReports.length);
 
@@ -39,11 +41,19 @@ export default function DepartmentDetailsPage({ params }: { params: { department
     return sortedReports.filter(r => r.departmentId === departmentId || (r.recipientDepartmentIds && r.recipientDepartmentIds.includes(departmentId)));
   }, [departmentId, reportCount]);
 
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files[0]) {
+      setAttachment(event.target.files[0]);
+    }
+  };
+
+  const handleAttachClick = () => {
+    fileInputRef.current?.click();
+  };
 
   const handleSubmitReport = () => {
-    if (newReport.trim() === '' || !details) return;
+    if ((newReport.trim() === '' && !attachment) || !details) return;
     
-    // Secretariat is always included as a recipient if not the sender
     const finalRecipients = [...recipientDepartmentIds];
     if (departmentId !== 'secretariat' && !finalRecipients.includes('secretariat')) {
         finalRecipients.push('secretariat');
@@ -57,12 +67,17 @@ export default function DepartmentDetailsPage({ params }: { params: { department
       departmentId: departmentId,
       departmentName: details.name,
       recipientDepartmentIds: finalRecipients,
+      attachmentName: attachment?.name,
+      // In a real app, you'd upload the file and store the URL
+      attachmentUrl: attachment ? URL.createObjectURL(attachment) : undefined, 
     };
 
     addReport(newReportData);
     setReportCount(allReports.length); // Trigger a re-render
     setNewReport('');
     setRecipientDepartmentIds([]);
+    setAttachment(null);
+    if(fileInputRef.current) fileInputRef.current.value = "";
     toast({
         title: "Report Submitted",
         description: "Your report has been successfully submitted."
@@ -123,7 +138,7 @@ export default function DepartmentDetailsPage({ params }: { params: { department
                         <Textarea 
                           id="report-content"
                           placeholder="Type your report here..." 
-                          className="min-h-[200px]"
+                          className="min-h-[150px]"
                           value={newReport}
                           onChange={(e) => setNewReport(e.target.value)}
                         />
@@ -137,6 +152,19 @@ export default function DepartmentDetailsPage({ params }: { params: { department
                             placeholder={t('selectDepartments')}
                           />
                           <p className="text-xs text-muted-foreground">{t('secretariatReceivesCopy')}</p>
+                       </div>
+                       <div>
+                          <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+                          <Button variant="outline" size="sm" onClick={handleAttachClick}>
+                            <Paperclip className="mr-2 h-4 w-4" />
+                            {t('attachAFile')}
+                          </Button>
+                          {attachment && (
+                            <div className="mt-2 text-sm text-muted-foreground flex items-center gap-2">
+                              <File className="h-4 w-4" />
+                              <span>{attachment.name}</span>
+                            </div>
+                          )}
                        </div>
                   </CardContent>
                   <CardFooter>
@@ -164,7 +192,18 @@ export default function DepartmentDetailsPage({ params }: { params: { department
                                         </div>
                                         <p className="text-sm text-muted-foreground">{report.date}</p>
                                     </div>
-                                    <p className="text-sm text-foreground/90">{report.content}</p>
+                                    {report.content && <p className="text-sm text-foreground/90">{report.content}</p>}
+                                     {report.attachmentName && (
+                                        <a 
+                                            href={report.attachmentUrl} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer" 
+                                            className="mt-2 inline-flex items-center gap-2 text-sm text-primary hover:underline"
+                                        >
+                                            <Paperclip className="h-4 w-4" />
+                                            {report.attachmentName}
+                                        </a>
+                                    )}
                                      {report.recipientDepartmentIds && report.recipientDepartmentIds.length > 0 && (
                                         <div className="text-xs text-muted-foreground mt-2">
                                             <strong>{t('recipients')}:</strong> {report.recipientDepartmentIds.map(id => t(departmentDetails[id]?.name)).join(', ')}

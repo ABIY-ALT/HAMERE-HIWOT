@@ -20,8 +20,8 @@ export let allReports: DepartmentReport[] = [
         departmentId: 'education',
         departmentName: 'educationSection',
         attachmentName: 'GuestSpeaker-Bio.pdf',
-        attachmentUrl: 'mock-url',
-        recipientDepartmentIds: ['choir']
+        attachmentUrl: '#',
+        recipientDepartmentIds: ['choir', 'secretariat']
     },
     { 
         id: 3, 
