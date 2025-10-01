@@ -22,7 +22,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { classesData, updateStudent, addStudentTransfer } from '@/lib/mock-data';
+import { classesData, updateStudent as updateStudentInDb, addStudentTransfer, studentsData } from '@/lib/mock-data';
 
 type ClassDetails = {
     name: TranslationKey;
@@ -67,12 +67,10 @@ export default function ClassDetailsClientPage({ classId, details: initialDetail
   const handleConfirmTransfer = () => {
     if (!transferToClass || selectedStudents.length === 0) return;
 
-    const updatedStudents = details.students.filter(s => !selectedStudents.includes(s.id));
-
     selectedStudents.forEach(studentId => {
-        const student = details.students.find(s => s.id === studentId);
+        const student = studentsData.find(s => s.id === studentId);
         if (student) {
-            updateStudent(studentId, { grade: transferToClass });
+            updateStudentInDb(studentId, { grade: transferToClass });
             addStudentTransfer({
                 id: Date.now() + studentId,
                 studentName: student.name,
@@ -83,6 +81,8 @@ export default function ClassDetailsClientPage({ classId, details: initialDetail
         }
     });
     
+    // Visually remove students from current class view
+    const updatedStudents = details.students.filter(s => !selectedStudents.includes(s.id));
     setDetails({ ...details, students: updatedStudents });
 
     toast({
@@ -96,7 +96,6 @@ export default function ClassDetailsClientPage({ classId, details: initialDetail
   };
   
   const isAllSelected = selectedStudents.length > 0 && selectedStudents.length === details.students.length;
-  const isSomeSelected = selectedStudents.length > 0 && !isAllSelected;
 
   return (
     <div className="flex min-h-screen w-full flex-col">
