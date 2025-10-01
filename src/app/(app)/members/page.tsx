@@ -27,7 +27,6 @@ import {
   Pencil,
   Trash2,
   Upload,
-  ArrowRightLeft,
 } from 'lucide-react';
 import Link from 'next/link';
 import { Input } from '@/components/ui/input';
@@ -52,14 +51,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { useRouter } from 'next/navigation';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { TranslationKey } from '@/lib/i18n';
 import { useToast } from '@/hooks/use-toast';
 import * as XLSX from 'xlsx';
-import { studentsData, deleteStudent as deleteStudentFromDb, updateStudent, addStudentTransfer } from '@/lib/mock-data';
-import { Checkbox } from '@/components/ui/checkbox';
+import { studentsData, deleteStudent as deleteStudentFromDb } from '@/lib/mock-data';
 import { classesData } from '@/lib/mock-data';
 
 export default function MembersPage() {
@@ -69,9 +66,6 @@ export default function MembersPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [gradeFilter, setGradeFilter] = useState('all');
-  const [selectedStudents, setSelectedStudents] = useState<number[]>([]);
-  const [isTransferDialogOpen, setIsTransferDialogOpen] = useState(false);
-  const [transferToClass, setTransferToClass] = useState('');
 
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -83,7 +77,7 @@ export default function MembersPage() {
       const matchesSearch =
         lowercasedQuery === '' ||
         member.name.toLowerCase().includes(lowercasedQuery) ||
-        member.studentId.toLowerCase().includes(lowercasedQuery);
+        (member.studentId && member.studentId.toLowerCase().includes(lowercasedQuery));
       const matchesStatus = statusFilter === 'all' || member.status.toLowerCase() === statusFilter;
       const matchesGrade = gradeFilter === 'all' || member.grade === gradeFilter;
       return matchesSearch && matchesStatus && matchesGrade;
@@ -102,7 +96,6 @@ export default function MembersPage() {
     if (memberToDelete) {
       deleteStudentFromDb(memberToDelete.id);
       setAllMembers([...studentsData]);
-      setSelectedStudents(prev => prev.filter(id => id !== memberToDelete.id));
       setMemberToDelete(null);
       toast({
         title: "Member Deleted",
@@ -166,52 +159,6 @@ export default function MembersPage() {
     };
     reader.readAsArrayBuffer(file);
     event.target.value = '';
-  };
-
-  const handleSelectStudent = (studentId: number, checked: boolean) => {
-    setSelectedStudents(prev => 
-      checked ? [...prev, studentId] : prev.filter(id => id !== studentId)
-    );
-  };
-  
-  const handleSelectAll = (checked: boolean) => {
-      if (checked) {
-          setSelectedStudents(filteredMembers.map(m => m.id));
-      } else {
-          setSelectedStudents([]);
-      }
-  };
-
-  const handleConfirmTransfer = () => {
-    if (!transferToClass || selectedStudents.length === 0) return;
-
-    const fromClass = filteredMembers.find(m => m.id === selectedStudents[0])?.grade;
-
-    if (!fromClass) return;
-
-    selectedStudents.forEach(studentId => {
-        updateStudent(studentId, { grade: transferToClass });
-        const student = allMembers.find(m => m.id === studentId);
-        if (student) {
-            addStudentTransfer({
-                id: Date.now() + studentId,
-                studentName: student.name,
-                fromClass: fromClass,
-                toClass: transferToClass,
-                date: new Date().toISOString().split('T')[0],
-            });
-        }
-    });
-
-    toast({
-      title: t('transferStudents'),
-      description: t('transferNStudents', { count: selectedStudents.length })
-    });
-
-    setAllMembers([...studentsData]);
-    setSelectedStudents([]);
-    setIsTransferDialogOpen(false);
-    setTransferToClass('');
   };
 
   return (
@@ -278,12 +225,6 @@ export default function MembersPage() {
                   <Upload className="mr-2 h-4 w-4" />
                   {t('import')}
                 </Button>
-                {selectedStudents.length > 0 && (
-                   <Button size="sm" onClick={() => setIsTransferDialogOpen(true)}>
-                    <ArrowRightLeft className="mr-2 h-4 w-4" />
-                    {t('transferNStudents', { count: selectedStudents.length })}
-                  </Button>
-                )}
             </div>
           </CardHeader>
           <CardContent>
@@ -291,13 +232,6 @@ export default function MembersPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[50px]">
-                        <Checkbox 
-                            onCheckedChange={handleSelectAll}
-                            checked={selectedStudents.length === filteredMembers.length && filteredMembers.length > 0}
-                            aria-label="Select all"
-                        />
-                    </TableHead>
                     <TableHead>Member ID</TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Age</TableHead>
@@ -308,14 +242,7 @@ export default function MembersPage() {
                 </TableHeader>
                 <TableBody>
                   {filteredMembers.map((member) => (
-                    <TableRow key={member.id} data-state={selectedStudents.includes(member.id) && "selected"}>
-                      <TableCell>
-                        <Checkbox 
-                            onCheckedChange={(checked) => handleSelectStudent(member.id, !!checked)}
-                            checked={selectedStudents.includes(member.id)}
-                            aria-label={`Select ${member.name}`}
-                        />
-                      </TableCell>
+                    <TableRow key={member.id}>
                       <TableCell className="font-medium">
                         {member.studentId}
                       </TableCell>
@@ -396,33 +323,6 @@ export default function MembersPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      <Dialog open={isTransferDialogOpen} onOpenChange={setIsTransferDialogOpen}>
-        <DialogContent>
-            <DialogHeader>
-                <DialogTitle>{t('transferStudents')}</DialogTitle>
-                <DialogDescription>
-                    {t('transferStudentsDescription', { count: selectedStudents.length })}
-                </DialogDescription>
-            </DialogHeader>
-            <div className="py-4">
-                 <Select value={transferToClass} onValueChange={setTransferToClass}>
-                    <SelectTrigger>
-                        <SelectValue placeholder={t('toClass')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {classesData.map(c => (
-                            <SelectItem key={c.id} value={c.id}>{t(c.name)}</SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
-            </div>
-            <DialogFooter>
-                <Button variant="outline" onClick={() => setIsTransferDialogOpen(false)}>{t('cancel')}</Button>
-                <Button onClick={handleConfirmTransfer} disabled={!transferToClass}>{t('confirmTransfer')}</Button>
-            </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
     </div>
   );
