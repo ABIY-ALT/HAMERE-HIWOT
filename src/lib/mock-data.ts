@@ -1,7 +1,6 @@
 
 import type { DepartmentReport, AttendanceLog, AppUser, ClassReport, Student, Transaction, Role, Permission } from '@/types';
 import type { TranslationKey } from './i18n';
-import { translations } from './i18n';
 
 // In-memory store for department reports to simulate a database.
 export let allReports: DepartmentReport[] = [

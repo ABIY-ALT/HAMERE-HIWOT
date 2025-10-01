@@ -1,3 +1,4 @@
+
 'use client';
 import { Header } from '@/components/layout/header';
 import { Button } from '@/components/ui/button';
@@ -141,10 +142,10 @@ export default function DepartmentDetailsPage({ params }: { params: { department
               </Card>
             )}
 
-            <Card>
+            <Card className={isSecretariat ? 'col-span-1' : 'md:col-span-1'}>
                 <CardHeader>
-                    <CardTitle>{isSecretariat ? "All Department Reports" : "Submitted Reports"}</CardTitle>
-                    <CardDescription>View previously submitted reports.</CardDescription>
+                    <CardTitle>{isSecretariat ? "All Department Reports" : "Submitted & Received Reports"}</CardTitle>
+                    <CardDescription>View previously submitted reports and reports sent to you.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                     {reports.length > 0 ? (
