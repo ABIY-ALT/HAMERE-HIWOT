@@ -53,10 +53,6 @@ export default function LoginPage() {
         className="relative flex min-h-screen flex-col items-center justify-center bg-cover bg-center p-4"
         style={{
           backgroundImage: "url('/images/hamere.jpg')",
-          backgroundSize: 'cover',      
-          backgroundPosition: 'center', 
-          width: '100%',
-          height: '400px'              
         }}
         data-ai-hint="church building"
     >

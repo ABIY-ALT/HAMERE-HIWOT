@@ -28,26 +28,28 @@ import { format } from 'date-fns';
 import type { DateRange } from 'react-day-picker';
 
 const TransactionTable = ({ data, t, language }: { data: Transaction[], t: (key: any) => string, language: 'en' | 'am' }) => (
-  <Table>
-    <TableHeader>
-      <TableRow>
-        <TableHead>{t('date')}</TableHead>
-        <TableHead>{t('receiptNumber')}</TableHead>
-        <TableHead>{t('description')}</TableHead>
-        <TableHead className="text-right">{t('amount')}</TableHead>
-      </TableRow>
-    </TableHeader>
-    <TableBody>
-      {data.map((transaction) => (
-        <TableRow key={transaction.id}>
-          <TableCell>{formatToEthiopianDate(transaction.date, language)}</TableCell>
-          <TableCell>{transaction.receiptNumber}</TableCell>
-          <TableCell className="font-medium">{transaction.description}</TableCell>
-          <TableCell className="text-right font-mono">ETB {transaction.amount.toFixed(2)}</TableCell>
+  <div className="overflow-x-auto">
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>{t('date')}</TableHead>
+          <TableHead>{t('receiptNumber')}</TableHead>
+          <TableHead>{t('description')}</TableHead>
+          <TableHead className="text-right">{t('amount')}</TableHead>
         </TableRow>
-      ))}
-    </TableBody>
-  </Table>
+      </TableHeader>
+      <TableBody>
+        {data.map((transaction) => (
+          <TableRow key={transaction.id}>
+            <TableCell>{formatToEthiopianDate(transaction.date, language)}</TableCell>
+            <TableCell>{transaction.receiptNumber}</TableCell>
+            <TableCell className="font-medium">{transaction.description}</TableCell>
+            <TableCell className="text-right font-mono">ETB {transaction.amount.toFixed(2)}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  </div>
 );
 
 export default function FinancePage() {
@@ -170,7 +172,7 @@ export default function FinancePage() {
           </Card>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 md:gap-8">
+        <div className="grid gap-4 grid-cols-1 lg:grid-cols-2 lg:gap-8">
           <Card>
               <CardHeader>
                 <CardTitle>Financial Overview</CardTitle>
@@ -197,9 +199,9 @@ export default function FinancePage() {
           </Card>
 
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center sm:justify-between gap-4">
               <CardTitle>{t('transactions')}</CardTitle>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
                 <Popover>
                     <PopoverTrigger asChild>
                       <Button
@@ -207,7 +209,7 @@ export default function FinancePage() {
                         variant={"outline"}
                         size="sm"
                         className={cn(
-                          "w-[240px] justify-start text-left font-normal",
+                          "w-full sm:w-[240px] justify-start text-left font-normal",
                           !date && "text-muted-foreground"
                         )}
                       >
@@ -251,7 +253,7 @@ export default function FinancePage() {
             </CardHeader>
             <CardContent>
               <Tabs defaultValue="all">
-                <TabsList>
+                <TabsList className="grid grid-cols-3 w-full sm:w-auto">
                   <TabsTrigger value="all">{t('all')}</TabsTrigger>
                   <TabsTrigger value="income">
                     <ArrowUpCircle className="mr-2 h-4 w-4 text-green-600" /> {t('income')}

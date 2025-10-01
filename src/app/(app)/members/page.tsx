@@ -163,26 +163,26 @@ export default function MembersPage() {
       <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
                 <CardTitle>All Members</CardTitle>
                 <CardDescription>
                   View and manage all registered members of the Sabbath school.
                 </CardDescription>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="relative">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <div className="relative flex-1">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
                     type="search"
                     placeholder="Search members..."
-                    className="pl-8 sm:w-[200px] md:w-[300px]"
+                    className="pl-8 w-full"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                   />
                 </div>
                  <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-[180px]">
+                  <SelectTrigger className="w-full sm:w-[180px]">
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
@@ -198,11 +198,11 @@ export default function MembersPage() {
                   onChange={handleFileImport}
                   accept=".xlsx, .xls"
                 />
-                <Button size="sm" variant="outline" onClick={handleImportClick}>
+                <Button size="sm" variant="outline" onClick={handleImportClick} className="w-full sm:w-auto">
                   <Upload className="mr-2 h-4 w-4" />
                   {t('import')}
                 </Button>
-                <Button size="sm" asChild>
+                <Button size="sm" asChild className="w-full sm:w-auto">
                   <Link href="/members/register">
                     <PlusCircle className="mr-2 h-4 w-4" />
                     Register Member
@@ -212,81 +212,83 @@ export default function MembersPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Member ID</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Age</TableHead>
-                  <TableHead>Grade</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredMembers.map((member) => (
-                  <TableRow key={member.id}>
-                    <TableCell className="font-medium">
-                      {member.studentId}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Avatar className="h-8 w-8">
-                          <AvatarImage
-                            src={member.photoUrl || `https://picsum.photos/seed/${member.id}/40`}
-                          />
-                          <AvatarFallback>
-                            {member.name.charAt(0)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className="font-medium">{member.name}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>{member.age}</TableCell>
-                    <TableCell>
-                      <Badge variant="secondary">{t(member.grade as TranslationKey)}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={member.status === 'Active' ? 'default' : 'outline'}>
-                        {t(member.status.toLowerCase() as 'active' | 'transferred')}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuLabel>{t('actions')}</DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => handleAction('view', member.id)}
-                          >
-                            <Eye className="mr-2 h-4 w-4" />
-                            {t('view')}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => handleAction('edit', member.id)}
-                          >
-                            <Pencil className="mr-2 h-4 w-4" />
-                            {t('edit')}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-destructive"
-                            onClick={() => openDeleteDialog(member)}
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            {t('delete')}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Member ID</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Age</TableHead>
+                    <TableHead>Grade</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {filteredMembers.map((member) => (
+                    <TableRow key={member.id}>
+                      <TableCell className="font-medium">
+                        {member.studentId}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-8 w-8">
+                            <AvatarImage
+                              src={member.photoUrl || `https://picsum.photos/seed/${member.id}/40`}
+                            />
+                            <AvatarFallback>
+                              {member.name.charAt(0)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="font-medium">{member.name}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>{member.age}</TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">{t(member.grade as TranslationKey)}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={member.status === 'Active' ? 'default' : 'outline'}>
+                          {t(member.status.toLowerCase() as 'active' | 'transferred')}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>{t('actions')}</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => handleAction('view', member.id)}
+                            >
+                              <Eye className="mr-2 h-4 w-4" />
+                              {t('view')}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleAction('edit', member.id)}
+                            >
+                              <Pencil className="mr-2 h-4 w-4" />
+                              {t('edit')}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onClick={() => openDeleteDialog(member)}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              {t('delete')}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       </main>

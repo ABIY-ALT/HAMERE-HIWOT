@@ -125,7 +125,7 @@ export default function DepartmentDetailsPage({ params }: { params: { department
           </Button>
         </div>
         
-        <div className={`grid gap-8 ${isSecretariat ? 'grid-cols-1' : 'md:grid-cols-2'}`}>
+        <div className="grid gap-8 grid-cols-1 lg:grid-cols-2">
             {!isSecretariat && (
               <Card>
                   <CardHeader>
@@ -176,7 +176,7 @@ export default function DepartmentDetailsPage({ params }: { params: { department
               </Card>
             )}
 
-            <Card className={isSecretariat ? 'col-span-1' : 'md:col-span-1'}>
+            <Card className="lg:col-span-1">
                 <CardHeader>
                     <CardTitle>{isSecretariat ? "All Department Reports" : "Submitted & Received Reports"}</CardTitle>
                     <CardDescription>View previously submitted reports and reports sent to you.</CardDescription>

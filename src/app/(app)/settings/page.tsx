@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Header } from '@/components/layout/header';
@@ -385,6 +386,18 @@ export default function SettingsPage() {
   const [departmentToDelete, setDepartmentToDelete] = useState<{ id: string; name: TranslationKey } | null>(null);
 
   useEffect(() => { setUsers([...appUsers]); }, []);
+  
+  const handlePermissionsChange = useCallback((roleId: string, newPermissions: string[]) => {
+    setRoles(prevRoles =>
+      prevRoles.map(role =>
+        role.id === roleId ? { ...role, permissions: newPermissions as Permission[] } : role
+      )
+    );
+     // Note: In a real app, you'd also call an API to save this change.
+    updateRole(roleId, { permissions: newPermissions as Permission[] });
+    toast({ title: t('roleUpdated'), description: t('roleUpdatedSuccessMessage') });
+  }, [t]);
+
 
   const getBadgeVariant = (roleName: string) => {
     const role = roles.find(r => r.name === roleName);
@@ -464,170 +477,187 @@ export default function SettingsPage() {
 
   // -------------------- Render --------------------
   return (
-    <div className="p-6 space-y-6">
-      <Header title={t('settings')} description={t('manageYourSettings')} />
+    <div className="flex min-h-screen w-full flex-col">
+      <Header title={t('settings')} />
+      <main className="flex-1 p-4 md:p-6 lg:p-8 space-y-6">
+        <Tabs defaultValue="users" className="space-y-6">
+          <div className="overflow-x-auto">
+            <TabsList>
+              <TabsTrigger value="users">{t('users')}</TabsTrigger>
+              <TabsTrigger value="roles">{t('roles')}</TabsTrigger>
+              <TabsTrigger value="departments">{t('departments')}</TabsTrigger>
+            </TabsList>
+          </div>
 
-      <Tabs defaultValue="users" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="users">{t('users')}</TabsTrigger>
-          <TabsTrigger value="roles">{t('roles')}</TabsTrigger>
-          <TabsTrigger value="departments">{t('departments')}</TabsTrigger>
-        </TabsList>
-
-        {/* Users */}
-        <TabsContent value="users">
-          <Card>
-            <CardHeader className="flex justify-between items-center">
-              <CardTitle>{t('users')}</CardTitle>
-              <Button onClick={() => handleOpenUserDialog()}><PlusCircle className="mr-2 h-4 w-4"/> {t('addUser')}</Button>
-            </CardHeader>
-            <CardContent className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('name')}</TableHead>
-                    <TableHead>{t('email')}</TableHead>
-                    <TableHead>{t('phone')}</TableHead>
-                    <TableHead>{t('role')}</TableHead>
-                    <TableHead>{t('actions')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {users.map(user => (
-                    <TableRow key={user.id}>
-                      <TableCell>{user.name}</TableCell>
-                      <TableCell>{user.email}</TableCell>
-                      <TableCell>{user.phone}</TableCell>
-                      <TableCell><Badge variant={getBadgeVariant(user.role)}>{user.role}</Badge></TableCell>
-                      <TableCell className="flex gap-2">
-                        <Button size="sm" onClick={() => handleOpenUserDialog(user)}><Pencil className="h-4 w-4"/></Button>
-                        <Button size="sm" onClick={() => { setUserForPasswordChange(user); setIsPasswordDialogOpen(true); }}><KeyRound className="h-4 w-4"/></Button>
-                        <Button size="sm" variant="destructive" onClick={() => setUserToDelete(user)}><Trash2 className="h-4 w-4"/></Button>
-                      </TableCell>
+          {/* Users */}
+          <TabsContent value="users">
+            <Card>
+              <CardHeader className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+                <div>
+                  <CardTitle>{t('users')}</CardTitle>
+                  <CardDescription>{t('usersDescription')}</CardDescription>
+                </div>
+                <Button onClick={() => handleOpenUserDialog()} className="w-full md:w-auto"><PlusCircle className="mr-2 h-4 w-4"/> {t('addUser')}</Button>
+              </CardHeader>
+              <CardContent className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('name')}</TableHead>
+                      <TableHead className="hidden sm:table-cell">{t('email')}</TableHead>
+                      <TableHead className="hidden md:table-cell">{t('phone')}</TableHead>
+                      <TableHead>{t('role')}</TableHead>
+                      <TableHead>{t('actions')}</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
+                  </TableHeader>
+                  <TableBody>
+                    {users.map(user => (
+                      <TableRow key={user.id}>
+                        <TableCell>{user.name}</TableCell>
+                        <TableCell className="hidden sm:table-cell">{user.email}</TableCell>
+                        <TableCell className="hidden md:table-cell">{user.phone}</TableCell>
+                        <TableCell><Badge variant={getBadgeVariant(user.role)}>{user.role}</Badge></TableCell>
+                        <TableCell className="flex gap-1 sm:gap-2">
+                          <Button size="sm" variant="ghost" onClick={() => handleOpenUserDialog(user)}><Pencil className="h-4 w-4"/></Button>
+                          <Button size="sm" variant="ghost" onClick={() => { setUserForPasswordChange(user); setIsPasswordDialogOpen(true); }}><KeyRound className="h-4 w-4"/></Button>
+                          <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setUserToDelete(user)}><Trash2 className="h-4 w-4"/></Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-        {/* Roles */}
-        <TabsContent value="roles">
-          <Card>
-            <CardHeader className="flex justify-between items-center">
-              <CardTitle>{t('roles')}</CardTitle>
-              <Button onClick={() => handleOpenRoleDialog()}><PlusCircle className="mr-2 h-4 w-4"/> {t('addRole')}</Button>
-            </CardHeader>
-            <CardContent className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('roleName')}</TableHead>
-                    <TableHead>{t('permissions')}</TableHead>
-                    <TableHead>{t('actions')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {roles.map(role => (
-                    <TableRow key={role.id}>
-                      <TableCell>{role.name}</TableCell>
-                      <TableCell>{role.permissions.join(', ')}</TableCell>
-                      <TableCell className="flex gap-2">
-                        <Button size="sm" onClick={() => handleOpenRoleDialog(role)}><Pencil className="h-4 w-4"/></Button>
-                        <Button size="sm" variant="destructive" onClick={() => setRoleToDelete(role)}><Trash2 className="h-4 w-4"/></Button>
-                      </TableCell>
+          {/* Roles */}
+          <TabsContent value="roles">
+            <Card>
+              <CardHeader className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+                <div>
+                  <CardTitle>{t('roles')}</CardTitle>
+                  <CardDescription>{t('manageRoles')}</CardDescription>
+                </div>
+                <Button onClick={() => handleOpenRoleDialog()} className="w-full md:w-auto"><PlusCircle className="mr-2 h-4 w-4"/> {t('addRole')}</Button>
+              </CardHeader>
+              <CardContent className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('roleName')}</TableHead>
+                      <TableHead>{t('permissions')}</TableHead>
+                      <TableHead>{t('actions')}</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
+                  </TableHeader>
+                  <TableBody>
+                    {roles.map(role => (
+                      <TableRow key={role.id}>
+                        <TableCell>{role.name}</TableCell>
+                        <TableCell className="max-w-xs md:max-w-md lg:max-w-lg">
+                           <MultiSelect
+                              options={permissionOptions.map(opt => ({...opt, label: t(opt.label.toLowerCase() as TranslationKey)}))}
+                              selected={role.permissions}
+                              onChange={(newPermissions) => handlePermissionsChange(role.id, newPermissions)}
+                              placeholder={t('selectPermissions')}
+                              className="min-w-[300px]"
+                            />
+                        </TableCell>
+                        <TableCell className="flex gap-1 sm:gap-2">
+                          <Button size="sm" variant="ghost" onClick={() => handleOpenRoleDialog(role)}><Pencil className="h-4 w-4"/></Button>
+                          <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setRoleToDelete(role)}><Trash2 className="h-4 w-4"/></Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-        {/* Departments */}
-        <TabsContent value="departments">
-          <Card>
-            <CardHeader className="flex justify-between items-center">
-              <CardTitle>{t('departments')}</CardTitle>
-              <Button onClick={() => handleOpenDepartmentDialog()}><PlusCircle className="mr-2 h-4 w-4"/> {t('addDepartment')}</Button>
-            </CardHeader>
-            <CardContent className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('departmentName')}</TableHead>
-                    <TableHead>{t('actions')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {departments.map(dept => (
-                    <TableRow key={dept.id}>
-                      <TableCell>{t(dept.name)}</TableCell>
-                      <TableCell className="flex gap-2">
-                        <Button size="sm" onClick={() => handleOpenDepartmentDialog(dept)}><Pencil className="h-4 w-4"/></Button>
-                        <Button size="sm" variant="destructive" onClick={() => setDepartmentToDelete(dept)}><Trash2 className="h-4 w-4"/></Button>
-                      </TableCell>
+          {/* Departments */}
+          <TabsContent value="departments">
+            <Card>
+              <CardHeader className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+                <CardTitle>{t('departments')}</CardTitle>
+                <Button onClick={() => handleOpenDepartmentDialog()} className="w-full md:w-auto"><PlusCircle className="mr-2 h-4 w-4"/> {t('addDepartment')}</Button>
+              </CardHeader>
+              <CardContent className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('departmentName')}</TableHead>
+                      <TableHead>{t('actions')}</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+                  </TableHeader>
+                  <TableBody>
+                    {departments.map(dept => (
+                      <TableRow key={dept.id}>
+                        <TableCell>{t(dept.name)}</TableCell>
+                        <TableCell className="flex gap-1 sm:gap-2">
+                          <Button size="sm" variant="ghost" onClick={() => handleOpenDepartmentDialog(dept)}><Pencil className="h-4 w-4"/></Button>
+                          <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setDepartmentToDelete(dept)}><Trash2 className="h-4 w-4"/></Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
 
-      {/* Dialogs */}
-      <UserDialog user={currentUser} isOpen={isUserDialogOpen} onOpenChange={setIsUserDialogOpen} onSave={handleSaveUser} roles={roles} />
-      <ChangePasswordDialog user={userForPasswordChange} isOpen={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen} />
-      <RoleDialog role={currentRole} isOpen={isRoleDialogOpen} onOpenChange={setIsRoleDialogOpen} onSave={handleSaveRole} />
-      <DepartmentDialog department={currentDepartment} isOpen={isDepartmentDialogOpen} onOpenChange={setIsDepartmentDialogOpen} onSave={handleSaveDepartment} />
+        {/* Dialogs */}
+        <UserDialog user={currentUser} isOpen={isUserDialogOpen} onOpenChange={setIsUserDialogOpen} onSave={handleSaveUser} roles={roles} />
+        <ChangePasswordDialog user={userForPasswordChange} isOpen={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen} />
+        <RoleDialog role={currentRole} isOpen={isRoleDialogOpen} onOpenChange={setIsRoleDialogOpen} onSave={handleSaveRole} />
+        <DepartmentDialog department={currentDepartment} isOpen={isDepartmentDialogOpen} onOpenChange={setIsDepartmentDialogOpen} onSave={handleSaveDepartment} />
 
-      {/* AlertDialogs */}
-      {userToDelete && (
-        <AlertDialog open={!!userToDelete} onOpenChange={() => setUserToDelete(null)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t('deleteUser')}</AlertDialogTitle>
-              <AlertDialogDescription>{t('confirmDeleteUser', { name: userToDelete.name })}</AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-              <AlertDialogAction onClick={() => handleDeleteUser(userToDelete)}>{t('delete')}</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )}
+        {/* AlertDialogs */}
+        {userToDelete && (
+          <AlertDialog open={!!userToDelete} onOpenChange={() => setUserToDelete(null)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t('deleteUser')}</AlertDialogTitle>
+                <AlertDialogDescription>{t('confirmDeleteUser', { name: userToDelete.name })}</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+                <AlertDialogAction onClick={() => handleDeleteUser(userToDelete)}>{t('delete')}</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
 
-      {roleToDelete && (
-        <AlertDialog open={!!roleToDelete} onOpenChange={() => setRoleToDelete(null)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t('deleteRole')}</AlertDialogTitle>
-              <AlertDialogDescription>{t('confirmDeleteRole', { name: roleToDelete.name })}</AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-              <AlertDialogAction onClick={() => handleDeleteRole(roleToDelete)}>{t('delete')}</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )}
+        {roleToDelete && (
+          <AlertDialog open={!!roleToDelete} onOpenChange={() => setRoleToDelete(null)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t('deleteRole')}</AlertDialogTitle>
+                <AlertDialogDescription>{t('confirmDeleteRole', { name: roleToDelete.name })}</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+                <AlertDialogAction onClick={() => handleDeleteRole(roleToDelete)}>{t('delete')}</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
 
-      {departmentToDelete && (
-        <AlertDialog open={!!departmentToDelete} onOpenChange={() => setDepartmentToDelete(null)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t('deleteDepartment')}</AlertDialogTitle>
-              <AlertDialogDescription>{t('confirmDeleteDepartment', { name: departmentToDelete.name })}</AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-              <AlertDialogAction onClick={() => handleDeleteDepartment(departmentToDelete)}>{t('delete')}</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )}
+        {departmentToDelete && (
+          <AlertDialog open={!!departmentToDelete} onOpenChange={() => setDepartmentToDelete(null)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t('deleteDepartment')}</AlertDialogTitle>
+                <AlertDialogDescription>{t('confirmDeleteDepartment', { name: departmentToDelete.name })}</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+                <AlertDialogAction onClick={() => handleDeleteDepartment(departmentToDelete)}>{t('delete')}</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
+      </main>
     </div>
   );
 }
