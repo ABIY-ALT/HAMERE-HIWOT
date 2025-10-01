@@ -9,9 +9,11 @@ import { ArrowLeft, FileText, Send } from 'lucide-react';
 import Link from 'next/link';
 import { Separator } from '@/components/ui/separator';
 import React, { useState, useMemo } from 'react';
-import { allReports, departmentDetails, addReport } from '@/lib/mock-data';
+import { allReports, departmentDetails, addReport, departmentsData } from '@/lib/mock-data';
 import type { DepartmentReport } from '@/types';
 import { useToast } from '@/hooks/use-toast';
+import { MultiSelect } from '@/components/ui/multi-select';
+import { Label } from '@/components/ui/label';
 
 export default function DepartmentDetailsPage({ params }: { params: { departmentId: string } }) {
   const { t } = useTranslation();
@@ -20,6 +22,7 @@ export default function DepartmentDetailsPage({ params }: { params: { department
   const { toast } = useToast();
 
   const [newReport, setNewReport] = useState('');
+  const [recipientDepartmentIds, setRecipientDepartmentIds] = useState<string[]>([]);
   // This state is just to trigger re-renders when reports are added.
   const [reportCount, setReportCount] = useState(allReports.length);
 
@@ -32,13 +35,20 @@ export default function DepartmentDetailsPage({ params }: { params: { department
     if (departmentId === 'secretariat') {
       return sortedReports;
     }
-    return sortedReports.filter(r => r.departmentId === departmentId);
+    // A department can see reports they submitted, and reports sent to them.
+    return sortedReports.filter(r => r.departmentId === departmentId || (r.recipientDepartmentIds && r.recipientDepartmentIds.includes(departmentId)));
   }, [departmentId, reportCount]);
 
 
   const handleSubmitReport = () => {
     if (newReport.trim() === '' || !details) return;
     
+    // Secretariat is always included as a recipient if not the sender
+    const finalRecipients = [...recipientDepartmentIds];
+    if (departmentId !== 'secretariat' && !finalRecipients.includes('secretariat')) {
+        finalRecipients.push('secretariat');
+    }
+
     const newReportData: DepartmentReport = {
       id: Date.now(),
       date: new Date().toISOString().split('T')[0],
@@ -46,11 +56,13 @@ export default function DepartmentDetailsPage({ params }: { params: { department
       content: newReport,
       departmentId: departmentId,
       departmentName: details.name,
+      recipientDepartmentIds: finalRecipients,
     };
 
     addReport(newReportData);
     setReportCount(allReports.length); // Trigger a re-render
     setNewReport('');
+    setRecipientDepartmentIds([]);
     toast({
         title: "Report Submitted",
         description: "Your report has been successfully submitted."
@@ -81,6 +93,9 @@ export default function DepartmentDetailsPage({ params }: { params: { department
   }
 
   const isSecretariat = departmentId === 'secretariat';
+  const departmentOptions = departmentsData
+    .filter(d => d.id !== departmentId && d.id !== 'secretariat')
+    .map(d => ({ value: d.id, label: t(d.name) }));
 
   return (
     <div className="flex min-h-screen w-full flex-col">
@@ -95,20 +110,34 @@ export default function DepartmentDetailsPage({ params }: { params: { department
           </Button>
         </div>
         
-        <div className={`grid gap-8 ${isSecretariat ? 'md:grid-cols-1' : 'md:grid-cols-2'}`}>
+        <div className={`grid gap-8 ${isSecretariat ? 'grid-cols-1' : 'md:grid-cols-2'}`}>
             {!isSecretariat && (
               <Card>
                   <CardHeader>
                       <CardTitle>{t('submitReport')}</CardTitle>
                       <CardDescription>Submit a new activity report for this department.</CardDescription>
                   </CardHeader>
-                  <CardContent>
-                      <Textarea 
-                        placeholder="Type your report here..." 
-                        className="min-h-[200px]"
-                        value={newReport}
-                        onChange={(e) => setNewReport(e.target.value)}
-                      />
+                  <CardContent className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor='report-content'>{t('reportContent')}</Label>
+                        <Textarea 
+                          id="report-content"
+                          placeholder="Type your report here..." 
+                          className="min-h-[200px]"
+                          value={newReport}
+                          onChange={(e) => setNewReport(e.target.value)}
+                        />
+                      </div>
+                       <div className="space-y-2">
+                          <Label>{t('sendTo')}</Label>
+                          <MultiSelect
+                            options={departmentOptions}
+                            selected={recipientDepartmentIds}
+                            onChange={setRecipientDepartmentIds}
+                            placeholder={t('selectDepartments')}
+                          />
+                          <p className="text-xs text-muted-foreground">{t('secretariatReceivesCopy')}</p>
+                       </div>
                   </CardContent>
                   <CardFooter>
                       <Button className="ml-auto" onClick={handleSubmitReport}>
@@ -119,10 +148,10 @@ export default function DepartmentDetailsPage({ params }: { params: { department
               </Card>
             )}
 
-            <Card>
+            <Card className={isSecretariat ? 'col-span-1' : 'md:col-span-1'}>
                 <CardHeader>
-                    <CardTitle>{isSecretariat ? "All Department Reports" : "Submitted Reports"}</CardTitle>
-                    <CardDescription>View previously submitted reports.</CardDescription>
+                    <CardTitle>{isSecretariat ? "All Department Reports" : "Submitted & Received Reports"}</CardTitle>
+                    <CardDescription>View previously submitted reports and reports sent to you.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                     {reports.length > 0 ? (
@@ -131,12 +160,16 @@ export default function DepartmentDetailsPage({ params }: { params: { department
                                 <div className="mb-4">
                                     <div className="flex justify-between items-baseline mb-1">
                                         <div>
-                                          <p className="font-semibold">{report.submittedBy}</p>
-                                          {isSecretariat && <p className="text-xs text-muted-foreground">{t(report.departmentName)}</p>}
+                                          <p className="font-semibold">{report.submittedBy} <span className="text-muted-foreground font-normal">({t(report.departmentName)})</span></p>
                                         </div>
                                         <p className="text-sm text-muted-foreground">{report.date}</p>
                                     </div>
                                     <p className="text-sm text-foreground/90">{report.content}</p>
+                                     {report.recipientDepartmentIds && report.recipientDepartmentIds.length > 0 && (
+                                        <div className="text-xs text-muted-foreground mt-2">
+                                            <strong>{t('recipients')}:</strong> {report.recipientDepartmentIds.map(id => t(departmentDetails[id]?.name)).join(', ')}
+                                        </div>
+                                    )}
                                 </div>
                                 {index < reports.length - 1 && <Separator />}
                             </div>
