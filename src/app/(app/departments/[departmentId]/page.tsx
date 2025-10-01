@@ -36,13 +36,16 @@ export default function DepartmentDetailsPage({ params }: { params: { department
       return sortedReports;
     }
     // A department can see reports they submitted, and reports sent to them.
-    return sortedReports.filter(r => r.departmentId === departmentId || r.recipientDepartmentIds?.includes(departmentId));
+    return sortedReports.filter(r => r.departmentId === departmentId || (r.recipientDepartmentIds && r.recipientDepartmentIds.includes(departmentId)));
   }, [departmentId, reportCount]);
 
 
   const handleSubmitReport = () => {
     if (newReport.trim() === '' || !details) return;
     
+    // Secretariat is always included as a recipient if not the sender
+    const finalRecipients = [...new Set([...recipientDepartmentIds, ...(departmentId !== 'secretariat' ? ['secretariat'] : [])])];
+
     const newReportData: DepartmentReport = {
       id: Date.now(),
       date: new Date().toISOString().split('T')[0],
@@ -50,7 +53,7 @@ export default function DepartmentDetailsPage({ params }: { params: { department
       content: newReport,
       departmentId: departmentId,
       departmentName: details.name,
-      recipientDepartmentIds: recipientDepartmentIds,
+      recipientDepartmentIds: finalRecipients,
     };
 
     addReport(newReportData);
