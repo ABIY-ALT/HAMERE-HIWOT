@@ -1,5 +1,5 @@
 
-import type { DepartmentReport, AttendanceLog, AppUser, ClassReport, Student, Transaction, Role, Permission } from '@/types';
+import type { DepartmentReport, AttendanceLog, AppUser, ClassReport, Student, Transaction, Role, Permission, StudentTransfer } from '@/types';
 import type { TranslationKey } from './i18n';
 
 // In-memory store for department reports to simulate a database.
@@ -261,12 +261,12 @@ export let studentsData: Student[] = [
     registrationDate: '2022-11-01',
     photoUrl: undefined,
   },
-   { id: 6, studentId: 'H006', name: 'Student F', age: 6, grade: 'qedamay', status: 'Active', parentPhone: '+251912345678', gender: 'Female', guardianName: 'Father F', photoUrl: undefined, },
-   { id: 7, studentId: 'H007', name: 'Student G', age: 6, grade: 'qedamay', status: 'Active', parentPhone: '+251912345678', gender: 'Male', guardianName: 'Father G', photoUrl: undefined, },
-   { id: 8, studentId: 'H008', name: 'Student H', age: 7, grade: "kalay", status: 'Active', parentPhone: '+251912345678', gender: 'Female', guardianName: 'Father H', photoUrl: undefined, },
-   { id: 9, studentId: 'H009', name: 'Student I', age: 7, grade: "kalay", status: 'Active', parentPhone: '+251912345678', gender: 'Male', guardianName: 'Father I', photoUrl: undefined, },
-   { id: 10, studentId: 'H010', name: 'Student J', age: 8, grade: 'rabay', status: 'Active', parentPhone: '+251912345678', gender: 'Female', guardianName: 'Father J', photoUrl: undefined, },
-   { id: 11, studentId: 'H011', name: 'Student K', age: 9, grade: 'rabay', status: 'Active', parentPhone: '+251912345678', gender: 'Male', guardianName: 'Father K', photoUrl: undefined, },
+   { id: 6, studentId: 'H006', name: 'Derartu Tulu', age: 6, grade: 'qedamay', status: 'Active', parentPhone: '+251912345678', gender: 'Female', guardianName: 'Tulu Habte', photoUrl: undefined, },
+   { id: 7, studentId: 'H007', name: 'Fatuma Roba', age: 6, grade: 'qedamay', status: 'Active', parentPhone: '+251912345678', gender: 'Female', guardianName: 'Roba Bulcha', photoUrl: undefined, },
+   { id: 8, studentId: 'H008', name: 'Gelete Burka', age: 7, grade: "kalay", status: 'Active', parentPhone: '+251912345678', gender: 'Female', guardianName: 'Burka Bati', photoUrl: undefined, },
+   { id: 9, studentId: 'H009', name: 'Sileshi Sihine', age: 7, grade: "kalay", status: 'Active', parentPhone: '+251912345678', gender: 'Male', guardianName: 'Sihine Wolde', photoUrl: undefined, },
+   { id: 10, studentId: 'H010', name: 'Almaz Ayana', age: 8, grade: 'rabay', status: 'Active', parentPhone: '+251912345678', gender: 'Female', guardianName: 'Ayana Eba', photoUrl: undefined, },
+   { id: 11, studentId: 'H011', name: 'Genzebe Dibaba', age: 9, grade: 'rabay', status: 'Active', parentPhone: '+251912345678', gender: 'Female', guardianName: 'Dibaba Keneni', photoUrl: undefined, },
 ];
 
 export const addStudent = (student: Student) => {
@@ -334,3 +334,11 @@ export const classesData: { id: string, name: TranslationKey }[] = [
     { id: 'rabay', name: 'rabay' },
 ];
 export const mockDepartments = departmentsData;
+
+export let studentTransfers: StudentTransfer[] = [
+    { id: 1, studentName: 'Haile Gebrselassie', fromClass: 'kalay', toClass: 'salsay', date: '2023-09-01' }
+];
+
+export const addStudentTransfer = (transfer: StudentTransfer) => {
+    studentTransfers.unshift(transfer);
+};

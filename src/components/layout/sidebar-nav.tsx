@@ -5,6 +5,8 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
 } from "@/components/ui/sidebar";
 import { useTranslation } from "@/hooks/use-translation";
 import {
@@ -16,6 +18,7 @@ import {
   Settings,
   Info,
   UserPlus,
+  ArrowRightLeft,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -29,9 +32,20 @@ const navConfig: {
   href: string;
   icon: React.ElementType;
   labelKey: any;
+  subItems?: { href: string; labelKey: any }[];
 }[] = [
   { permission: "Dashboard", href: "/dashboard", icon: LayoutDashboard, labelKey: "dashboard" },
-  { permission: "Members", href: "/members", icon: UserPlus, labelKey: "members" },
+  { 
+    permission: "Members", 
+    href: "/members", 
+    icon: UserPlus, 
+    labelKey: "members",
+    subItems: [
+        { href: "/members", labelKey: "allStudents" },
+        { href: "/members/register", labelKey: "registerStudent" },
+        { href: "/members/transfers", labelKey: "studentTransfers" },
+    ]
+  },
   { permission: "Classes", href: "/classes", icon: BookCopy, labelKey: "classes" },
   { permission: "Finance", href: "/finance", icon: Banknote, labelKey: "finance" },
   { permission: "Departments", href: "/departments", icon: Building2, labelKey: "departments" },
@@ -63,16 +77,33 @@ export function SidebarNav() {
         const isActive = item.href === '/dashboard' ? pathname === item.href : pathname.startsWith(item.href);
         return (
             <SidebarMenuItem key={item.href}>
-            <SidebarMenuButton
-                asChild
-                isActive={isActive}
-                tooltip={{ children: label, side: "right" }}
-            >
-                <Link href={item.href}>
-                <item.icon />
-                <span>{label}</span>
-                </Link>
-            </SidebarMenuButton>
+                <SidebarMenuButton
+                    asChild
+                    isActive={isActive}
+                    tooltip={{ children: label, side: "right" }}
+                >
+                    <Link href={item.href}>
+                    <item.icon />
+                    <span>{label}</span>
+                    </Link>
+                </SidebarMenuButton>
+                 {item.subItems && isActive && (
+                    <SidebarMenuSub>
+                        {item.subItems.map(subItem => {
+                           const subLabel = t(subItem.labelKey);
+                           const isSubActive = pathname === subItem.href;
+                           return (
+                             <SidebarMenuItem key={subItem.href}>
+                               <SidebarMenuSubButton asChild isActive={isSubActive}>
+                                 <Link href={subItem.href}>
+                                   <span>{subLabel}</span>
+                                 </Link>
+                               </SidebarMenuSubButton>
+                             </SidebarMenuItem>
+                           )
+                        })}
+                    </SidebarMenuSub>
+                 )}
             </SidebarMenuItem>
         )
     })}
