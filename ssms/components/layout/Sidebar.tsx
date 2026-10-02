@@ -188,7 +188,7 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
         children: [
           { labelEn: 'Assets', labelAm: 'ንብረቶች', href: '/dashboard/property/assets', permissions: ['ASSET_VIEW'] },
           { labelEn: 'Custody', labelAm: 'ሃላፊነት', href: '/dashboard/property/custody', permissions: ['ASSET_VIEW'] },
-          { labelEn: 'Transfers', labelAm: 'ዝውውር', href: '/dashboard/property/transfers', permissions: ['ASSET_TRANSFER'] },
+          { labelEn: 'Transfers', labelAm: 'ዝውውር', href: '/dashboard/property/transfers', permissions: ['ASSET_VIEW'] },
           { labelEn: 'Maintenance', labelAm: 'ጥገና', href: '/dashboard/property/maintenance', permissions: ['ASSET_VIEW'] },
           { labelEn: 'Inventory', labelAm: 'ዝርዝር', href: '/dashboard/property/inventory', permissions: ['ASSET_VIEW'] },
         ],

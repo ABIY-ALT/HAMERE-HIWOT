@@ -90,6 +90,20 @@ try {
   const { error: programsTable } = await db.from('programs').select('id').limit(1);
   if (programsTable) problem('Programs table missing — run migration 013_programs.sql');
   else ok('Migration 013 (programs) applied');
+  const { error: assetsTable } = await db.from('assets').select('id').limit(1);
+  if (assetsTable) problem('Property tables missing — run migration 014_property.sql');
+  else {
+    ok('Migration 014 (property) applied');
+    const probes = {
+      'asset register': db.from('assets').select('id, unit:organization_units(name_en), custodian:persons!assets_custodian_person_id_fkey(full_name_en)').limit(1),
+      'asset history': db.from('asset_movements').select('id, from_unit:organization_units!asset_movements_from_unit_id_fkey(name_en), to_person:persons!asset_movements_to_person_id_fkey(full_name_en), recorder:system_users!asset_movements_recorded_by_fkey(id)').limit(1),
+      'repair jobs': db.from('asset_maintenance').select('id, asset:assets(tag)').limit(1),
+    };
+    for (const [name, q] of Object.entries(probes)) {
+      const { error } = await q;
+      if (error) problem(`Property query (${name}) failed: ${error.message}`);
+    }
+  }
   const { error: auditFn } = await db.rpc('audit_actor');
   if (auditFn) problem('Automatic audit trail missing — run migration 011_audit_trail.sql');
   else {
