@@ -24,8 +24,7 @@ export default function DashboardLayout({ children, breadcrumbs }: DashboardLayo
       <div
         className={cn(
           'main-content transition-all duration-300',
-          sidebarCollapsed ? 'md:ml-[68px]' : 'md:ml-[260px]',
-          'ml-0'
+          sidebarCollapsed && 'sidebar-collapsed'
         )}
       >
         <Header
