@@ -81,6 +81,9 @@ try {
   const { error: budgetTable } = await db.from('budget_allocations').select('id').limit(1);
   if (budgetTable) problem('Budget table missing — run migration 009_budget.sql');
   else ok('Migration 009 (budgets) applied');
+  const { count: bodies } = await db.from('governance_bodies').select('id', { count: 'exact', head: true });
+  if ((bodies ?? 0) < 7) problem('Governance bodies missing — run migration 010_governance.sql');
+  else ok('Migration 010 (governance) applied');
 } catch (e) {
   problem(e.message);
 }
