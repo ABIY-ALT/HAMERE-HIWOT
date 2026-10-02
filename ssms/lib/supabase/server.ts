@@ -37,11 +37,17 @@ export async function createSessionClient(): Promise<SupabaseClient> {
 /**
  * Service-role client — bypasses RLS. Only use after the caller's permissions
  * have been checked (see getCurrentUser / authorize in admin actions).
+ *
+ * `actorId` (a system_users id) is sent as the x-ssms-actor header; the audit
+ * trigger (migration 011) records it as the person who made each change.
  */
-export function createAdminClient(): SupabaseClient {
+export function createAdminClient(actorId?: string): SupabaseClient {
   return createClient(
     requireEnv('NEXT_PUBLIC_SUPABASE_URL'),
     requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
-    { auth: { persistSession: false, autoRefreshToken: false } }
+    {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: actorId ? { headers: { 'x-ssms-actor': actorId } } : undefined,
+    }
   );
 }

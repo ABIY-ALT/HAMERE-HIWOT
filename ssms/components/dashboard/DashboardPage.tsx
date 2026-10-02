@@ -25,6 +25,7 @@ import {
 import { formatDate } from '@/lib/utils';
 import { loadDashboard, type DashboardData } from '@/app/dashboard/actions';
 import { formatETB } from '@/lib/finance/types';
+import { AUDIT_AREAS } from '@/lib/audit/types';
 
 const DEMO_DASHBOARD: DashboardData = {
   totalMembers: MOCK_DASHBOARD_STATS.totalMembers,
@@ -358,7 +359,7 @@ export default function DashboardPage() {
                   </div>
                   <div className="min-w-0">
                     <div className="text-xs font-medium text-slate-700">
-                      {log.action} on {log.table_name}
+                      {log.action === 'LOGIN' ? t('Sign-in', 'መግቢያ') : log.action === 'LOGOUT' ? t('Sign-out', 'መውጫ') : log.action} · {AUDIT_AREAS[log.table_name] ? t(AUDIT_AREAS[log.table_name][0], AUDIT_AREAS[log.table_name][1]) : log.table_name}
                     </div>
                     <div className="text-xs text-slate-400">
                       {formatDate(log.created_at)}

@@ -5,6 +5,8 @@ import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { createAdminClient, createSessionClient } from '@/lib/supabase/server';
 import { isValidPhone, normalizePhone, phoneToAuthEmail } from '@/lib/auth/phone';
 import { DEMO_COOKIE, findDemoAccount } from '@/lib/auth/demo';
+import { getCurrentUser } from '@/lib/auth/session';
+import { logAuthEvent } from '@/lib/audit/log';
 
 export type SignInResult =
   | { ok: true }
@@ -31,14 +33,19 @@ export async function signIn(login: string, password: string): Promise<SignInRes
   if (!isValidPhone(phone)) return { ok: false, error: 'INVALID' };
 
   try {
+    const db = createAdminClient();
     const supabase = await createSessionClient();
     const { data, error } = await supabase.auth.signInWithPassword({
       email: phoneToAuthEmail(phone),
       password,
     });
-    if (error || !data.user) return { ok: false, error: 'INVALID' };
+    if (error || !data.user) {
+      // Failed attempts are recorded so repeated guessing is visible in the audit trail.
+      const { data: known } = await db.from('system_users').select('id').eq('username', phone).maybeSingle();
+      await logAuthEvent(db, { action: 'LOGIN', systemUserId: known?.id ?? null, login: phone, result: 'FAILED' });
+      return { ok: false, error: 'INVALID' };
+    }
 
-    const db = createAdminClient();
     const { data: systemUser } = await db
       .from('system_users')
       .select('id, is_active')
@@ -46,6 +53,7 @@ export async function signIn(login: string, password: string): Promise<SignInRes
       .maybeSingle();
     if (!systemUser?.is_active) {
       await supabase.auth.signOut();
+      await logAuthEvent(db, { action: 'LOGIN', systemUserId: systemUser?.id ?? null, login: phone, result: 'DISABLED' });
       return { ok: false, error: 'INACTIVE' };
     }
 
@@ -53,6 +61,7 @@ export async function signIn(login: string, password: string): Promise<SignInRes
       .from('system_users')
       .update({ last_login_at: new Date().toISOString() })
       .eq('id', systemUser.id);
+    await logAuthEvent(db, { action: 'LOGIN', systemUserId: systemUser.id, login: phone, result: 'SUCCESS' });
     return { ok: true };
   } catch (e) {
     console.error('signIn failed', e);
@@ -62,6 +71,15 @@ export async function signIn(login: string, password: string): Promise<SignInRes
 
 export async function signOut(): Promise<void> {
   if (isSupabaseEnabled()) {
+    const me = await getCurrentUser();
+    if (me) {
+      await logAuthEvent(createAdminClient(), {
+        action: 'LOGOUT',
+        systemUserId: me.systemUser.id,
+        login: me.systemUser.username,
+        result: 'SUCCESS',
+      });
+    }
     const supabase = await createSessionClient();
     await supabase.auth.signOut();
   }

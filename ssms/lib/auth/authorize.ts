@@ -24,7 +24,7 @@ export async function authorize(
   if (permissions.length && !permissions.some((p) => me.permissions.includes(p))) {
     throw new Error('You do not have permission to do this');
   }
-  return { me, db: createAdminClient() };
+  return { me, db: createAdminClient(me.systemUser.id) };
 }
 
 export function errorMessage(e: unknown): string {
