@@ -62,10 +62,21 @@ export default function LoginForm() {
 
       <div className="absolute top-8 left-8 z-10">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-lg bg-white p-1 flex items-center justify-center">
-            <Image src="/logo.png" alt="Hamere Hiwot Sunday School" width={40} height={40} className="w-full h-full object-contain" priority />
+          <div
+            className="w-14 h-14 rounded-full p-[3px] shrink-0"
+            style={{
+              background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #b45309 100%)',
+              boxShadow: '0 6px 20px rgba(0,0,0,0.45), 0 0 16px rgba(251,191,36,0.35)',
+            }}
+          >
+            <div className="w-full h-full rounded-full overflow-hidden bg-slate-950">
+              <Image src="/logo.png" alt="Hamere Hiwot Sunday School" width={56} height={56} className="w-full h-full object-cover" priority />
+            </div>
           </div>
-          <span className="text-2xl font-bold text-white">Hamere Hiwot</span>
+          <div className="leading-tight">
+            <div className="text-2xl font-bold text-white tracking-tight">Hamere Hiwot</div>
+            <div className="text-xs font-medium text-amber-300" lang="am">ሐመረ ሕይወት ሰንበት ት/ቤት</div>
+          </div>
         </div>
       </div>
 
