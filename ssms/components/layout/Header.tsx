@@ -10,8 +10,6 @@ import {
   LogOut,
   User,
   Settings,
-  PanelLeftClose,
-  PanelLeft,
   Calendar,
   AlertCircle,
   CheckCircle,
@@ -127,22 +125,12 @@ export default function Header({
 
   return (
     <header className="header">
-      {/* Desktop collapse toggle */}
-      <button
-        className="btn btn-ghost btn-sm hidden md:flex"
-        onClick={onToggleSidebar}
-        title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-      >
-        {sidebarCollapsed ? <PanelLeft size={18} /> : <PanelLeftClose size={18} />}
-      </button>
-
-      {/* Mobile menu toggle */}
-      <button
-        className="btn btn-ghost btn-sm flex md:hidden"
-        onClick={onToggleMobileSidebar}
-      >
-        <Menu size={20} />
-      </button>
+      {/* Mobile menu toggle (desktop uses the sidebar's own collapse button) */}
+      <div className="md:hidden">
+        <button className="btn btn-ghost btn-sm" onClick={onToggleMobileSidebar}>
+          <Menu size={20} />
+        </button>
+      </div>
 
       {/* Breadcrumbs */}
       {breadcrumbs && breadcrumbs.length > 0 && (

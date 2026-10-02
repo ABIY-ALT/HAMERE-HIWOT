@@ -19,6 +19,7 @@ export default function DashboardLayout({ children, breadcrumbs }: DashboardLayo
       <Sidebar
         collapsed={sidebarCollapsed}
         mobileOpen={mobileOpen}
+        onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
       />
 
       <div

@@ -449,8 +449,32 @@ tbody tr:hover { background: var(--surface-2); }
 }
 
 .sidebar-collapsed .brand-logo {
+  flex-direction: column;
   justify-content: center;
+  gap: 10px;
   padding: 16px 0 14px;
+}
+
+.sidebar-collapse-btn {
+  margin-left: auto;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: rgba(224,234,255,0.8);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.sidebar-collapse-btn:hover {
+  background: rgba(255,255,255,0.18);
+  color: #fff;
+}
+
+.sidebar-collapsed .sidebar-collapse-btn {
+  margin-left: 0;
 }
 
 .brand-icon {

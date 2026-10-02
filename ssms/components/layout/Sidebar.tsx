@@ -17,6 +17,7 @@ import {
   Shield,
   Settings,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Building2,
   Vote,
@@ -304,9 +305,10 @@ function NavItemGroup({ item, collapsed }: { item: NavItem; collapsed: boolean }
 interface SidebarProps {
   collapsed: boolean;
   mobileOpen: boolean;
+  onToggleCollapse: () => void;
 }
 
-export default function Sidebar({ collapsed, mobileOpen }: SidebarProps) {
+export default function Sidebar({ collapsed, mobileOpen, onToggleCollapse }: SidebarProps) {
   const { user } = useAuth();
   const { t } = useLang();
 
@@ -339,7 +341,16 @@ export default function Sidebar({ collapsed, mobileOpen }: SidebarProps) {
             <div className="brand-text">
               <div className="name">{t('Hamere Hiwot', 'ሐመረ ሕይወት')}</div>
               <div className="sub">{t('Sallo Debre Tsehay SSMS', 'ሳሎ ደ/ፀ/ቅ/ጊዮርጊስ ሰ/ት/ቤት')}</div>
-            </div>
+              <button
+            type="button"
+            onClick={onToggleCollapse}
+            className="sidebar-collapse-btn hidden md:flex"
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+          </button>
+        </div>
           )}
         </div>
 
