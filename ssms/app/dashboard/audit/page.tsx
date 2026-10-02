@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Shield, Search, Filter, Clock, Download, AlertCircle } from 'lucide-react';
+import { Search, Download } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { MOCK_AUDIT_TRAIL } from '@/lib/mock/modules';
 

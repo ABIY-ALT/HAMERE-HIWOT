@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Users, Crown, Calendar, AlertTriangle, CheckCircle, Plus, CheckCircle2, User } from 'lucide-react';
+import { Users, Crown, AlertTriangle, CheckCircle, Plus, CheckCircle2 } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { cn, formatDate, statusColor } from '@/lib/utils';
 import {

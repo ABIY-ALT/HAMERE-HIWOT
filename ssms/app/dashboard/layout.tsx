@@ -8,7 +8,7 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { LangProvider } from '@/contexts/LangContext';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { MOCK_CURRENT_USER } from '@/lib/mock/data';
-import type { AuthUser } from '@/types';
+
 
 export const metadata: Metadata = {
   title: {

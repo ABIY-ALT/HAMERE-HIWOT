@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { CalendarCheck, Plus, Search, CheckCircle2, XCircle, Clock, Users, Calendar, BookOpen } from 'lucide-react';
+import { Plus, Search, CheckCircle2 } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { MOCK_ATTENDANCE_SESSIONS } from '@/lib/mock/modules';
 import { Modal } from '@/components/ui/Modal';

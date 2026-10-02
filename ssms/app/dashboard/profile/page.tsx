@@ -13,7 +13,6 @@ import {
   CheckCircle2,
   Edit3,
   Church,
-  Clock,
   Save,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';

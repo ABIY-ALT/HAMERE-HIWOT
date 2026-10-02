@@ -20,8 +20,6 @@ import {
   ChevronRight,
   Building2,
   Vote,
-  BookOpen,
-  Church,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';

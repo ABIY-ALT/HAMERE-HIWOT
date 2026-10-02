@@ -15,7 +15,6 @@ import {
   Calendar,
   AlertCircle,
   CheckCircle,
-  Clock,
   Check,
   Trash2,
 } from 'lucide-react';

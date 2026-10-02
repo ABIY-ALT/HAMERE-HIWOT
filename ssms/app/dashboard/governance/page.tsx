@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Vote, Users, Shield, Crown, Building2, FileText, ArrowRight } from 'lucide-react';
+import { Vote, Users, Shield, Crown, Building2, FileText } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 
 export default function GovernanceHub() {

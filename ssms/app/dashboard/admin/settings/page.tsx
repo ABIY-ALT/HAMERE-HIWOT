@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Image from 'next/image';
-import { Settings, Save, Shield, Database, Globe, Bell, CheckCircle2 } from 'lucide-react';
+import { Save, Shield, Database, Globe, CheckCircle2 } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 
 export default function SettingsPage() {

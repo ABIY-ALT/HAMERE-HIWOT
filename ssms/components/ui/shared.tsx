@@ -1,6 +1,6 @@
 'use client';
 import React from 'react';
-import { Search, Plus, Filter, Download } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { cn, statusColor } from '@/lib/utils';
 import { useLang } from '@/contexts/LangContext';
 

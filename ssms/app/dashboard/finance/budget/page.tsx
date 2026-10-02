@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Wallet, Plus, Search, PieChart, TrendingUp, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Plus, CheckCircle2 } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { MOCK_BUDGET_ITEMS, MOCK_EXPENSES } from '@/lib/mock/modules';
 import { Modal } from '@/components/ui/Modal';

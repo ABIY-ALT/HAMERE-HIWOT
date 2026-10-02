@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { Calendar, Plus, Search, CheckCircle2, Clock, Users, ArrowRight } from 'lucide-react';
+import { Calendar, Plus, CheckCircle2 } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { MOCK_ACADEMIC_YEARS } from '@/lib/mock/modules';
 import { Modal } from '@/components/ui/Modal';

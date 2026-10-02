@@ -8,14 +8,10 @@ import {
   GraduationCap,
   BookOpen,
   Building2,
-  Clock,
   TrendingUp,
   Shield,
-  CheckCircle,
   AlertCircle,
   Calendar,
-  Wallet,
-  BarChart2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';

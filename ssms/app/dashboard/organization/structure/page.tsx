@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { GitBranch, Shield, Crown, Building2, Network, ArrowDown, Users, CheckCircle2 } from 'lucide-react';
+import { Shield, Crown, Building2, Network } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { MOCK_ORG_UNITS } from '@/lib/mock/data';
 

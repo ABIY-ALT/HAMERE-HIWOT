@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Image from 'next/image';
-import { BarChart3, Download, FileText, Calendar, Filter, Printer, ArrowUpRight, CheckCircle2 } from 'lucide-react';
+import { Download, FileText, ArrowUpRight, CheckCircle2 } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { Modal } from '@/components/ui/Modal';
 

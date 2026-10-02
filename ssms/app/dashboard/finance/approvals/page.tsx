@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { CheckSquare, Plus, Search, CheckCircle2, XCircle, Clock, AlertTriangle, FileCheck } from 'lucide-react';
+import { Plus, CheckCircle2, FileCheck } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { MOCK_APPROVALS } from '@/lib/mock/modules';
 import { Modal } from '@/components/ui/Modal';

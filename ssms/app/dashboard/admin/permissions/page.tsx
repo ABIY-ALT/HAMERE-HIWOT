@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Key, Search, Shield, CheckCircle2 } from 'lucide-react';
+import { Search, CheckCircle2 } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { MOCK_PERMISSIONS } from '@/lib/mock/data';
 

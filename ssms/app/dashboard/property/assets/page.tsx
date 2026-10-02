@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Package, Plus, Search, Tag, User, CheckCircle2, Shield, Calendar, Building2 } from 'lucide-react';
+import { Plus, Search, CheckCircle2 } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { MOCK_ASSETS } from '@/lib/mock/modules';
 import { Modal } from '@/components/ui/Modal';

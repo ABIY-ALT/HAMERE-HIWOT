@@ -8,7 +8,6 @@ import type {
   OrganizationUnit,
   GovernanceBody,
   GovernancePosition,
-  GovernanceMembership,
   GovernanceBodyRule,
   Person,
   SystemUser,
