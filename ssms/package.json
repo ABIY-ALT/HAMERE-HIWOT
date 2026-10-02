@@ -7,7 +7,8 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "create-admin": "node --experimental-strip-types --env-file=.env.local scripts/create-admin.mjs"
+    "create-admin": "node --experimental-strip-types --env-file=.env.local scripts/create-admin.mjs",
+    "check-setup": "node --env-file=.env.local scripts/check-setup.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
