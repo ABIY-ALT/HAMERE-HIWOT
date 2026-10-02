@@ -94,7 +94,7 @@
   scrollbar-color: rgba(255,255,255,0.15) transparent;
 }
 
-.sidebar-collapsed {
+.sidebar.sidebar-collapsed {
   width: 68px;
 }
 
