@@ -7,9 +7,9 @@ import { cn } from '@/lib/utils';
 
 // Demo credentials (mock mode)
 const DEMO_CREDENTIALS = [
-  { username: 'admin', password: 'admin123', label: 'Super Admin', labelAm: 'ዋና አስተዳዳሪ' },
-  { username: 'board_chair', password: 'board123', label: 'Board Officer', labelAm: 'የሥራ አመራር ኃላፊ' },
-  { username: 'audit_inspector', password: 'audit123', label: 'Audit Inspector', labelAm: 'ኦዲት ተቆጣጣሪ' },
+  { username: 'admin', phone: '0912345678', password: 'admin123', label: 'Super Admin', labelAm: 'ዋና አስተዳዳሪ' },
+  { username: 'board_chair', phone: '0911000002', password: 'board123', label: 'Board Officer', labelAm: 'የሥራ አመራር ኃላፊ' },
+  { username: 'audit_inspector', phone: '0911000003', password: 'audit123', label: 'Audit Inspector', labelAm: 'ኦዲት ተቆጣጣሪ' },
 ];
 
 export default function LoginForm() {
@@ -36,7 +36,7 @@ export default function LoginForm() {
 
     // Check demo credentials
     const valid = DEMO_CREDENTIALS.find(
-      (c) => c.username.toLowerCase() === cleanUsername && c.password === cleanPassword
+      (c) => (c.phone === cleanUsername || c.username.toLowerCase() === cleanUsername) && c.password === cleanPassword
     );
 
     if (valid) {
@@ -48,7 +48,7 @@ export default function LoginForm() {
       return;
     }
 
-    setError(t('Invalid username or password', 'ተጠቃሚ ስም ወይም የይለፍ ቃል ትክክል አይደለም'));
+    setError(t('Invalid phone number or password', 'ስልክ ቁጥር ወይም የይለፍ ቃል ትክክል አይደለም'));
     setLoading(false);
   };
 
@@ -79,7 +79,7 @@ export default function LoginForm() {
         <div className="text-center mb-6">
           <h2 className="text-3xl font-bold text-slate-900 mb-2">{t('Login', 'ግባ')}</h2>
           <p className="text-slate-500">
-            {t('Enter your username and password.', 'የተጠቃሚ ስምዎን እና የይለፍ ቃልዎን ያስገቡ።')}
+            {t('Enter your phone number and password.', 'ስልክ ቁጥርዎን እና የይለፍ ቃልዎን ያስገቡ።')}
           </p>
         </div>
 
@@ -92,14 +92,15 @@ export default function LoginForm() {
 
         <form onSubmit={handleLogin} className="space-y-5">
           <div className="form-group">
-            <label className="form-label" htmlFor="username">{t('Username', 'የተጠቃሚ ስም')}</label>
+            <label className="form-label" htmlFor="username">{t('Phone Number', 'ስልክ ቁጥር')}</label>
             <input
               id="username"
-              type="text"
+              type="tel"
+              placeholder="09..."
               className="form-input"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              autoComplete="username"
+              autoComplete="tel"
               required
             />
           </div>
