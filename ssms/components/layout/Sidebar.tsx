@@ -166,13 +166,18 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
         labelEn: 'Finance',
         labelAm: 'ፋይናንስ',
         icon: Wallet,
-        permissions: ['FINANCE_VIEW'],
+        permissions: ['FINANCE_VIEW', 'FINANCE_REQUEST', 'FINANCE_APPROVE', 'FINANCE_CREATE'],
         children: [
-          { labelEn: 'Budget', labelAm: 'በጀት', href: '/dashboard/finance/budget', permissions: ['FINANCE_VIEW'] },
+          {
+            labelEn: 'Payment Requests',
+            labelAm: 'የክፍያ ጥያቄዎች',
+            href: '/dashboard/finance/requests',
+            permissions: ['FINANCE_VIEW', 'FINANCE_REQUEST', 'FINANCE_APPROVE', 'FINANCE_CREATE'],
+          },
           { labelEn: 'Income', labelAm: 'ገቢ', href: '/dashboard/finance/income', permissions: ['FINANCE_VIEW'] },
           { labelEn: 'Expenses', labelAm: 'ወጪ', href: '/dashboard/finance/expenses', permissions: ['FINANCE_VIEW'] },
+          { labelEn: 'Budget', labelAm: 'በጀት', href: '/dashboard/finance/budget', permissions: ['FINANCE_VIEW'] },
           { labelEn: 'Donations', labelAm: 'ስጦታዎች', href: '/dashboard/finance/donations', permissions: ['FINANCE_VIEW'] },
-          { labelEn: 'Approvals', labelAm: 'ፈቃዶች', href: '/dashboard/finance/approvals', permissions: ['FINANCE_APPROVE'] },
         ],
       },
       {

@@ -24,6 +24,7 @@ import {
 } from '@/lib/mock/data';
 import { formatDate } from '@/lib/utils';
 import { loadDashboard, type DashboardData } from '@/app/dashboard/actions';
+import { formatETB } from '@/lib/finance/types';
 
 const DEMO_DASHBOARD: DashboardData = {
   totalMembers: MOCK_DASHBOARD_STATS.totalMembers,
@@ -37,6 +38,8 @@ const DEMO_DASHBOARD: DashboardData = {
   governanceBodies: MOCK_GOVERNANCE_BODIES.map((b) => ({ id: b.id, name_en: b.name_en, name_am: b.name_am, is_active: b.is_active })),
   recentAudit: MOCK_AUDIT_LOGS.map((l) => ({ id: l.id, action: l.action, table_name: l.table_name, created_at: l.created_at })),
   recentMembers: MOCK_PERSONS.slice(0, 5),
+  finance: { income: 145000, expenses: 45700 },
+  financePending: 0,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -186,6 +189,22 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {(stats?.financePending ?? 0) > 0 && (
+        <Link
+          href="/dashboard/finance/requests"
+          className="mb-4 p-3 rounded-xl border border-amber-200 bg-amber-50 flex items-center gap-2 text-sm text-amber-800 hover:bg-amber-100"
+        >
+          <AlertCircle size={16} />
+          <span className="font-semibold">
+            {t(
+              `${stats?.financePending} payment request(s) waiting for your approval`,
+              `${stats?.financePending} የክፍያ ጥያቄ(ዎች) የእርስዎን ማጽደቅ ይጠብቃሉ`
+            )}
+          </span>
+          <span className="ml-auto text-xs underline">{t('Review →', 'ገምግም →')}</span>
+        </Link>
+      )}
+
       {/* Academic Year Banner */}
       <div
         className="rounded-xl p-4 mb-6 flex items-center gap-3"
@@ -288,19 +307,20 @@ export default function DashboardPage() {
         {can('FINANCE_VIEW') && (
           <div className="card p-5">
             <SectionHeader en="Finance Summary" am="የፋይናንስ ማጠቃለያ" />
-            {mode === 'live' ? (
+            {stats && !stats.finance ? (
               <p className="text-sm text-slate-500 py-2">
                 {t(
-                  'The finance module is not connected to the database yet, so no figures are shown.',
-                  'የፋይናንስ ክፍሉ ገና ከዳታቤዝ ጋር አልተገናኘም፤ ስለዚህ አሃዞች አይታዩም።'
+                  'Finance is not set up in the database yet (run migration 008).',
+                  'ፋይናንስ ገና በዳታቤዝ ውስጥ አልተዘጋጀም (ማይግሬሽን 008 ያስኪዱ)።'
                 )}
               </p>
             ) : (
             <div className="space-y-3">
+              <div className="text-[11px] text-slate-400">{t(`Year 2026 to date`, `ከ2026 መጀመሪያ እስካሁን`)}</div>
               {[
-                { label: t('Total Income', 'ጠቅላላ ገቢ'), value: 'ETB 145,000', color: 'text-emerald-600' },
-                { label: t('Total Expenses', 'ጠቅላላ ወጪ'), value: 'ETB 45,700', color: 'text-red-500' },
-                { label: t('Net Balance', 'ተጣሪ ቀሪ'), value: 'ETB 99,300', color: 'text-blue-600' },
+                { label: t('Total Income', 'ጠቅላላ ገቢ'), value: stats?.finance ? formatETB(stats.finance.income) : '…', color: 'text-emerald-600' },
+                { label: t('Total Expenses', 'ጠቅላላ ወጪ'), value: stats?.finance ? formatETB(stats.finance.expenses) : '…', color: 'text-red-500' },
+                { label: t('Net Balance', 'ተጣሪ ቀሪ'), value: stats?.finance ? formatETB(stats.finance.income - stats.finance.expenses) : '…', color: 'text-blue-600' },
               ].map((row) => (
                 <div key={row.label} className="flex justify-between items-center py-2 border-b border-slate-100 last:border-0">
                   <span className="text-sm text-slate-600">{row.label}</span>
@@ -313,8 +333,8 @@ export default function DashboardPage() {
               <Link href="/dashboard/finance/income" className="text-xs font-semibold text-primary-700 hover:underline">
                 {t('View Income →', 'ገቢዎችን እይ →')}
               </Link>
-              <Link href="/dashboard/finance/budget" className="text-xs font-semibold text-primary-700 hover:underline">
-                {t('Budget Ledger →', 'የበጀት መዝገብ →')}
+              <Link href="/dashboard/finance/requests" className="text-xs font-semibold text-primary-700 hover:underline">
+                {t('Payment Requests →', 'የክፍያ ጥያቄዎች →')}
               </Link>
             </div>
           </div>

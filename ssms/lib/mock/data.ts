@@ -646,6 +646,7 @@ export const MOCK_PERMISSIONS: Permission[] = [
   { id: 'perm-f01', code: 'FINANCE_VIEW', name_en: 'View Finance', name_am: 'ፋይናንስን ይመልከቱ', description_en: null, category: 'FINANCE', is_active: true },
   { id: 'perm-f02', code: 'FINANCE_CREATE', name_en: 'Create Financial Records', name_am: 'የፋይናንስ መዝገቦች ይፍጠሩ', description_en: null, category: 'FINANCE', is_active: true },
   { id: 'perm-f03', code: 'FINANCE_APPROVE', name_en: 'Approve Financial Transactions', name_am: 'የፋይናንስ ግብይቶችን ያጸድቁ', description_en: null, category: 'FINANCE', is_active: true },
+  { id: 'perm-f04', code: 'FINANCE_REQUEST', name_en: 'Submit Payment Requests', name_am: 'የክፍያ ጥያቄ ማቅረብ', description_en: null, category: 'FINANCE', is_active: true },
   // Assets
   { id: 'perm-p01', code: 'ASSET_VIEW', name_en: 'View Assets', name_am: 'ንብረቶችን ይመልከቱ', description_en: null, category: 'PROPERTY', is_active: true },
   { id: 'perm-p02', code: 'ASSET_CREATE', name_en: 'Register Assets', name_am: 'ንብረቶችን ይመዝግቡ', description_en: null, category: 'PROPERTY', is_active: true },
@@ -703,7 +704,7 @@ const AUDIT_PERMS: RolePermission[] = [
 const DEPT_HEAD_PERMS: RolePermission[] = [
   'perm-s01', 'perm-s02', 'perm-s03', 'perm-a01', 'perm-a02', 'perm-a03',
   'perm-g01', 'perm-g02', 'perm-g03', 'perm-g04', 'perm-m01',
-  'perm-r01', 'perm-hr1', 'perm-pr1',
+  'perm-r01', 'perm-hr1', 'perm-pr1', 'perm-f04',
 ].map((pid, i) => ({ id: `rp-006-${i}`, role_id: 'role-006', permission_id: pid, granted_at: '2024-01-01T00:00:00Z' }));
 
 // Teacher

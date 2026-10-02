@@ -65,6 +65,7 @@ export type PermissionCode =
   | 'FINANCE_VIEW'
   | 'FINANCE_CREATE'
   | 'FINANCE_APPROVE'
+  | 'FINANCE_REQUEST'
   // Assets
   | 'ASSET_VIEW'
   | 'ASSET_CREATE'

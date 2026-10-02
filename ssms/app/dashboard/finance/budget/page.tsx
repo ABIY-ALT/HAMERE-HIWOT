@@ -5,6 +5,7 @@ import { Plus, CheckCircle2 } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { MOCK_BUDGET_ITEMS, MOCK_EXPENSES } from '@/lib/mock/modules';
 import { Modal } from '@/components/ui/Modal';
+import { SampleDataNotice } from '@/components/common/SampleDataNotice';
 
 export default function BudgetPage() {
   const { t, locale } = useLang();
@@ -78,6 +79,8 @@ export default function BudgetPage() {
           {t('Allocate Budget Line', 'የበጀት መስመር ጨምር')}
         </button>
       </div>
+
+      <SampleDataNotice />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">

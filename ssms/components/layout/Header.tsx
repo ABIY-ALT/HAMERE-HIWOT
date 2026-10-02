@@ -22,6 +22,7 @@ import { useLang } from '@/contexts/LangContext';
 import type { Locale } from '@/types';
 import { signOut } from '@/app/login/actions';
 import { resetEducation } from '@/lib/education/client';
+import { resetFinance } from '@/lib/finance/client';
 
 interface HeaderProps {
   onToggleMobileSidebar: () => void;
@@ -114,6 +115,7 @@ export default function Header({
   const handleLogout = async () => {
     await signOut();
     resetEducation();
+    resetFinance();
     logout();
     router.push('/login');
     router.refresh();

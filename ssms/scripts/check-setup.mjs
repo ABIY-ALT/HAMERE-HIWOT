@@ -75,6 +75,9 @@ try {
   const { error: subjectCols } = await db.from('subjects').select('instructor, syllabus').limit(1);
   if (subjectCols) problem('Subject instructor/syllabus columns missing — run migration 007_subject_details.sql');
   else ok('Migration 007 (subject details) applied');
+  const { error: financeTables } = await db.from('finance_requests').select('id').limit(1);
+  if (financeTables) problem('Finance tables missing — run migration 008_finance.sql');
+  else ok('Migration 008 (finance) applied');
 } catch (e) {
   problem(e.message);
 }

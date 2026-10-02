@@ -10,6 +10,14 @@ export default function FinanceHub() {
 
   const links = [
     {
+      titleEn: 'Payment Requests & Approvals',
+      titleAm: 'የክፍያ ጥያቄዎችና ማጽደቂያ',
+      descEn: 'Departments request money; the finance head approves; the treasurer pays',
+      descAm: 'ክፍሎች ገንዘብ ይጠይቃሉ፤ የፋይናንስ ኃላፊ ያጸድቃል፤ ገንዘብ ያዥ ይከፍላል',
+      href: '/dashboard/finance/requests',
+      icon: CheckSquare,
+    },
+    {
       titleEn: 'Annual Budget',
       titleAm: 'ዓመታዊ በጀት',
       descEn: 'Budget appropriations, line item utilization, and ceilings',
@@ -41,14 +49,7 @@ export default function FinanceHub() {
       href: '/dashboard/finance/donations',
       icon: Gift,
     },
-    {
-      titleEn: 'Approvals Workflow',
-      titleAm: 'የፈቃድ ማጽደቂያ',
-      descEn: 'Governance threshold authorizations and expenditure review',
-      descAm: 'የወጪ ማጽደቂያ ሰነዶች',
-      href: '/dashboard/finance/approvals',
-      icon: CheckSquare,
-    },
+
   ];
 
   return (

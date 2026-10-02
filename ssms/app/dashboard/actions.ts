@@ -8,7 +8,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Person } from '@/types';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { authorize, check, errorMessage } from '@/lib/auth/authorize';
+import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
 import type { Loaded } from '@/lib/admin/types';
 
 export interface DashboardData {
@@ -23,6 +23,10 @@ export interface DashboardData {
   governanceBodies: { id: string; name_en: string; name_am: string; is_active: boolean }[];
   recentAudit: { id: string; action: string; table_name: string; created_at: string }[];
   recentMembers: Person[];
+  /** Year-to-date ledger totals; null if the user can't see finance or finance isn't set up. */
+  finance: { income: number; expenses: number } | null;
+  /** Payment requests waiting for this user to approve. */
+  financePending: number;
 }
 
 /** Row count with equality filters and an optional created_at lower bound. */
@@ -99,6 +103,25 @@ export async function loadDashboard(): Promise<Loaded<DashboardData>> {
           .then(check)) as DashboardData['recentAudit'])
       : [];
 
+    let finance: DashboardData['finance'] = null;
+    let financePending = 0;
+    try {
+      if (can('FINANCE_VIEW')) {
+        const txns = await selectAll<{ txn_type: string; amount: number }>((a, b) =>
+          db.from('finance_transactions').select('txn_type, amount').gte('txn_date', yearStart).order('id').range(a, b)
+        );
+        finance = {
+          income: txns.filter((x) => x.txn_type === 'INCOME').reduce((s, x) => s + Number(x.amount), 0),
+          expenses: txns.filter((x) => x.txn_type === 'EXPENSE').reduce((s, x) => s + Number(x.amount), 0),
+        };
+      }
+      if (can('FINANCE_APPROVE')) {
+        financePending = await count(db, 'finance_requests', { status: 'PENDING' });
+      }
+    } catch {
+      // Finance tables not created yet (migration 008) — leave the section empty
+    }
+
     return {
       mode: 'live',
       data: {
@@ -113,6 +136,8 @@ export async function loadDashboard(): Promise<Loaded<DashboardData>> {
         governanceBodies: (governance ?? []) as DashboardData['governanceBodies'],
         recentAudit,
         recentMembers,
+        finance,
+        financePending,
       },
     };
   } catch (e) {

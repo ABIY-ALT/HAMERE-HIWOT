@@ -5,6 +5,7 @@ import { Plus, Search, CheckCircle2 } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { MOCK_DONATIONS } from '@/lib/mock/modules';
 import { Modal } from '@/components/ui/Modal';
+import { SampleDataNotice } from '@/components/common/SampleDataNotice';
 
 interface DonationItem {
   id: string;
@@ -100,6 +101,8 @@ export default function DonationsPage() {
           {t('Register Donation', 'ስጦታ መዝግብ')}
         </button>
       </div>
+
+      <SampleDataNotice />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
