@@ -306,9 +306,10 @@ interface SidebarProps {
   collapsed: boolean;
   mobileOpen: boolean;
   onToggleCollapse: () => void;
+  onCloseMobile: () => void;
 }
 
-export default function Sidebar({ collapsed, mobileOpen, onToggleCollapse }: SidebarProps) {
+export default function Sidebar({ collapsed, mobileOpen, onToggleCollapse, onCloseMobile }: SidebarProps) {
   const { user } = useAuth();
   const { t } = useLang();
 
@@ -316,7 +317,7 @@ export default function Sidebar({ collapsed, mobileOpen, onToggleCollapse }: Sid
     <>
       {/* Mobile overlay */}
       {mobileOpen && (
-        <div className="fixed inset-0 bg-black/40 z-30 md:hidden" />
+        <div className="fixed inset-0 bg-black/40 z-30 md:hidden" onClick={onCloseMobile} />
       )}
 
       <nav
@@ -407,6 +408,20 @@ export default function Sidebar({ collapsed, mobileOpen, onToggleCollapse }: Sid
       >
         {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
       </button>
+
+      {/* Mobile: same button on the drawer edge closes the menu */}
+      {mobileOpen && (
+        <button
+          type="button"
+          onClick={onCloseMobile}
+          className="sidebar-collapse-btn flex md:hidden"
+          style={{ left: 246 }}
+          title={t('Close menu', 'ምናሌ ዝጋ')}
+          aria-label={t('Close menu', 'ምናሌ ዝጋ')}
+        >
+          <ChevronLeft size={16} />
+        </button>
+      )}
     </>
   );
 }

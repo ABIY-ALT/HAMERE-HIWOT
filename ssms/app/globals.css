@@ -477,6 +477,25 @@ tbody tr:hover { background: var(--surface-2); }
   transform: scale(1.08);
 }
 
+/* Mobile: header button that opens the sidebar drawer (matches the collapse button) */
+.mobile-menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #fbbf24;
+  color: #1e2770;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  cursor: pointer;
+}
+
+.mobile-menu-btn:active {
+  background: #f59e0b;
+}
+
 .brand-icon {
   width: 42px;
   height: 42px;

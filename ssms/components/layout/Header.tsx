@@ -130,8 +130,14 @@ export default function Header({
     <header className="header">
       {/* Mobile menu toggle (desktop uses the sidebar's own collapse button) */}
       <div className="md:hidden">
-        <button className="btn btn-ghost btn-sm" onClick={onToggleMobileSidebar}>
-          <Menu size={20} />
+        <button
+          type="button"
+          className="mobile-menu-btn"
+          onClick={onToggleMobileSidebar}
+          title={t('Open menu', 'ምናሌ ክፈት')}
+          aria-label={t('Open menu', 'ምናሌ ክፈት')}
+        >
+          <Menu size={18} />
         </button>
       </div>
 
