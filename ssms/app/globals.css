@@ -456,25 +456,25 @@ tbody tr:hover { background: var(--surface-2); }
 }
 
 .sidebar-collapse-btn {
-  margin-left: auto;
+  position: fixed;
+  top: 22px;
+  z-index: 50;
+  width: 28px;
+  height: 28px;
   align-items: center;
   justify-content: center;
-  padding: 6px;
-  border-radius: 8px;
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.15);
-  color: rgba(224,234,255,0.8);
+  border-radius: 50%;
+  background: #fbbf24;
+  color: #1e2770;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: left 0.3s ease, background 0.15s, transform 0.15s;
 }
 
 .sidebar-collapse-btn:hover {
-  background: rgba(255,255,255,0.18);
-  color: #fff;
-}
-
-.sidebar-collapsed .sidebar-collapse-btn {
-  margin-left: 0;
+  background: #f59e0b;
+  transform: scale(1.08);
 }
 
 .brand-icon {
