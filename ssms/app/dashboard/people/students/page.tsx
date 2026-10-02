@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { UserPlus, Search, CheckCircle2 } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { MOCK_STUDENTS } from '@/lib/mock/modules';
@@ -172,7 +173,9 @@ export default function StudentsPage() {
                 <tr key={s.id}>
                   <td className="font-mono text-xs font-semibold text-blue-600">{s.reg_no}</td>
                   <td className="font-medium text-slate-900">
-                    {locale === 'am' ? s.name_am : s.name_en}
+                    <Link href={`/dashboard/people/students/${s.id}`} className="hover:text-blue-600 hover:underline">
+                      {locale === 'am' ? s.name_am : s.name_en}
+                    </Link>
                   </td>
                   <td className="text-slate-600">{s.baptismal}</td>
                   <td>
@@ -349,18 +352,13 @@ export default function StudentsPage() {
               </div>
             </div>
 
-            <div className="border-t border-slate-100 pt-3">
-              <h5 className="font-bold text-slate-800 text-xs mb-2">
-                {t('Current Academic Performance', 'የትምህርት ውጤት አጠቃላይ')}
-              </h5>
-              <div className="flex items-center justify-between p-3 bg-emerald-50 text-emerald-800 rounded-lg text-xs font-semibold">
-                <span>{t('Average Score', 'አማካይ ውጤት')}: 88.5%</span>
-                <span>{t('Attendance Rate', 'የተገኝነት ምጣኔ')}: 96%</span>
-                <span>{t('Conduct', 'ሥነ-ምግባር')}: A</span>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-2">
+            <div className="flex justify-end gap-2 pt-2">
+              <Link
+                href={`/dashboard/people/students/${selectedStudent.id}`}
+                className="btn btn-primary text-xs"
+              >
+                {t('Open full profile', 'ሙሉ መገለጫ ክፈት')}
+              </Link>
               <button
                 onClick={() => setSelectedStudent(null)}
                 className="btn btn-secondary text-xs"
