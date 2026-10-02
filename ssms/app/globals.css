@@ -553,3 +553,40 @@ tbody tr:hover { background: var(--surface-2); }
 .status-dot.active  { background: #10b981; }
 .status-dot.inactive { background: #94a3b8; }
 .status-dot.pending { background: #f59e0b; }
+
+/* ── Print ────────────────────────────────────────────────────────────────── */
+/* Pages that should print (report card, attendance sheet) hide the app chrome. */
+@page { size: A4 portrait; margin: 14mm; }
+@page landscape-page { size: A4 landscape; margin: 10mm; }
+.print-landscape { page: landscape-page; }
+
+@media print {
+  .sidebar,
+  .header,
+  .no-print {
+    display: none !important;
+  }
+  .main-content {
+    margin-left: 0 !important;
+    transition: none !important;
+  }
+  .page-container {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  body {
+    background: #fff !important;
+  }
+  .print-sheet {
+    box-shadow: none !important;
+    border: none !important;
+  }
+  .print-sheet table {
+    font-size: 11px;
+  }
+  /* Keep colored status chips visible on paper */
+  .print-sheet * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

@@ -2,26 +2,31 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { UserPlus, Search, CheckCircle2 } from 'lucide-react';
+import { UserPlus, Search, CheckCircle2, Download, Upload } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
-import { MOCK_STUDENTS } from '@/lib/mock/modules';
+import { MOCK_CLASSES } from '@/lib/mock/modules';
 import { Modal } from '@/components/ui/Modal';
+import { addStudents, nextRegNos, type Student, type StudentGender } from '@/lib/students/store';
+import { useStudents } from '@/lib/students/useStudents';
+import { downloadXlsx, headerCell, cell } from '@/lib/export/xlsx';
+import { formatEthiopianDate, todayIso } from '@/lib/utils/ethiopian-calendar';
 
 export default function StudentsPage() {
   const { t, locale } = useLang();
-  const [students, setStudents] = useState(MOCK_STUDENTS);
+  const students = useStudents();
   const [search, setSearch] = useState('');
   const [classFilter, setClassFilter] = useState('ALL');
 
   const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
-  const [selectedStudent, setSelectedStudent] = useState<typeof MOCK_STUDENTS[0] | null>(null);
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Enroll Form State
   const [nameEn, setNameEn] = useState('');
   const [nameAm, setNameAm] = useState('');
   const [baptismal, setBaptismal] = useState('');
-  const [studentClass, setStudentClass] = useState('Grade 1 — Angels');
+  const [gender, setGender] = useState<StudentGender>('MALE');
+  const [studentClassId, setStudentClassId] = useState(MOCK_CLASSES[0].id);
   const [parent, setParent] = useState('');
   const [phone, setPhone] = useState('');
 
@@ -32,23 +37,28 @@ export default function StudentsPage() {
 
   const handleEnroll = (e: React.FormEvent) => {
     e.preventDefault();
-    const newStudent = {
+    const cls = MOCK_CLASSES.find((c) => c.id === studentClassId) ?? MOCK_CLASSES[0];
+    const [regNo] = nextRegNos(students, 1, new Date().getFullYear());
+    const newStudent: Student = {
       id: `stu-${Date.now()}`,
-      reg_no: `REG-2026-${String(students.length + 1).padStart(4, '0')}`,
-      name_en: nameEn,
-      name_am: nameAm || nameEn,
-      baptismal: baptismal || nameEn,
-      gender: 'MALE',
-      class: studentClass,
-      class_id: 'cls-001',
-      grade_level: 1,
+      reg_no: regNo,
+      name_en: nameEn.trim(),
+      name_am: nameAm.trim() || nameEn.trim(),
+      baptismal: baptismal.trim() || nameEn.trim().split(' ')[0],
+      gender,
+      class: cls.name_en,
+      class_id: cls.id,
+      grade_level: cls.grade_level,
       status: 'ACTIVE',
-      enrollment_date: new Date().toISOString().slice(0, 10),
-      parent,
-      phone,
+      enrollment_date: todayIso(),
+      parent: parent.trim(),
+      phone: phone.trim(),
     };
 
-    setStudents([newStudent, ...students]);
+    if (!addStudents([newStudent])) {
+      showToast(t('Could not save. Browser storage is unavailable or full.', 'ማስቀመጥ አልተቻለም። የአሳሽ ማከማቻ አይሰራም ወይም ሞልቷል።'));
+      return;
+    }
     setIsEnrollModalOpen(false);
     showToast(t(`Student ${nameEn} enrolled successfully!`, `ተማሪ ${nameAm || nameEn} ተመዝግቧል!`));
 
@@ -60,6 +70,26 @@ export default function StudentsPage() {
   };
 
   const classes = Array.from(new Set(students.map((s) => s.class)));
+
+  const exportExcel = async (rows: Student[]) => {
+    const header = [
+      'Reg. No', 'Name (English)', 'Name (Amharic)', 'Baptismal name', 'Gender', 'Class', 'Status',
+      'Enrollment date (Gregorian)', 'Enrollment date (Ethiopian)', 'Parent / Guardian', 'Guardian phone',
+    ].map(headerCell);
+    const body = rows.map((s) => [
+      s.reg_no, s.name_en, cell(s.name_am), cell(s.baptismal), s.gender === 'MALE' ? 'Male' : 'Female',
+      s.class, s.status === 'ACTIVE' ? 'Active' : 'Inactive', s.enrollment_date,
+      formatEthiopianDate(s.enrollment_date, 'en'), cell(s.parent), cell(s.phone),
+    ]);
+    try {
+      await downloadXlsx(`students_${todayIso()}`, [header, ...body], {
+        sheet: 'Students',
+        widths: [16, 24, 24, 16, 8, 24, 10, 16, 20, 22, 16],
+      });
+    } catch {
+      showToast(t('Could not create the Excel file.', 'የኤክሴል ፋይሉን መፍጠር አልተቻለም።'));
+    }
+  };
 
   const filtered = students.filter((s) => {
     const matchesSearch =
@@ -93,13 +123,30 @@ export default function StudentsPage() {
             )}
           </p>
         </div>
-        <button
-          onClick={() => setIsEnrollModalOpen(true)}
-          className="btn btn-primary self-start sm:self-auto inline-flex items-center gap-2"
-        >
-          <UserPlus size={16} />
-          {t('Enroll New Student', 'አዲስ ተማሪ መዝግብ')}
-        </button>
+        <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+          <Link
+            href="/dashboard/people/students/import"
+            className="btn btn-secondary inline-flex items-center gap-2"
+          >
+            <Upload size={16} />
+            {t('Import from Excel', 'ከኤክሴል አስገባ')}
+          </Link>
+          <button
+            onClick={() => exportExcel(filtered)}
+            disabled={filtered.length === 0}
+            className="btn btn-secondary inline-flex items-center gap-2 disabled:opacity-50"
+          >
+            <Download size={16} />
+            {t('Export Excel', 'ወደ ኤክሴል ላክ')}
+          </button>
+          <button
+            onClick={() => setIsEnrollModalOpen(true)}
+            className="btn btn-primary inline-flex items-center gap-2"
+          >
+            <UserPlus size={16} />
+            {t('Enroll New Student', 'አዲስ ተማሪ መዝግብ')}
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -119,8 +166,10 @@ export default function StudentsPage() {
           <div className="text-xs text-slate-500 mt-1">{t('Active Classes', 'ክፍሎች')}</div>
         </div>
         <div className="card p-5">
-          <div className="text-2xl font-bold text-amber-600">98.4%</div>
-          <div className="text-xs text-slate-500 mt-1">{t('Retention Rate', 'የመቆየት ምጣኔ')}</div>
+          <div className="text-2xl font-bold text-amber-600">
+            {students.filter((s) => s.status !== 'ACTIVE').length}
+          </div>
+          <div className="text-xs text-slate-500 mt-1">{t('Inactive', 'የቦዘኑ')}</div>
         </div>
       </div>
 
@@ -259,15 +308,29 @@ export default function StudentsPage() {
                 {t('Class Enrollment', 'የሚመደብበት ክፍል')} *
               </label>
               <select
-                value={studentClass}
-                onChange={(e) => setStudentClass(e.target.value)}
+                value={studentClassId}
+                onChange={(e) => setStudentClassId(e.target.value)}
                 className="form-input text-sm"
               >
-                {classes.map((c) => (
-                  <option key={c} value={c}>{c}</option>
+                {MOCK_CLASSES.map((c) => (
+                  <option key={c.id} value={c.id}>{locale === 'am' ? c.name_am : c.name_en}</option>
                 ))}
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-700 block mb-1">
+              {t('Gender', 'ፆታ')} *
+            </label>
+            <select
+              value={gender}
+              onChange={(e) => setGender(e.target.value as StudentGender)}
+              className="form-input text-sm"
+            >
+              <option value="MALE">{t('Male', 'ወንድ')}</option>
+              <option value="FEMALE">{t('Female', 'ሴት')}</option>
+            </select>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

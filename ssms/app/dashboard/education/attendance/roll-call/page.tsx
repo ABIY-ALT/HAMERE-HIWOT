@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { ArrowLeft, CheckCircle2, Save } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { EthiopianDateInput } from '@/components/ui/EthiopianDateInput';
-import { MOCK_CLASSES, MOCK_STUDENTS } from '@/lib/mock/modules';
+import { MOCK_CLASSES } from '@/lib/mock/modules';
+import { useStudents } from '@/lib/students/useStudents';
 import {
   ATTENDANCE_STATUSES,
   attendanceRate,
@@ -58,6 +59,7 @@ export default function RollCallPage() {
 
 function RollCallSheet() {
   const { t, locale } = useLang();
+  const allStudents = useStudents();
 
   const [classId, setClassId] = useState(MOCK_CLASSES[0].id);
   const [date, setDate] = useState(todayIso());
@@ -68,7 +70,7 @@ function RollCallSheet() {
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
 
   const cls = MOCK_CLASSES.find((c) => c.id === classId) ?? MOCK_CLASSES[0];
-  const students = MOCK_STUDENTS
+  const students = allStudents
     .filter((s) => s.class_id === classId && s.status === 'ACTIVE')
     .sort((a, b) => a.name_en.localeCompare(b.name_en));
 

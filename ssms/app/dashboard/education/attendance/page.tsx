@@ -2,9 +2,10 @@
 
 import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ClipboardCheck, Search } from 'lucide-react';
+import { ClipboardCheck, FileSpreadsheet, Search } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
-import { MOCK_ATTENDANCE_SESSIONS, MOCK_STUDENTS } from '@/lib/mock/modules';
+import { MOCK_ATTENDANCE_SESSIONS } from '@/lib/mock/modules';
+import { useStudents } from '@/lib/students/useStudents';
 import { Modal } from '@/components/ui/Modal';
 import { attendanceRate, totalsOf, type AttendanceSession, type AttendanceStatus } from '@/lib/attendance/store';
 import { useSavedSessions } from '@/lib/attendance/useSavedSessions';
@@ -81,13 +82,22 @@ export default function AttendancePage() {
             )}
           </p>
         </div>
-        <Link
-          href="/dashboard/education/attendance/roll-call"
-          className="btn btn-primary self-start sm:self-auto inline-flex items-center gap-2"
-        >
-          <ClipboardCheck size={16} />
-          {t('Take Roll Call', 'የስም ጥሪ ይጀምሩ')}
-        </Link>
+        <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+          <Link
+            href="/dashboard/education/attendance/sheet"
+            className="btn btn-secondary inline-flex items-center gap-2"
+          >
+            <FileSpreadsheet size={16} />
+            {t('Attendance Sheet', 'የተገኝነት ሉህ')}
+          </Link>
+          <Link
+            href="/dashboard/education/attendance/roll-call"
+            className="btn btn-primary inline-flex items-center gap-2"
+          >
+            <ClipboardCheck size={16} />
+            {t('Take Roll Call', 'የስም ጥሪ ይጀምሩ')}
+          </Link>
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -201,12 +211,13 @@ export default function AttendancePage() {
 
 function SessionDetails({ session, onClose }: { session: AttendanceSession; onClose: () => void }) {
   const { t, locale } = useLang();
+  const allStudents = useStudents();
   const tt = totalsOf(session);
   const studentIds = Object.keys(session.records);
 
   const rows = studentIds
     .map((id) => {
-      const stu = MOCK_STUDENTS.find((s) => s.id === id);
+      const stu = allStudents.find((s) => s.id === id);
       return {
         id,
         name: stu ? (locale === 'am' ? stu.name_am : stu.name_en) : id,

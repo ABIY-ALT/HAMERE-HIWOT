@@ -1,11 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, Phone, ClipboardCheck } from 'lucide-react';
+import { ArrowLeft, Phone, ClipboardCheck, Printer } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
-import { MOCK_GRADES, MOCK_STUDENTS } from '@/lib/mock/modules';
+import { MOCK_GRADES } from '@/lib/mock/modules';
+import { useStudents } from '@/lib/students/useStudents';
 import { attendanceRate, totalsOf, type AttendanceStatus } from '@/lib/attendance/store';
 import { useSavedSessions } from '@/lib/attendance/useSavedSessions';
 import { formatEthiopianDate } from '@/lib/utils/ethiopian-calendar';
@@ -18,12 +19,17 @@ const STATUS_BADGE: Record<AttendanceStatus, { cls: string; label: [string, stri
   EXCUSED: { cls: 'text-blue-700 bg-blue-50', label: ['Excused', 'በፈቃድ'] },
 };
 
+const noopSubscribe = () => () => {};
+
 export default function StudentProfilePage() {
   const { t, locale } = useLang();
   const params = useParams<{ id: string }>();
   const savedSessions = useSavedSessions();
+  const students = useStudents();
+  // Students added in this browser are only known after hydration; don't flash "not found" before that.
+  const hydrated = useSyncExternalStore(noopSubscribe, () => true, () => false);
 
-  const student = MOCK_STUDENTS.find((s) => s.id === params.id);
+  const student = students.find((s) => s.id === params.id);
 
   const backLink = (
     <Link
@@ -35,6 +41,10 @@ export default function StudentProfilePage() {
     </Link>
   );
 
+  if (!student && !hydrated) {
+    return <div className="card p-8 text-sm text-slate-400">…</div>;
+  }
+
   if (!student) {
     return (
       <div className="space-y-4">
@@ -43,8 +53,8 @@ export default function StudentProfilePage() {
           <h1 className="text-lg font-bold text-slate-900">{t('Student not found', 'ተማሪው አልተገኘም')}</h1>
           <p className="text-sm text-slate-500 mt-1">
             {t(
-              'This student may have been added in the list only for this session. Profiles are available for saved students.',
-              'ይህ ተማሪ ለዚህ ክፍለ-ጊዜ ብቻ በዝርዝሩ ውስጥ የተጨመረ ሊሆን ይችላል። መገለጫ ለተቀመጡ ተማሪዎች ብቻ ይገኛል።'
+              'No student with this ID exists in this browser.',
+              'በዚህ አሳሽ ውስጥ ይህ መለያ ያለው ተማሪ የለም።'
             )}
           </p>
         </div>
@@ -89,13 +99,22 @@ export default function StudentProfilePage() {
             </span>
           </div>
         </div>
-        <Link
-          href="/dashboard/education/attendance/roll-call"
-          className="btn btn-secondary text-xs inline-flex items-center gap-2 self-start"
-        >
-          <ClipboardCheck size={14} />
-          {t('Take roll call', 'የስም ጥሪ')}
-        </Link>
+        <div className="flex flex-wrap gap-2 self-start">
+          <Link
+            href={`/dashboard/people/students/${student.id}/report-card`}
+            className="btn btn-secondary text-xs inline-flex items-center gap-2"
+          >
+            <Printer size={14} />
+            {t('Report card', 'የውጤት ካርድ')}
+          </Link>
+          <Link
+            href="/dashboard/education/attendance/roll-call"
+            className="btn btn-secondary text-xs inline-flex items-center gap-2"
+          >
+            <ClipboardCheck size={14} />
+            {t('Take roll call', 'የስም ጥሪ')}
+          </Link>
+        </div>
       </div>
 
       {/* Summary */}
