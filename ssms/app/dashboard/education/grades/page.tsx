@@ -1,101 +1,148 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Plus, Search, CheckCircle2 } from 'lucide-react';
+import { Plus, Search, AlertCircle, Check, X } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
-import { MOCK_GRADES } from '@/lib/mock/modules';
+import { useAuth } from '@/contexts/AuthContext';
 import { Modal } from '@/components/ui/Modal';
+import { AdminToast } from '@/components/admin/AdminModeNotice';
+import { EducationNotice } from '@/components/education/EducationNotice';
+import { reviewGrade, saveGrade, useEducation } from '@/lib/education/client';
+import { letterGrade, PASS_MARK, type GradeRow } from '@/lib/education/types';
 
-interface GradeItem {
-  id: string;
-  student: string;
-  reg_no: string;
-  subject: string;
-  class: string;
-  continuous: number;
-  final: number;
-  total: number;
-  grade: string;
-  status: string;
-}
+type Toast = { kind: 'success' | 'error'; text: string } | null;
+
+const STATUS_BADGE: Record<GradeRow['status'], string> = {
+  APPROVED: 'badge badge-success',
+  PENDING: 'badge badge-warning',
+  REJECTED: 'badge badge-danger',
+};
 
 export default function GradesPage() {
-  const { t } = useLang();
-  const [grades, setGrades] = useState<GradeItem[]>(MOCK_GRADES as GradeItem[]);
+  const { t, locale } = useLang();
+  const { can } = useAuth();
+  const { grades, students, subjects, classes, mode } = useEducation();
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | GradeRow['status']>('ALL');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [selectedGrade, setSelectedGrade] = useState<GradeItem | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [selectedGrade, setSelectedGrade] = useState<GradeRow | null>(null);
+  const [toast, setToast] = useState<Toast>(null);
+  const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState('');
 
   // Form State
-  const [student, setStudent] = useState('');
-  const [regNo, setRegNo] = useState('');
-  const [className, setClassName] = useState('Grade 1A');
-  const [subject, setSubject] = useState('Bible Studies (መጽሐፍ ቅዱስ)');
-  const [continuous, setContinuous] = useState('25');
-  const [finalScore, setFinalScore] = useState('62');
+  const [classId, setClassId] = useState('');
+  const [studentId, setStudentId] = useState('');
+  const [subjectId, setSubjectId] = useState('');
+  const [term, setTerm] = useState('1');
+  const [continuous, setContinuous] = useState('');
+  const [finalScore, setFinalScore] = useState('');
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+  const canEnter = can('GRADE_CREATE') || can('GRADE_UPDATE');
+  const canApprove = can('GRADE_APPROVE');
+
+  const statusLabel = (s: GradeRow['status']) =>
+    s === 'APPROVED' ? t('Approved', 'ጸድቋል') : s === 'REJECTED' ? t('Rejected', 'ተመልሷል') : t('Pending', 'በመጠባበቅ ላይ');
+
+  const showToast = (kind: 'success' | 'error', text: string) => {
+    setToast({ kind, text });
+    setTimeout(() => setToast(null), 3500);
   };
 
-  const calculateLetter = (total: number) => {
-    if (total >= 90) return 'A+';
-    if (total >= 85) return 'A';
-    if (total >= 80) return 'A-';
-    if (total >= 75) return 'B+';
-    if (total >= 70) return 'B';
-    if (total >= 60) return 'C';
-    if (total >= 50) return 'D';
-    return 'F';
+  const classStudents = students
+    .filter((s) => s.status === 'ACTIVE' && (!classId || s.class_id === classId))
+    .sort((a, b) => a.name_en.localeCompare(b.name_en));
+  const student = students.find((s) => s.id === studentId);
+  const eligibleSubjects = subjects.filter(
+    (s) => s.is_active && (!student || student.grade_level === 0 || s.min_grade <= student.grade_level)
+  );
+  const existing = grades.find(
+    (g) => g.student_id === studentId && g.subject_id === subjectId && g.term === Number(term)
+  );
+
+  const contVal = Math.min(30, Math.max(0, Number(continuous) || 0));
+  const finalVal = Math.min(70, Math.max(0, Number(finalScore) || 0));
+
+  const openEntry = (prefill?: GradeRow) => {
+    setFormError('');
+    if (prefill) {
+      const s = students.find((x) => x.id === prefill.student_id);
+      setClassId(s?.class_id ?? '');
+      setStudentId(prefill.student_id);
+      setSubjectId(prefill.subject_id);
+      setTerm(String(prefill.term));
+      setContinuous(String(prefill.continuous));
+      setFinalScore(String(prefill.final));
+    } else {
+      setContinuous('');
+      setFinalScore('');
+    }
+    setSelectedGrade(null);
+    setIsAddModalOpen(true);
   };
 
-  const handleAddGrade = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    const contVal = Math.min(30, Math.max(0, Number(continuous) || 0));
-    const finalVal = Math.min(70, Math.max(0, Number(finalScore) || 0));
-    const totalVal = contVal + finalVal;
-    const letter = calculateLetter(totalVal);
-
-    const newGrade: GradeItem = {
-      id: `grd-${Date.now()}`,
-      student,
-      reg_no: regNo || `STU-${Math.floor(1000 + Math.random() * 9000)}`,
-      class: className,
-      subject,
+    setFormError('');
+    if (!studentId || !subjectId) {
+      setFormError(t('Choose a student and a subject.', 'ተማሪ እና የትምህርት ዓይነት ይምረጡ።'));
+      return;
+    }
+    setBusy(true);
+    const res = await saveGrade({
+      student_id: studentId,
+      subject_id: subjectId,
+      term: Number(term),
       continuous: contVal,
       final: finalVal,
-      total: totalVal,
-      grade: letter,
-      status: 'APPROVED',
-    };
-
-    setGrades([newGrade, ...grades]);
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setFormError(res.error);
+      return;
+    }
     setIsAddModalOpen(false);
-    showToast(t(`Grade recorded for ${student} (${letter})!`, `ለ${student} ውጤት ተመዝግቧል (${letter})!`));
-
-    // Reset
-    setStudent('');
-    setRegNo('');
+    showToast(
+      'success',
+      t(`Grade saved for ${student?.name_en ?? ''} — waiting for approval`, `ለ${student?.name_am ?? ''} ውጤት ተመዝግቧል — ማጽደቅ ይጠብቃል`)
+    );
+    setStudentId('');
+    setContinuous('');
+    setFinalScore('');
   };
 
-  const filtered = grades.filter((g) =>
-    g.student.toLowerCase().includes(search.toLowerCase()) ||
-    g.reg_no.toLowerCase().includes(search.toLowerCase()) ||
-    g.subject.toLowerCase().includes(search.toLowerCase()) ||
-    g.class.toLowerCase().includes(search.toLowerCase())
-  );
+  const handleReview = async (g: GradeRow, decision: 'APPROVED' | 'REJECTED') => {
+    setBusy(true);
+    const res = await reviewGrade(g.id, decision);
+    setBusy(false);
+    if (!res.ok) return showToast('error', res.error);
+    setSelectedGrade(null);
+    showToast(
+      'success',
+      decision === 'APPROVED' ? t('Grade approved', 'ውጤቱ ጸድቋል') : t('Grade sent back', 'ውጤቱ ተመልሷል')
+    );
+  };
+
+  const approved = grades.filter((g) => g.status === 'APPROVED');
+  const average = approved.length
+    ? Math.round((approved.reduce((sum, g) => sum + g.total, 0) / approved.length) * 10) / 10
+    : null;
+
+  const needle = search.toLowerCase();
+  const filtered = grades
+    .filter((g) => statusFilter === 'ALL' || g.status === statusFilter)
+    .filter(
+      (g) =>
+        (locale === 'am' ? g.student_am : g.student).toLowerCase().includes(needle) ||
+        g.reg_no.toLowerCase().includes(needle) ||
+        (locale === 'am' ? g.subject_am : g.subject).toLowerCase().includes(needle) ||
+        g.class.toLowerCase().includes(needle)
+    )
+    .sort((a, b) => (a.status === 'PENDING' ? -1 : 0) - (b.status === 'PENDING' ? -1 : 0) || a.student.localeCompare(b.student));
 
   return (
     <div className="space-y-6">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700 animate-in fade-in slide-in-from-bottom-4">
-          <CheckCircle2 size={18} className="text-emerald-400" />
-          <span className="text-sm font-medium">{toastMessage}</span>
-        </div>
-      )}
+      <AdminToast toast={toast} />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -110,14 +157,25 @@ export default function GradesPage() {
             )}
           </p>
         </div>
-        <button
-          onClick={() => setIsAddModalOpen(true)}
-          className="btn btn-primary self-start sm:self-auto inline-flex items-center gap-2"
-        >
-          <Plus size={16} />
-          {t('Enter Student Grades', 'ውጤት አስገባ')}
-        </button>
+        {canEnter && (
+          <button
+            onClick={() => openEntry()}
+            disabled={mode === 'loading' || mode === 'error' || students.length === 0 || subjects.length === 0}
+            className="btn btn-primary self-start sm:self-auto inline-flex items-center gap-2 disabled:opacity-50"
+          >
+            <Plus size={16} />
+            {t('Enter Student Grades', 'ውጤት አስገባ')}
+          </button>
+        )}
       </div>
+
+      <EducationNotice needs="year" />
+
+      {mode === 'live' && subjects.length === 0 && (
+        <p className="p-3 rounded-xl border border-blue-200 bg-blue-50 text-sm text-blue-800">
+          {t('Add subjects first (Education → Subjects) before entering grades.', 'ውጤት ከማስገባትዎ በፊት የትምህርት ዓይነቶችን ያክሉ።')}
+        </p>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
@@ -126,13 +184,11 @@ export default function GradesPage() {
           <div className="text-xs text-slate-500 mt-1">{t('Total Graded', 'የተመዘገቡ ውጤቶች')}</div>
         </div>
         <div className="card p-5">
-          <div className="text-2xl font-bold text-emerald-600">83.4%</div>
-          <div className="text-xs text-slate-500 mt-1">{t('Class Average', 'የክፍል አማካይ')}</div>
+          <div className="text-2xl font-bold text-emerald-600">{average === null ? '—' : `${average}%`}</div>
+          <div className="text-xs text-slate-500 mt-1">{t('Average (approved)', 'አማካይ (የጸደቁ)')}</div>
         </div>
         <div className="card p-5">
-          <div className="text-2xl font-bold text-blue-600">
-            {grades.filter((g) => g.status === 'APPROVED').length}
-          </div>
+          <div className="text-2xl font-bold text-blue-600">{approved.length}</div>
           <div className="text-xs text-slate-500 mt-1">{t('Approved Grades', 'የጸደቁ ውጤቶች')}</div>
         </div>
         <div className="card p-5">
@@ -145,7 +201,7 @@ export default function GradesPage() {
 
       {/* Table Card */}
       <div className="card overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between gap-3">
+        <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <input
@@ -156,9 +212,21 @@ export default function GradesPage() {
               className="form-input pl-9 text-sm"
             />
           </div>
-          <span className="text-xs text-slate-400">
-            {filtered.length} {t('records', 'መዝገቦች')}
-          </span>
+          <div className="flex items-center gap-2">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+              className="form-input text-xs py-1.5 px-3"
+            >
+              <option value="ALL">{t('All statuses', 'ሁሉም')}</option>
+              <option value="PENDING">{statusLabel('PENDING')}</option>
+              <option value="APPROVED">{statusLabel('APPROVED')}</option>
+              <option value="REJECTED">{statusLabel('REJECTED')}</option>
+            </select>
+            <span className="text-xs text-slate-400">
+              {filtered.length} {t('records', 'መዝገቦች')}
+            </span>
+          </div>
         </div>
 
         <div className="table-container rounded-none border-0">
@@ -168,6 +236,7 @@ export default function GradesPage() {
                 <th>{t('Student', 'ተማሪ')}</th>
                 <th>{t('Class', 'ክፍል')}</th>
                 <th>{t('Subject', 'ትምህርት')}</th>
+                <th>{t('Term', 'ሩብ')}</th>
                 <th>{t('Continuous (30%)', 'ተከታታይ (30%)')}</th>
                 <th>{t('Final (70%)', 'የመጨረሻ (70%)')}</th>
                 <th>{t('Total (100%)', 'ድምር (100%)')}</th>
@@ -180,106 +249,120 @@ export default function GradesPage() {
               {filtered.map((g) => (
                 <tr key={g.id}>
                   <td>
-                    <div className="font-semibold text-slate-900">{g.student}</div>
+                    <div className="font-semibold text-slate-900">{locale === 'am' ? g.student_am : g.student}</div>
                     <div className="text-[11px] font-mono text-slate-400">{g.reg_no}</div>
                   </td>
                   <td className="text-slate-600 text-xs">{g.class}</td>
-                  <td className="text-slate-700 text-xs font-medium">{g.subject}</td>
+                  <td className="text-slate-700 text-xs font-medium">{locale === 'am' ? g.subject_am : g.subject}</td>
+                  <td className="text-xs text-slate-600">{g.term}</td>
                   <td className="font-mono text-xs text-slate-700">{g.continuous}/30</td>
                   <td className="font-mono text-xs text-slate-700">{g.final}/70</td>
                   <td>
                     <span className="font-bold text-xs text-slate-900 font-mono">{g.total}%</span>
                   </td>
                   <td>
-                    <span className="font-bold text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-700">
-                      {g.grade}
-                    </span>
+                    <span className="font-bold text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-700">{g.grade}</span>
                   </td>
                   <td>
-                    <span className={g.status === 'APPROVED' ? 'badge badge-success' : 'badge badge-warning'}>
-                      {g.status}
-                    </span>
+                    <span className={STATUS_BADGE[g.status]}>{statusLabel(g.status)}</span>
                   </td>
                   <td className="text-right">
                     <button
                       onClick={() => setSelectedGrade(g)}
                       className="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors"
                     >
-                      {t('Details', 'ዝርዝር')}
+                      {g.status === 'PENDING' && canApprove ? t('Review', 'ገምግም') : t('Details', 'ዝርዝር')}
                     </button>
                   </td>
                 </tr>
               ))}
+              {mode !== 'loading' && filtered.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="text-center text-sm text-slate-400 py-8">
+                    {t('No grades recorded yet.', 'እስካሁን የተመዘገበ ውጤት የለም።')}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Enter Student Grades Modal */}
+      {/* Enter Student Grade Modal */}
       <Modal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
         title={t('Enter Student Examination Grade', 'የተማሪ ውጤት አስገባ')}
         subtitle={t('Input continuous assessment and final examination scores', 'የተከታታይ ምዘና እና የመጨረሻ ፈተና ነጥብ ያስገቡ')}
       >
-        <form onSubmit={handleAddGrade} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Student Full Name', 'የተማሪ ሙሉ ስም')} *
-              </label>
-              <input
-                type="text"
-                required
-                value={student}
-                onChange={(e) => setStudent(e.target.value)}
-                placeholder="e.g. Dawit Hailu"
-                className="form-input text-sm"
-              />
+        <form onSubmit={handleSave} className="space-y-4">
+          {formError && (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200 flex items-center gap-2 text-red-700 text-sm">
+              <AlertCircle size={16} />
+              {formError}
             </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Registration ID', 'የተማሪ መለያ ቁጥር')}
-              </label>
-              <input
-                type="text"
-                value={regNo}
-                onChange={(e) => setRegNo(e.target.value)}
-                placeholder="STU-2024-..."
-                className="form-input text-sm"
-              />
-            </div>
-          </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Class Group', 'ክፍል')} *
-              </label>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">{t('Class', 'ክፍል')}</label>
               <select
-                value={className}
-                onChange={(e) => setClassName(e.target.value)}
+                value={classId}
+                onChange={(e) => {
+                  setClassId(e.target.value);
+                  setStudentId('');
+                }}
                 className="form-input text-sm"
               >
-                <option value="Grade 1A">Grade 1A (ክፍል 1ሀ)</option>
-                <option value="Grade 1B">Grade 1B (ክፍል 1ለ)</option>
-                <option value="Grade 2A">Grade 2A (ክፍል 2ሀ)</option>
-                <option value="Grade 3A">Grade 3A (ክፍል 3ሀ)</option>
+                <option value="">{t('All classes', 'ሁሉም ክፍሎች')}</option>
+                {classes.map((c) => (
+                  <option key={c.id} value={c.id}>{locale === 'am' ? c.name_am : c.name_en}</option>
+                ))}
               </select>
             </div>
             <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">{t('Student', 'ተማሪ')} *</label>
+              <select
+                required
+                value={studentId}
+                onChange={(e) => setStudentId(e.target.value)}
+                className="form-input text-sm"
+              >
+                <option value="">{t('— Choose a student —', '— ተማሪ ይምረጡ —')}</option>
+                {classStudents.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {(locale === 'am' ? s.name_am : s.name_en)} · {s.reg_no}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="sm:col-span-2">
               <label className="text-xs font-semibold text-slate-700 block mb-1">
                 {t('Curriculum Subject', 'የትምህርት ዓይነት')} *
               </label>
               <select
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
+                required
+                value={subjectId}
+                onChange={(e) => setSubjectId(e.target.value)}
                 className="form-input text-sm"
               >
-                <option value="Bible Studies (መጽሐፍ ቅዱስ)">Bible Studies (መጽሐፍ ቅዱስ)</option>
-                <option value="Church History (የቤተ ክርስቲያን ታሪክ)">Church History (የቤተ ክርስቲያን ታሪክ)</option>
-                <option value="Liturgical Studies (ሥርዓተ ቅዳሴ)">Liturgical Studies (ሥርዓተ ቅዳሴ)</option>
-                <option value="Orthodox Hymnody (ዜማ)">Orthodox Hymnody (ዜማ)</option>
+                <option value="">{t('— Choose a subject —', '— የትምህርት ዓይነት ይምረጡ —')}</option>
+                {eligibleSubjects.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.code} · {locale === 'am' ? s.name_am : s.name_en}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">{t('Term', 'ሩብ ዓመት')} *</label>
+              <select value={term} onChange={(e) => setTerm(e.target.value)} className="form-input text-sm">
+                {[1, 2, 3, 4].map((n) => (
+                  <option key={n} value={n}>{t(`Term ${n}`, `${n}ኛ ሩብ`)}</option>
+                ))}
               </select>
             </div>
           </div>
@@ -293,6 +376,7 @@ export default function GradesPage() {
                 type="number"
                 min="0"
                 max="30"
+                step="0.5"
                 required
                 value={continuous}
                 onChange={(e) => setContinuous(e.target.value)}
@@ -307,6 +391,7 @@ export default function GradesPage() {
                 type="number"
                 min="0"
                 max="70"
+                step="0.5"
                 required
                 value={finalScore}
                 onChange={(e) => setFinalScore(e.target.value)}
@@ -318,9 +403,18 @@ export default function GradesPage() {
           <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl flex items-center justify-between text-xs text-blue-900">
             <span>{t('Calculated Total Score', 'የተሰላ አጠቃላይ ውጤት')}:</span>
             <span className="font-bold text-sm font-mono">
-              {(Number(continuous) || 0) + (Number(finalScore) || 0)}% (Grade: {calculateLetter((Number(continuous) || 0) + (Number(finalScore) || 0))})
+              {contVal + finalVal}% ({t('Grade', 'ደረጃ')}: {letterGrade(contVal + finalVal)})
             </span>
           </div>
+
+          {existing && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              {t(
+                `A grade already exists for this term (${existing.total}%, ${statusLabel(existing.status)}). Saving replaces it and sends it back for approval.`,
+                `ለዚህ ሩብ ዓመት ውጤት አለ (${existing.total}%)። ማስቀመጥ ይተካዋል እና እንደገና ለማጽደቅ ይላካል።`
+              )}
+            </p>
+          )}
 
           <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
             <button
@@ -330,20 +424,22 @@ export default function GradesPage() {
             >
               {t('Cancel', 'ሰርዝ')}
             </button>
-            <button type="submit" className="btn btn-primary text-xs py-2 px-4">
-              {t('Save Grade', 'ውጤት መዝግብ')}
+            <button type="submit" disabled={busy} className="btn btn-primary text-xs py-2 px-4 disabled:opacity-60">
+              {busy ? t('Saving…', 'በመመዝገብ ላይ…') : t('Save Grade', 'ውጤት መዝግብ')}
             </button>
           </div>
         </form>
       </Modal>
 
-      {/* View Grade Details Modal */}
+      {/* Grade Details / Review Modal */}
       {selectedGrade && (
         <Modal
           isOpen={Boolean(selectedGrade)}
           onClose={() => setSelectedGrade(null)}
-          title={`${selectedGrade.student} — ${selectedGrade.subject}`}
-          subtitle={`${selectedGrade.class} • ${selectedGrade.reg_no}`}
+          title={`${locale === 'am' ? selectedGrade.student_am : selectedGrade.student} — ${
+            locale === 'am' ? selectedGrade.subject_am : selectedGrade.subject
+          }`}
+          subtitle={`${selectedGrade.class} • ${selectedGrade.reg_no} • ${t(`Term ${selectedGrade.term}`, `${selectedGrade.term}ኛ ሩብ`)}`}
         >
           <div className="space-y-4 text-sm">
             <div className="p-4 bg-slate-50 rounded-xl flex items-center justify-between">
@@ -353,7 +449,7 @@ export default function GradesPage() {
                   {selectedGrade.total}% <span className="text-lg text-slate-700">({selectedGrade.grade})</span>
                 </div>
               </div>
-              <span className="badge badge-success text-xs">{selectedGrade.status}</span>
+              <span className={STATUS_BADGE[selectedGrade.status]}>{statusLabel(selectedGrade.status)}</span>
             </div>
 
             <div className="divide-y divide-slate-100 border-y border-slate-100 text-xs">
@@ -367,17 +463,47 @@ export default function GradesPage() {
               </div>
               <div className="py-2.5 flex justify-between">
                 <span className="text-slate-500">{t('Academic Standing', 'የትምህርት ደረጃ')}:</span>
-                <span className="font-medium text-emerald-600 font-semibold">
-                  {selectedGrade.total >= 60 ? t('Satisfactory / Passed', 'አጥጋቢ / አልፏል') : t('Academic Detention', 'ዝቅተኛ ውጤት')}
+                <span className={`font-semibold ${selectedGrade.total >= PASS_MARK ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {selectedGrade.total >= PASS_MARK ? t('Passed', 'አልፏል') : t('Below pass mark', 'ከማለፊያ በታች')}
                 </span>
               </div>
+              {selectedGrade.approved_by && (
+                <div className="py-2.5 flex justify-between">
+                  <span className="text-slate-500">{t('Reviewed by', 'የገመገመው')}:</span>
+                  <span className="font-semibold text-slate-900">{selectedGrade.approved_by}</span>
+                </div>
+              )}
             </div>
 
-            <div className="flex justify-end pt-2">
-              <button
-                onClick={() => setSelectedGrade(null)}
-                className="btn btn-secondary text-xs"
-              >
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+              <div className="flex gap-2">
+                {canApprove && selectedGrade.status === 'PENDING' && (
+                  <>
+                    <button
+                      onClick={() => handleReview(selectedGrade, 'APPROVED')}
+                      disabled={busy}
+                      className="btn btn-primary text-xs inline-flex items-center gap-1 disabled:opacity-50"
+                    >
+                      <Check size={14} />
+                      {t('Approve', 'አጽድቅ')}
+                    </button>
+                    <button
+                      onClick={() => handleReview(selectedGrade, 'REJECTED')}
+                      disabled={busy}
+                      className="btn btn-danger text-xs inline-flex items-center gap-1 disabled:opacity-50"
+                    >
+                      <X size={14} />
+                      {t('Send back', 'መልስ')}
+                    </button>
+                  </>
+                )}
+                {can('GRADE_UPDATE') && (
+                  <button onClick={() => openEntry(selectedGrade)} className="btn btn-secondary text-xs">
+                    {t('Edit scores', 'ነጥብ አርትዕ')}
+                  </button>
+                )}
+              </div>
+              <button onClick={() => setSelectedGrade(null)} className="btn btn-secondary text-xs">
                 {t('Close', 'ዝጋ')}
               </button>
             </div>

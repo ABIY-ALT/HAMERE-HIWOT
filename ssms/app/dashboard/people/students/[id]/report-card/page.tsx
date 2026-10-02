@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { ArrowLeft, Download, Printer } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
-import { MOCK_ACADEMIC_YEARS, MOCK_GRADES } from '@/lib/mock/modules';
+import { useEducation } from '@/lib/education/client';
 import { useStudents } from '@/lib/students/useStudents';
 import { attendanceRate } from '@/lib/attendance/store';
 import { useSavedSessions } from '@/lib/attendance/useSavedSessions';
@@ -20,6 +20,7 @@ export default function ReportCardPage() {
   const params = useParams<{ id: string }>();
   const students = useStudents();
   const savedSessions = useSavedSessions();
+  const { grades: allGrades, years, activeYearId, mode } = useEducation();
   const today = useToday();
   const hydrated = useSyncExternalStore(noopSubscribe, () => true, () => false);
 
@@ -27,7 +28,7 @@ export default function ReportCardPage() {
   const backHref = `/dashboard/people/students/${params.id}`;
 
   if (!student) {
-    return hydrated ? (
+    return hydrated && mode !== 'loading' ? (
       <div className="space-y-4">
         <Link href="/dashboard/people/students" className="text-xs text-slate-500 hover:text-slate-800">
           ← {t('Back to students', 'ወደ ተማሪዎች ተመለስ')}
@@ -39,13 +40,13 @@ export default function ReportCardPage() {
     );
   }
 
-  const year = MOCK_ACADEMIC_YEARS.find((y) => y.is_current);
+  const year = years.find((y) => y.id === activeYearId);
   const schoolName = t(
     'Sallo Debre Tsehay St. George Church · Hamere Hiwot Sabbath School',
     'ሳሎ ደ/ፀ/ቅ/ጊዮርጊስ · ሐመረ ሕይወት ሰ/ት/ቤት'
   );
 
-  const grades = MOCK_GRADES.filter((g) => g.reg_no === student.reg_no);
+  const grades = allGrades.filter((g) => g.student_id === student.id);
   const approved = grades.filter((g) => g.status === 'APPROVED');
   const average = approved.length
     ? Math.round((approved.reduce((sum, g) => sum + g.total, 0) / approved.length) * 10) / 10

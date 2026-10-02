@@ -1,18 +1,9 @@
 'use client';
 
-import { useMemo, useSyncExternalStore } from 'react';
-import {
-  mergeStudents,
-  parseStudents,
-  readRawStudents,
-  subscribeStudents,
-  type Student,
-} from './store';
+import { useEducation } from '@/lib/education/client';
+import type { Student } from './store';
 
-const getServerSnapshot = () => '';
-
-/** All students (demo + saved). Saved ones appear after hydration. */
+/** All students — from the database, or demo + browser-saved ones in demo mode. */
 export function useStudents(): Student[] {
-  const raw = useSyncExternalStore(subscribeStudents, readRawStudents, getServerSnapshot);
-  return useMemo(() => mergeStudents(parseStudents(raw)), [raw]);
+  return useEducation().students;
 }

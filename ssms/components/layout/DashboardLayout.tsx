@@ -35,8 +35,6 @@ export default function DashboardLayout({ children, breadcrumbs }: DashboardLayo
         )}
       >
         <Header
-          sidebarCollapsed={sidebarCollapsed}
-          onToggleSidebar={() => setSidebarCollapsed((c) => !c)}
           onToggleMobileSidebar={() => setMobileOpenOn(mobileOpen ? null : pathname)}
           breadcrumbs={breadcrumbs}
         />

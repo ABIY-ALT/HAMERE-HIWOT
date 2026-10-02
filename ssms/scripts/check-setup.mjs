@@ -72,6 +72,9 @@ try {
     else problem('No Super Administrator yet — run: npm run create-admin -- <phone> "<password>" "<name>"');
   }
   if ((counts.organization_units ?? 0) === 0) problem('No organization units — migration 004 did not run');
+  const { error: subjectCols } = await db.from('subjects').select('instructor, syllabus').limit(1);
+  if (subjectCols) problem('Subject instructor/syllabus columns missing — run migration 007_subject_details.sql');
+  else ok('Migration 007 (subject details) applied');
 } catch (e) {
   problem(e.message);
 }

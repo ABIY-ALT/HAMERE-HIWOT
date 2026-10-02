@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { ArrowLeft, Phone, ClipboardCheck, Printer } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
-import { MOCK_GRADES } from '@/lib/mock/modules';
+import { useEducation } from '@/lib/education/client';
 import { useStudents } from '@/lib/students/useStudents';
 import { attendanceRate, totalsOf, type AttendanceStatus } from '@/lib/attendance/store';
 import { useSavedSessions } from '@/lib/attendance/useSavedSessions';
@@ -26,6 +26,7 @@ export default function StudentProfilePage() {
   const params = useParams<{ id: string }>();
   const savedSessions = useSavedSessions();
   const students = useStudents();
+  const { grades: allGrades, mode } = useEducation();
   // Students added in this browser are only known after hydration; don't flash "not found" before that.
   const hydrated = useSyncExternalStore(noopSubscribe, () => true, () => false);
 
@@ -41,7 +42,7 @@ export default function StudentProfilePage() {
     </Link>
   );
 
-  if (!student && !hydrated) {
+  if (!student && (!hydrated || mode === 'loading')) {
     return <div className="card p-8 text-sm text-slate-400">…</div>;
   }
 
@@ -53,8 +54,8 @@ export default function StudentProfilePage() {
           <h1 className="text-lg font-bold text-slate-900">{t('Student not found', 'ተማሪው አልተገኘም')}</h1>
           <p className="text-sm text-slate-500 mt-1">
             {t(
-              'No student with this ID exists in this browser.',
-              'በዚህ አሳሽ ውስጥ ይህ መለያ ያለው ተማሪ የለም።'
+              'No student with this ID was found.',
+              'ይህ መለያ ያለው ተማሪ አልተገኘም።'
             )}
           </p>
         </div>
@@ -71,7 +72,7 @@ export default function StudentProfilePage() {
   for (const s of history) counts[s.records[student.id].toLowerCase() as keyof typeof counts] += 1;
   const rate = attendanceRate(counts);
 
-  const grades = MOCK_GRADES.filter((g) => g.reg_no === student.reg_no);
+  const grades = allGrades.filter((g) => g.student_id === student.id);
   const approved = grades.filter((g) => g.status === 'APPROVED');
   const average = approved.length
     ? Math.round((approved.reduce((sum, g) => sum + g.total, 0) / approved.length) * 10) / 10

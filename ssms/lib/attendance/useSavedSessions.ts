@@ -1,20 +1,12 @@
 'use client';
 
-import { useMemo, useSyncExternalStore } from 'react';
-import {
-  parseSessions,
-  readRawSessions,
-  subscribeSessions,
-  type AttendanceSession,
-} from './store';
-
-const getServerSnapshot = () => '';
+import { useEducation } from '@/lib/education/client';
+import type { AttendanceSession } from './store';
 
 /**
- * Sessions saved in this browser. Returns [] on the server and during
- * hydration, then the stored sessions, and updates when they change.
+ * Roll-call sessions with per-student marks — from the database, or the ones
+ * saved in this browser in demo mode. Empty while loading.
  */
 export function useSavedSessions(): AttendanceSession[] {
-  const raw = useSyncExternalStore(subscribeSessions, readRawSessions, getServerSnapshot);
-  return useMemo(() => parseSessions(raw), [raw]);
+  return useEducation().sessions;
 }

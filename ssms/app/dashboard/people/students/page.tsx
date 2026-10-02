@@ -2,65 +2,79 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { UserPlus, Search, CheckCircle2, Download, Upload } from 'lucide-react';
+import { UserPlus, Search, Download, Upload, AlertCircle } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
-import { MOCK_CLASSES } from '@/lib/mock/modules';
 import { Modal } from '@/components/ui/Modal';
-import { addStudents, nextRegNos, type Student, type StudentGender } from '@/lib/students/store';
-import { useStudents } from '@/lib/students/useStudents';
+import { AdminToast } from '@/components/admin/AdminModeNotice';
+import { EducationNotice } from '@/components/education/EducationNotice';
+import type { Student, StudentGender } from '@/lib/students/store';
+import { enrollStudents, useEducation } from '@/lib/education/client';
 import { downloadXlsx, headerCell, cell } from '@/lib/export/xlsx';
 import { formatEthiopianDate, todayIso } from '@/lib/utils/ethiopian-calendar';
 
+type Toast = { kind: 'success' | 'error'; text: string } | null;
+
 export default function StudentsPage() {
   const { t, locale } = useLang();
-  const students = useStudents();
+  const { students, classes: classList } = useEducation();
   const [search, setSearch] = useState('');
   const [classFilter, setClassFilter] = useState('ALL');
 
   const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<Toast>(null);
+  const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState('');
 
   // Enroll Form State
   const [nameEn, setNameEn] = useState('');
   const [nameAm, setNameAm] = useState('');
   const [baptismal, setBaptismal] = useState('');
   const [gender, setGender] = useState<StudentGender>('MALE');
-  const [studentClassId, setStudentClassId] = useState(MOCK_CLASSES[0].id);
+  const [chosenClassId, setStudentClassId] = useState('');
+  const studentClassId = chosenClassId || classList[0]?.id || '';
   const [parent, setParent] = useState('');
   const [phone, setPhone] = useState('');
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+  const showToast = (kind: 'success' | 'error', text: string) => {
+    setToast({ kind, text });
+    setTimeout(() => setToast(null), 3500);
   };
 
-  const handleEnroll = (e: React.FormEvent) => {
+  const handleEnroll = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cls = MOCK_CLASSES.find((c) => c.id === studentClassId) ?? MOCK_CLASSES[0];
-    const [regNo] = nextRegNos(students, 1, new Date().getFullYear());
-    const newStudent: Student = {
-      id: `stu-${Date.now()}`,
-      reg_no: regNo,
-      name_en: nameEn.trim(),
-      name_am: nameAm.trim() || nameEn.trim(),
-      baptismal: baptismal.trim() || nameEn.trim().split(' ')[0],
-      gender,
-      class: cls.name_en,
-      class_id: cls.id,
-      grade_level: cls.grade_level,
-      status: 'ACTIVE',
-      enrollment_date: todayIso(),
-      parent: parent.trim(),
-      phone: phone.trim(),
-    };
-
-    if (!addStudents([newStudent])) {
-      showToast(t('Could not save. Browser storage is unavailable or full.', 'ማስቀመጥ አልተቻለም። የአሳሽ ማከማቻ አይሰራም ወይም ሞልቷል።'));
+    setFormError('');
+    const cls = classList.find((c) => c.id === studentClassId);
+    if (!cls) {
+      setFormError(t('Choose a class.', 'ክፍል ይምረጡ።'));
+      return;
+    }
+    setBusy(true);
+    const res = await enrollStudents([
+      {
+        name_en: nameEn.trim(),
+        name_am: nameAm.trim() || nameEn.trim(),
+        baptismal: baptismal.trim() || nameEn.trim().split(' ')[0],
+        gender,
+        class: cls.name_en,
+        class_id: cls.id,
+        grade_level: cls.grade_level,
+        status: 'ACTIVE',
+        enrollment_date: todayIso(),
+        parent: parent.trim(),
+        phone: phone.trim(),
+      },
+    ]);
+    setBusy(false);
+    if (!res.ok) {
+      setFormError(res.error);
       return;
     }
     setIsEnrollModalOpen(false);
-    showToast(t(`Student ${nameEn} enrolled successfully!`, `ተማሪ ${nameAm || nameEn} ተመዝግቧል!`));
+    showToast(
+      'success',
+      t(`Student ${nameEn} enrolled (${res.regNos[0]})`, `ተማሪ ${nameAm || nameEn} ተመዝግቧል (${res.regNos[0]})`)
+    );
 
     setNameEn('');
     setNameAm('');
@@ -87,7 +101,7 @@ export default function StudentsPage() {
         widths: [16, 24, 24, 16, 8, 24, 10, 16, 20, 22, 16],
       });
     } catch {
-      showToast(t('Could not create the Excel file.', 'የኤክሴል ፋይሉን መፍጠር አልተቻለም።'));
+      showToast('error', t('Could not create the Excel file.', 'የኤክሴል ፋይሉን መፍጠር አልተቻለም።'));
     }
   };
 
@@ -102,13 +116,7 @@ export default function StudentsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700 animate-in fade-in slide-in-from-bottom-4">
-          <CheckCircle2 size={18} className="text-emerald-400" />
-          <span className="text-sm font-medium">{toastMessage}</span>
-        </div>
-      )}
+      <AdminToast toast={toast} />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -140,14 +148,20 @@ export default function StudentsPage() {
             {t('Export Excel', 'ወደ ኤክሴል ላክ')}
           </button>
           <button
-            onClick={() => setIsEnrollModalOpen(true)}
-            className="btn btn-primary inline-flex items-center gap-2"
+            onClick={() => {
+              setFormError('');
+              setIsEnrollModalOpen(true);
+            }}
+            disabled={classList.length === 0}
+            className="btn btn-primary inline-flex items-center gap-2 disabled:opacity-50"
           >
             <UserPlus size={16} />
             {t('Enroll New Student', 'አዲስ ተማሪ መዝግብ')}
           </button>
         </div>
       </div>
+
+      <EducationNotice needs="classes" demoSavedInBrowser />
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
@@ -262,6 +276,13 @@ export default function StudentsPage() {
         subtitle={t('Assign academic class and guardian contact details', 'ክፍል እና የወላጅ መረጃ ያስገቡ')}
       >
         <form onSubmit={handleEnroll} className="space-y-4">
+          {formError && (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200 flex items-center gap-2 text-red-700 text-sm">
+              <AlertCircle size={16} />
+              {formError}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-semibold text-slate-700 block mb-1">
@@ -312,7 +333,7 @@ export default function StudentsPage() {
                 onChange={(e) => setStudentClassId(e.target.value)}
                 className="form-input text-sm"
               >
-                {MOCK_CLASSES.map((c) => (
+                {classList.map((c) => (
                   <option key={c.id} value={c.id}>{locale === 'am' ? c.name_am : c.name_en}</option>
                 ))}
               </select>
@@ -370,8 +391,8 @@ export default function StudentsPage() {
             >
               {t('Cancel', 'ሰርዝ')}
             </button>
-            <button type="submit" className="btn btn-primary text-xs">
-              {t('Enroll Student', 'ተማሪ መዝግብ')}
+            <button type="submit" disabled={busy} className="btn btn-primary text-xs disabled:opacity-60">
+              {busy ? t('Saving…', 'በመመዝገብ ላይ…') : t('Enroll Student', 'ተማሪ መዝግብ')}
             </button>
           </div>
         </form>

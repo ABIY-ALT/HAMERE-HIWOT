@@ -44,8 +44,7 @@ export default function AdminUsersPage() {
 
   const live = mode === 'live';
 
-  const refresh = useCallback(async () => {
-    const res = await loadUsers();
+  const apply = useCallback((res: Awaited<ReturnType<typeof loadUsers>>) => {
     if (res.mode === 'demo') {
       setUsers(demoUsers());
       setRoles(demoRoles());
@@ -58,12 +57,13 @@ export default function AdminUsersPage() {
       setLoadError(res.error);
     }
     setMode(res.mode);
-    return res.mode;
   }, []);
 
+  const refresh = useCallback(async () => apply(await loadUsers()), [apply]);
+
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    loadUsers().then(apply);
+  }, [apply]);
 
   const showToast = (kind: 'success' | 'error', text: string) => {
     setToast({ kind, text });

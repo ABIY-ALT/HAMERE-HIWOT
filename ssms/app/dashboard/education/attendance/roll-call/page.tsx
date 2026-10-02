@@ -5,13 +5,11 @@ import Link from 'next/link';
 import { ArrowLeft, CheckCircle2, Save } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { EthiopianDateInput } from '@/components/ui/EthiopianDateInput';
-import { MOCK_CLASSES } from '@/lib/mock/modules';
-import { useStudents } from '@/lib/students/useStudents';
+import { EducationNotice } from '@/components/education/EducationNotice';
+import { saveAttendance, useEducation } from '@/lib/education/client';
 import {
   ATTENDANCE_STATUSES,
   attendanceRate,
-  findSavedSession,
-  saveSession,
   totalsOf,
   type AttendanceStatus,
 } from '@/lib/attendance/store';
@@ -59,31 +57,38 @@ export default function RollCallPage() {
 
 function RollCallSheet() {
   const { t, locale } = useLang();
-  const allStudents = useStudents();
+  const edu = useEducation();
+  const classes = edu.classes;
 
-  const [classId, setClassId] = useState(MOCK_CLASSES[0].id);
+  const [chosenClassId, setClassId] = useState('');
+  const classId = chosenClassId || classes[0]?.id || '';
   const [date, setDate] = useState(todayIso());
-  const [saved, setSaved] = useState(() => findSavedSession(MOCK_CLASSES[0].id, todayIso()));
-  const [records, setRecords] = useState<Record<string, AttendanceStatus>>(saved?.records ?? {});
-  const [topicEn, setTopicEn] = useState(saved?.topic ?? '');
-  const [topicAm, setTopicAm] = useState(saved?.topic_am ?? '');
+  const [records, setRecords] = useState<Record<string, AttendanceStatus>>({});
+  const [topicEn, setTopicEn] = useState('');
+  const [topicAm, setTopicAm] = useState('');
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const cls = MOCK_CLASSES.find((c) => c.id === classId) ?? MOCK_CLASSES[0];
-  const students = allStudents
+  const cls = classes.find((c) => c.id === classId);
+  const saved = edu.sessions.find((s) => s.class_id === classId && s.date === date);
+  const students = edu.students
     .filter((s) => s.class_id === classId && s.status === 'ACTIVE')
     .sort((a, b) => a.name_en.localeCompare(b.name_en));
 
-  // Switching class or date loads whatever was already saved for that session,
+  // Choosing a class or date loads whatever was already saved for that session,
   // so the teacher edits the existing roll instead of starting a duplicate.
+  const sessionKey = `${classId}|${date}`;
+  const [formKey, setFormKey] = useState('');
+  if (edu.mode !== 'loading' && classId && formKey !== sessionKey) {
+    setFormKey(sessionKey);
+    setRecords(saved?.records ?? {});
+    setTopicEn(saved?.topic ?? '');
+    setTopicAm(saved?.topic_am ?? '');
+  }
+
   const switchSession = (nextClassId: string, nextDate: string) => {
-    const existing = findSavedSession(nextClassId, nextDate);
     setClassId(nextClassId);
     setDate(nextDate);
-    setSaved(existing);
-    setRecords(existing?.records ?? {});
-    setTopicEn(existing?.topic ?? '');
-    setTopicAm(existing?.topic_am ?? '');
     setMessage(null);
   };
 
@@ -100,38 +105,34 @@ function RollCallSheet() {
   const marked = students.filter((s) => records[s.id]).length;
   const unmarked = students.length - marked;
   const totals = totalsOf({ records: Object.fromEntries(students.filter((s) => records[s.id]).map((s) => [s.id, records[s.id]])) });
-  const canSave = students.length > 0 && unmarked === 0;
+  const canSave = Boolean(cls) && students.length > 0 && unmarked === 0 && !busy;
 
-  const handleSave = () => {
-    if (!canSave) return;
+  const handleSave = async () => {
+    if (!canSave || !cls) return;
     // Keep only students currently on this class roll
     const clean = Object.fromEntries(students.map((s) => [s.id, records[s.id]]));
-    const ok = saveSession({
-      id: saved?.id ?? `att-${Date.now()}`,
+    setBusy(true);
+    const res = await saveAttendance({
       class_id: cls.id,
       class: cls.name_en,
+      teacher: cls.teacher,
       date,
       topic: topicEn.trim(),
       topic_am: topicAm.trim() || topicEn.trim(),
-      teacher: cls.teacher,
       records: clean,
     });
-    if (ok) {
-      setSaved(findSavedSession(cls.id, date));
+    setBusy(false);
+    if (res.ok) {
       setMessage({ kind: 'ok', text: t('Attendance saved.', 'ክትትሉ ተቀምጧል።') });
     } else {
-      setMessage({
-        kind: 'error',
-        text: t(
-          'Could not save. Browser storage is unavailable or full.',
-          'ማስቀመጥ አልተቻለም። የአሳሽ ማከማቻ አይሰራም ወይም ሞልቷል።'
-        ),
-      });
+      setMessage({ kind: 'error', text: res.error });
     }
   };
 
   return (
     <>
+      <EducationNotice needs="classes" demoSavedInBrowser />
+
       {/* Session picker */}
       <div className="card p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
@@ -144,14 +145,14 @@ function RollCallSheet() {
             onChange={(e) => switchSession(e.target.value, date)}
             className="form-input text-sm"
           >
-            {MOCK_CLASSES.map((c) => (
+            {classes.map((c) => (
               <option key={c.id} value={c.id}>
                 {locale === 'am' ? c.name_am : c.name_en}
               </option>
             ))}
           </select>
           <p className="text-[11px] text-slate-500 mt-1">
-            {t('Teacher', 'አስተማሪ')}: {cls.teacher}
+            {t('Teacher', 'አስተማሪ')}: {cls?.teacher ?? '—'}
           </p>
         </div>
         <div>

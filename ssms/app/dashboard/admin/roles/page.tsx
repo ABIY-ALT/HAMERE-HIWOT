@@ -34,8 +34,7 @@ export default function RolesPage() {
 
   const live = mode === 'live';
 
-  const refresh = useCallback(async () => {
-    const res = await loadRoles();
+  const apply = useCallback((res: Awaited<ReturnType<typeof loadRoles>>) => {
     if (res.mode === 'demo') {
       setRoles(demoRoles());
       setPermissions(demoPermissions());
@@ -48,9 +47,11 @@ export default function RolesPage() {
     setMode(res.mode);
   }, []);
 
+  const refresh = useCallback(async () => apply(await loadRoles()), [apply]);
+
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    loadRoles().then(apply);
+  }, [apply]);
 
   const showToast = (kind: 'success' | 'error', text: string) => {
     setToast({ kind, text });

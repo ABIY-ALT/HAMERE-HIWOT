@@ -4,7 +4,8 @@ import React, { useRef, useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, ArrowLeft, CheckCircle2, Download, FileSpreadsheet, Upload } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
-import { MOCK_CLASSES } from '@/lib/mock/modules';
+import { enrollStudents, useEducation } from '@/lib/education/client';
+import { EducationNotice } from '@/components/education/EducationNotice';
 import { parseCsv } from '@/lib/import/csv';
 import {
   MAX_IMPORT_ROWS,
@@ -13,8 +14,6 @@ import {
   parseStudentImport,
   type ImportParseResult,
 } from '@/lib/import/students';
-import { addStudents, nextRegNos } from '@/lib/students/store';
-import { useStudents } from '@/lib/students/useStudents';
 import { downloadXlsx, headerCell } from '@/lib/export/xlsx';
 import { todayIso } from '@/lib/utils/ethiopian-calendar';
 
@@ -22,7 +21,7 @@ const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
 export default function ImportStudentsPage() {
   const { t } = useLang();
-  const students = useStudents();
+  const { students, classes } = useEducation();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [fileName, setFileName] = useState('');
@@ -80,7 +79,7 @@ export default function ImportStudentsPage() {
         rows = (await readSheet(file)) as unknown[][];
       }
       setParsed(
-        parseStudentImport(rows, { classes: MOCK_CLASSES, existing: students, today: todayIso() })
+        parseStudentImport(rows, { classes, existing: students, today: todayIso() })
       );
     } catch {
       setReadError(
@@ -97,23 +96,14 @@ export default function ImportStudentsPage() {
   const valid = parsed?.results.filter((r) => r.draft) ?? [];
   const invalid = parsed?.results.filter((r) => !r.draft) ?? [];
 
-  const handleImport = () => {
+  const handleImport = async () => {
     if (valid.length === 0) return;
-    const regNos = nextRegNos(students, valid.length, new Date().getFullYear());
-    const stamp = Date.now();
-    const ok = addStudents(
-      valid.map((r, i) => ({
-        ...(r.draft as NonNullable<typeof r.draft>),
-        id: `stu-${stamp}-${i}`,
-        reg_no: regNos[i],
-      }))
-    );
-    if (!ok) {
+    setBusy(true);
+    const res = await enrollStudents(valid.map((r) => r.draft as NonNullable<typeof r.draft>));
+    setBusy(false);
+    if (!res.ok) {
       setReadError(
-        t(
-          'Could not save the students. Browser storage is unavailable or full.',
-          'ተማሪዎችን ማስቀመጥ አልተቻለም። የአሳሽ ማከማቻ አይሰራም ወይም ሞልቷል።'
-        )
+        t(`Could not save the students: ${res.error}`, `ተማሪዎችን ማስቀመጥ አልተቻለም: ${res.error}`)
       );
       return;
     }
@@ -153,6 +143,8 @@ export default function ImportStudentsPage() {
           )}
         </p>
       </div>
+
+      <EducationNotice needs="classes" demoSavedInBrowser />
 
       {imported !== null && (
         <div className="card p-5 flex flex-wrap items-center justify-between gap-3 border-emerald-200 bg-emerald-50">
@@ -249,7 +241,7 @@ export default function ImportStudentsPage() {
               </button>
               <button
                 onClick={handleImport}
-                disabled={valid.length === 0}
+                disabled={valid.length === 0 || busy}
                 className="btn btn-primary text-xs inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Upload size={14} />

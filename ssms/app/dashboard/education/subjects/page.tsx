@@ -1,82 +1,80 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Plus, Search, CheckCircle2, BookCheck } from 'lucide-react';
+import { Plus, Search, BookCheck, AlertCircle } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
-import { MOCK_SUBJECTS } from '@/lib/mock/modules';
 import { Modal } from '@/components/ui/Modal';
+import { AdminToast } from '@/components/admin/AdminModeNotice';
+import { EducationNotice } from '@/components/education/EducationNotice';
+import { createSubject, useEducation } from '@/lib/education/client';
+import type { Subject } from '@/lib/education/types';
 
-interface SubjectItem {
-  id: string;
-  code: string;
-  name_en: string;
-  name_am: string;
-  grade_level: string;
-  credits: number;
-  teacher: string;
-  syllabus?: string;
-}
+type Toast = { kind: 'success' | 'error'; text: string } | null;
 
 export default function SubjectsPage() {
   const { t, locale } = useLang();
-  const [subjects, setSubjects] = useState<SubjectItem[]>(MOCK_SUBJECTS as SubjectItem[]);
+  const { subjects, mode } = useEducation();
   const [search, setSearch] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [selectedSubject, setSelectedSubject] = useState<SubjectItem | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
+  const [toast, setToast] = useState<Toast>(null);
+  const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState('');
 
   // Form State
   const [code, setCode] = useState('');
   const [nameEn, setNameEn] = useState('');
   const [nameAm, setNameAm] = useState('');
-  const [gradeLevel, setGradeLevel] = useState('Grade 1');
+  const [minGrade, setMinGrade] = useState('1');
   const [credits, setCredits] = useState('2');
-  const [teacher, setTeacher] = useState('');
+  const [instructor, setInstructor] = useState('');
+  const [syllabus, setSyllabus] = useState('');
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+  const gradeLabel = (s: Subject) =>
+    s.min_grade <= 1 ? t('All grades', 'ሁሉም ክፍሎች') : t(`Grade ${s.min_grade}+`, `ክፍል ${s.min_grade}+`);
+
+  const showToast = (kind: 'success' | 'error', text: string) => {
+    setToast({ kind, text });
+    setTimeout(() => setToast(null), 3500);
   };
 
-  const handleAddSubject = (e: React.FormEvent) => {
+  const handleAddSubject = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newSub: SubjectItem = {
-      id: `subj-${Date.now()}`,
-      code: code.toUpperCase(),
-      name_en: nameEn,
-      name_am: nameAm || nameEn,
-      grade_level: gradeLevel,
-      credits: Number(credits) || 2,
-      teacher: teacher || 'TBD',
-      syllabus: 'Standard Orthodox Sunday School Syllabus covering foundational theological principles and practical spiritual life.',
-    };
+    setFormError('');
+    setBusy(true);
+    const res = await createSubject({
+      code: code.trim(),
+      name_en: nameEn.trim(),
+      name_am: nameAm.trim(),
+      min_grade: Number(minGrade) || 1,
+      credits: Number(credits) || 1,
+      instructor: instructor.trim(),
+      syllabus: syllabus.trim(),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setFormError(res.error);
+      return;
+    }
 
-    setSubjects([newSub, ...subjects]);
     setIsAddModalOpen(false);
-    showToast(t(`Subject "${nameEn}" added successfully!`, `የትምህርት ዓይነት "${nameAm || nameEn}" በሚገባ ተመዝግቧል!`));
-
-    // Reset
+    showToast('success', t(`Subject "${nameEn}" added`, `የትምህርት ዓይነት "${nameAm || nameEn}" ተመዝግቧል`));
     setCode('');
     setNameEn('');
     setNameAm('');
-    setTeacher('');
+    setInstructor('');
+    setSyllabus('');
   };
 
   const filtered = subjects.filter((s) =>
     (locale === 'am' ? s.name_am : s.name_en).toLowerCase().includes(search.toLowerCase()) ||
     s.code.toLowerCase().includes(search.toLowerCase()) ||
-    s.teacher.toLowerCase().includes(search.toLowerCase())
+    s.instructor.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
     <div className="space-y-6">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700 animate-in fade-in slide-in-from-bottom-4">
-          <CheckCircle2 size={18} className="text-emerald-400" />
-          <span className="text-sm font-medium">{toastMessage}</span>
-        </div>
-      )}
+      <AdminToast toast={toast} />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -92,13 +90,19 @@ export default function SubjectsPage() {
           </p>
         </div>
         <button
-          onClick={() => setIsAddModalOpen(true)}
-          className="btn btn-primary self-start sm:self-auto inline-flex items-center gap-2"
+          onClick={() => {
+            setFormError('');
+            setIsAddModalOpen(true);
+          }}
+          disabled={mode === 'loading' || mode === 'error'}
+          className="btn btn-primary self-start sm:self-auto inline-flex items-center gap-2 disabled:opacity-50"
         >
           <Plus size={16} />
           {t('Add Subject', 'የትምህርት ዓይነት ጨምር')}
         </button>
       </div>
+
+      <EducationNotice />
 
       {/* Table Card */}
       <div className="card overflow-hidden">
@@ -139,11 +143,11 @@ export default function SubjectsPage() {
                   </td>
                   <td>
                     <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">
-                      {s.grade_level}
+                      {gradeLabel(s)}
                     </span>
                   </td>
                   <td className="font-semibold text-slate-700">{s.credits} hrs/wk</td>
-                  <td className="text-slate-600 text-xs">{s.teacher}</td>
+                  <td className="text-slate-600 text-xs">{s.instructor || '—'}</td>
                   <td className="text-right">
                     <button
                       onClick={() => setSelectedSubject(s)}
@@ -154,6 +158,13 @@ export default function SubjectsPage() {
                   </td>
                 </tr>
               ))}
+              {mode !== 'loading' && filtered.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="text-center text-sm text-slate-400 py-8">
+                    {t('No subjects yet', 'እስካሁን የትምህርት ዓይነት የለም')}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -167,6 +178,13 @@ export default function SubjectsPage() {
         subtitle={t('Define subject specifications, grade level, and credit load', 'የትምህርቱን መረጃ፣ የክፍል ደረጃና የሰዓት ጫና ያስገቡ')}
       >
         <form onSubmit={handleAddSubject} className="space-y-4">
+          {formError && (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200 flex items-center gap-2 text-red-700 text-sm">
+              <AlertCircle size={16} />
+              {formError}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-semibold text-slate-700 block mb-1">
@@ -231,15 +249,14 @@ export default function SubjectsPage() {
                 {t('Grade Level', 'የክፍል ደረጃ')} *
               </label>
               <select
-                value={gradeLevel}
-                onChange={(e) => setGradeLevel(e.target.value)}
+                value={minGrade}
+                onChange={(e) => setMinGrade(e.target.value)}
                 className="form-input text-sm"
               >
-                <option value="Grade 1">Grade 1 (ክፍል 1)</option>
-                <option value="Grade 2">Grade 2 (ክፍል 2)</option>
-                <option value="Grade 3">Grade 3 (ክፍል 3)</option>
-                <option value="Grade 4">Grade 4 (ክፍል 4)</option>
-                <option value="Advanced / Youth">Advanced / Youth (ከፍተኛ / ወጣቶች)</option>
+                <option value="1">{t('All grades (from Grade 1)', 'ሁሉም ክፍሎች (ከክፍል 1)')}</option>
+                {[2, 3, 4, 5, 6, 7, 8].map((g) => (
+                  <option key={g} value={g}>{t(`Grade ${g} and above`, `ከክፍል ${g} በላይ`)}</option>
+                ))}
               </select>
             </div>
             <div>
@@ -248,12 +265,24 @@ export default function SubjectsPage() {
               </label>
               <input
                 type="text"
-                value={teacher}
-                onChange={(e) => setTeacher(e.target.value)}
+                value={instructor}
+                onChange={(e) => setInstructor(e.target.value)}
                 placeholder="መምህር..."
                 className="form-input text-sm"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-700 block mb-1">
+              {t('Syllabus / Description', 'ሥርዓተ ትምህርት / መግለጫ')}
+            </label>
+            <textarea
+              value={syllabus}
+              onChange={(e) => setSyllabus(e.target.value)}
+              rows={3}
+              className="form-input text-sm"
+            />
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
@@ -264,8 +293,8 @@ export default function SubjectsPage() {
             >
               {t('Cancel', 'ሰርዝ')}
             </button>
-            <button type="submit" className="btn btn-primary text-xs py-2 px-4">
-              {t('Save Subject', 'የትምህርት ዓይነት መዝግብ')}
+            <button type="submit" disabled={busy} className="btn btn-primary text-xs py-2 px-4 disabled:opacity-60">
+              {busy ? t('Saving…', 'በመመዝገብ ላይ…') : t('Save Subject', 'የትምህርት ዓይነት መዝግብ')}
             </button>
           </div>
         </form>
@@ -277,7 +306,7 @@ export default function SubjectsPage() {
           isOpen={Boolean(selectedSubject)}
           onClose={() => setSelectedSubject(null)}
           title={locale === 'am' ? selectedSubject.name_am : selectedSubject.name_en}
-          subtitle={`${selectedSubject.code} • ${selectedSubject.grade_level}`}
+          subtitle={`${selectedSubject.code} • ${gradeLabel(selectedSubject)}`}
         >
           <div className="space-y-4 text-sm">
             <div className="p-4 bg-slate-50 rounded-xl space-y-2">
@@ -287,11 +316,11 @@ export default function SubjectsPage() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-500">{t('Lead Instructor', 'ዋና አስተማሪ')}:</span>
-                <span className="font-semibold text-slate-800">{selectedSubject.teacher}</span>
+                <span className="font-semibold text-slate-800">{selectedSubject.instructor || '—'}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-500">{t('Grade Bracket', 'የክፍል ደረጃ')}:</span>
-                <span className="badge badge-info">{selectedSubject.grade_level}</span>
+                <span className="badge badge-info">{gradeLabel(selectedSubject)}</span>
               </div>
             </div>
 

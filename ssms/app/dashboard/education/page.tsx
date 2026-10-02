@@ -4,6 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { Calendar, BookOpen, GraduationCap, CalendarCheck, Award, FileText } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
+import { EducationNotice } from '@/components/education/EducationNotice';
 
 export default function EducationHub() {
   const { t } = useLang();
@@ -72,6 +73,8 @@ export default function EducationHub() {
           )}
         </p>
       </div>
+
+      <EducationNotice needs="classes" />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {links.map((item, idx) => {

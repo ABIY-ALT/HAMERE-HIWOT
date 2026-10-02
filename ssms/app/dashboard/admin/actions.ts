@@ -9,10 +9,8 @@
 
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { PermissionCode } from '@/types';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { createAdminClient } from '@/lib/supabase/server';
-import { getCurrentUser, type SessionUser } from '@/lib/auth/session';
+import { authorize, check, errorMessage } from '@/lib/auth/authorize';
 import { isValidPhone, normalizePhone, phoneToAuthEmail } from '@/lib/auth/phone';
 import { provisionSystemUser } from '@/lib/admin/provision';
 import {
@@ -28,27 +26,7 @@ import {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-async function authorize(
-  permission: PermissionCode
-): Promise<{ me: SessionUser; db: SupabaseClient }> {
-  if (!isSupabaseEnabled()) throw new Error('The database is not connected');
-  const me = await getCurrentUser();
-  if (!me) throw new Error('Your session has expired. Please sign in again.');
-  if (!me.permissions.includes(permission)) {
-    throw new Error('You do not have permission to do this');
-  }
-  return { me, db: createAdminClient() };
-}
-
-function message(e: unknown): string {
-  if (e instanceof z.ZodError) return e.issues[0]?.message ?? 'Invalid input';
-  return e instanceof Error ? e.message : 'Unexpected error';
-}
-
-function check<T>(res: { data: T | null; error: { message: string } | null }): T {
-  if (res.error) throw new Error(res.error.message);
-  return res.data as T;
-}
+const message = errorMessage;
 
 async function fetchRolesAndPermissions(db: SupabaseClient) {
   const [roles, links, perms] = await Promise.all([

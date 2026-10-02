@@ -9,6 +9,8 @@ import { useStudents } from '@/lib/students/useStudents';
 import { Modal } from '@/components/ui/Modal';
 import { attendanceRate, totalsOf, type AttendanceSession, type AttendanceStatus } from '@/lib/attendance/store';
 import { useSavedSessions } from '@/lib/attendance/useSavedSessions';
+import { useEducation } from '@/lib/education/client';
+import { EducationNotice } from '@/components/education/EducationNotice';
 import { formatEthiopianDate } from '@/lib/utils/ethiopian-calendar';
 
 // Sessions that ship with the demo data only kept totals, not per-student marks.
@@ -34,15 +36,16 @@ const STATUS_BADGE: Record<AttendanceStatus, { cls: string; label: [string, stri
 export default function AttendancePage() {
   const { t, locale } = useLang();
   const savedSessions = useSavedSessions();
+  const { mode } = useEducation();
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // A roll call saved for the same class and date replaces the demo entry.
+  // Demo mode only: a roll call saved for the same class and date replaces the demo entry.
   const sessions = useMemo(() => {
     const savedKeys = new Set(savedSessions.map((s) => `${s.class_id}|${s.date}`));
-    const demo = DEMO_SESSIONS.filter((s) => !savedKeys.has(`${s.class_id}|${s.date}`));
+    const demo = mode === 'demo' ? DEMO_SESSIONS.filter((s) => !savedKeys.has(`${s.class_id}|${s.date}`)) : [];
     return [...savedSessions, ...demo].sort((a, b) => b.date.localeCompare(a.date));
-  }, [savedSessions]);
+  }, [savedSessions, mode]);
 
   const selectedSession = sessions.find((s) => s.id === selectedId) ?? null;
 
@@ -100,6 +103,8 @@ export default function AttendancePage() {
         </div>
       </div>
 
+      <EducationNotice demoSavedInBrowser />
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div className="card p-5">
@@ -154,6 +159,13 @@ export default function AttendancePage() {
               </tr>
             </thead>
             <tbody>
+              {mode !== 'loading' && filtered.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="text-center text-sm text-slate-400 py-8">
+                    {t('No roll calls recorded yet.', 'እስካሁን የተመዘገበ የስም ጥሪ የለም።')}
+                  </td>
+                </tr>
+              )}
               {filtered.map((att) => {
                 const tt = totalsOf(att);
                 return (

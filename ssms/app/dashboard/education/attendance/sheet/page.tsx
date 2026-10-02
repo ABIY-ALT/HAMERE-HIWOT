@@ -4,7 +4,8 @@ import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Download, Printer } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
-import { MOCK_CLASSES } from '@/lib/mock/modules';
+import { useEducation } from '@/lib/education/client';
+import { EducationNotice } from '@/components/education/EducationNotice';
 import { useStudents } from '@/lib/students/useStudents';
 import { useSavedSessions } from '@/lib/attendance/useSavedSessions';
 import { buildAttendanceSheet, STATUS_LETTER } from '@/lib/attendance/sheet';
@@ -26,10 +27,12 @@ export default function AttendanceSheetPage() {
   const savedSessions = useSavedSessions();
   const today = useToday();
 
-  const [classId, setClassId] = useState(MOCK_CLASSES[0].id);
+  const { classes } = useEducation();
+  const [chosenClassId, setClassId] = useState('');
+  const classId = chosenClassId || classes[0]?.id || '';
   const [limit, setLimit] = useState(12);
 
-  const cls = MOCK_CLASSES.find((c) => c.id === classId) ?? MOCK_CLASSES[0];
+  const cls = classes.find((c) => c.id === classId) ?? { id: '', name_en: '—', name_am: '—', teacher: '—' };
 
   const sheet = useMemo(() => {
     const roll = students.filter((s) => s.class_id === classId && s.status === 'ACTIVE');
@@ -86,6 +89,7 @@ export default function AttendanceSheetPage() {
           <ArrowLeft size={14} />
           {t('Back to attendance', 'ወደ ክትትል ተመለስ')}
         </Link>
+        <EducationNotice needs="classes" demoSavedInBrowser />
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-slate-900">
@@ -104,7 +108,7 @@ export default function AttendanceSheetPage() {
                 {t('Class', 'ክፍል')}
               </label>
               <select id="sheet-class" value={classId} onChange={(e) => setClassId(e.target.value)} className="form-input text-sm">
-                {MOCK_CLASSES.map((c) => (
+                {classes.map((c) => (
                   <option key={c.id} value={c.id}>{locale === 'am' ? c.name_am : c.name_en}</option>
                 ))}
               </select>
