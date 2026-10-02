@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "npm run dev --prefix ssms",
-    "build": "npm run build --prefix ssms",
+    "build": "npm install --include=dev --prefix ssms && npm run build --prefix ssms",
     "start": "npm run start --prefix ssms",
     "lint": "npm run lint --prefix ssms",
     "postinstall": "prisma skills sync || exit 0"
