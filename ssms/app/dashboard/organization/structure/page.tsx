@@ -1,18 +1,49 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Shield, Crown, Building2, Network } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { MOCK_ORG_UNITS } from '@/lib/mock/data';
+import { AdminModeNotice } from '@/components/admin/AdminModeNotice';
+import type { LoadMode } from '@/lib/admin/types';
+import type { StructureView, UnitSummary } from '@/lib/organization/types';
+import { loadStructure } from '../actions';
+
+const demoUnit = (u: (typeof MOCK_ORG_UNITS)[number]): UnitSummary => ({
+  id: u.id, code: u.code, name_en: u.name_en, name_am: u.name_am, description_en: '', description_am: '',
+  is_active: true, sort_order: u.sort_order, heads: [], people: [], budget: null, openRequests: null,
+});
 
 export default function OrgStructurePage() {
   const { t, locale } = useLang();
+  const [mode, setMode] = useState<LoadMode>('loading');
+  const [error, setError] = useState('');
+  const [view, setView] = useState<StructureView | null>(null);
 
-  const governanceUnits = MOCK_ORG_UNITS.filter(
-    (u) => ['GENERAL_ASSEMBLY', 'AUDIT_COMMITTEE', 'MANAGEMENT_BOARD', 'MANAGEMENT_SECRETARIAT', 'ADVISORY_COUNCIL', 'EXECUTIVE_COMMITTEE', 'EXECUTIVE_SECRETARIAT'].includes(u.unit_type)
-  );
-  const coordinations = MOCK_ORG_UNITS.filter((u) => u.unit_type === 'COORDINATION');
-  const departments = MOCK_ORG_UNITS.filter((u) => u.unit_type === 'DEPARTMENT');
+  useEffect(() => {
+    loadStructure().then((res) => {
+      if (res.mode === 'live') setView(res.data);
+      else if (res.mode === 'demo')
+        setView({
+          coordinations: MOCK_ORG_UNITS.filter((u) => u.unit_type === 'COORDINATION').map(demoUnit),
+          departments: MOCK_ORG_UNITS.filter((u) => u.unit_type === 'DEPARTMENT').map(demoUnit),
+          bodies: {},
+        });
+      else setError(res.error);
+      setMode(res.mode);
+    });
+  }, []);
+
+  const coordinations = view?.coordinations ?? [];
+  const departments = view?.departments ?? [];
+  const seats = (code: string) => {
+    const b = view?.bodies[code];
+    if (!b) return '';
+    return b.seats !== null ? t(` — ${b.active} of ${b.seats} seats filled`, ` — ከ${b.seats} ${b.active} ተይዘዋል`) : t(` — ${b.active} members`, ` — ${b.active} አባላት`);
+  };
+  const headOf = (u: UnitSummary) =>
+    u.heads.length ? u.heads.map((h) => (locale === 'am' ? h.name_am : h.name)).join(', ') : '';
 
   return (
     <div className="space-y-6">
@@ -34,6 +65,8 @@ export default function OrgStructurePage() {
           {t('Statutory Model — Exactly Mandated', 'ሕጋዊ ሞዴል — በትክክል የተደነገገ')}
         </div>
       </div>
+
+      <AdminModeNotice mode={mode === 'live' ? 'live' : mode} error={error} />
 
       {/* Visual Hierarchy Diagram */}
       <div className="card p-6 space-y-8 overflow-x-auto">
@@ -73,6 +106,7 @@ export default function OrgStructurePage() {
               <div className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-700 uppercase tracking-wider mb-1">
                 <Crown size={14} />
                 {t('Strategic Governance (9 Members)', 'ስልታዊ አመራር (9 አባላት)')}
+                {seats('MANAGEMENT_BOARD')}
               </div>
               <div className="font-bold text-slate-800 text-sm">
                 {locale === 'am' ? 'የሥራ አመራር ጉባኤ' : 'Board of Management'}
@@ -89,6 +123,7 @@ export default function OrgStructurePage() {
           <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 text-center w-80 shadow-sm">
             <div className="text-xs font-bold text-indigo-700 uppercase tracking-wider mb-1">
               {t('Executive Operational Body (9 Members)', 'የሥራ አስፈጻሚ አካል (9 አባላት)')}
+              {seats('EXECUTIVE_COMMITTEE')}
             </div>
             <div className="font-bold text-slate-800 text-base">
               {locale === 'am' ? 'የሥራ አስፈጻሚ ጉባኤ' : 'Executive Committee'}
@@ -107,17 +142,20 @@ export default function OrgStructurePage() {
               <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-200">
                 <Network className="text-blue-600" size={18} />
                 <h3 className="font-bold text-sm text-slate-800">
-                  {t('Seven Coordinations', 'ሰባቱ ቅንጅቶች')}
+                  {t(`Coordinations (${coordinations.length})`, `ቅንጅቶች (${coordinations.length})`)}
                 </h3>
               </div>
               <div className="space-y-2">
                 {coordinations.map((c) => (
-                  <div key={c.id} className="bg-white p-3 rounded-lg border border-slate-200/80 flex items-center justify-between text-xs">
-                    <span className="font-medium text-slate-800">
-                      {locale === 'am' ? c.name_am : c.name_en}
+                  <Link key={c.id} href="/dashboard/organization/coordinations" className="bg-white p-3 rounded-lg border border-slate-200/80 flex items-center justify-between gap-3 text-xs hover:border-blue-200">
+                    <span>
+                      <span className="font-medium text-slate-800 block">{locale === 'am' ? c.name_am : c.name_en}</span>
+                      <span className={headOf(c) ? 'text-slate-500' : 'text-amber-700'}>
+                        {headOf(c) || t('No head assigned', 'ኃላፊ አልተመደበም')}
+                      </span>
                     </span>
                     <span className="font-mono text-slate-400 text-[10px]">{c.code}</span>
-                  </div>
+                  </Link>
                 ))}
               </div>
             </div>
@@ -127,17 +165,20 @@ export default function OrgStructurePage() {
               <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-200">
                 <Building2 className="text-amber-600" size={18} />
                 <h3 className="font-bold text-sm text-slate-800">
-                  {t('Seven Operational Departments', 'ሰባቱ የሥራ ክፍሎች')}
+                  {t(`Operational Departments (${departments.length})`, `የሥራ ክፍሎች (${departments.length})`)}
                 </h3>
               </div>
               <div className="space-y-2">
                 {departments.map((d) => (
-                  <div key={d.id} className="bg-white p-3 rounded-lg border border-slate-200/80 flex items-center justify-between text-xs">
-                    <span className="font-medium text-slate-800">
-                      {locale === 'am' ? d.name_am : d.name_en}
+                  <Link key={d.id} href="/dashboard/organization/departments" className="bg-white p-3 rounded-lg border border-slate-200/80 flex items-center justify-between gap-3 text-xs hover:border-blue-200">
+                    <span>
+                      <span className="font-medium text-slate-800 block">{locale === 'am' ? d.name_am : d.name_en}</span>
+                      <span className={headOf(d) ? 'text-slate-500' : 'text-amber-700'}>
+                        {headOf(d) || t('No head assigned', 'ኃላፊ አልተመደበም')}
+                      </span>
                     </span>
                     <span className="font-mono text-slate-400 text-[10px]">{d.code}</span>
-                  </div>
+                  </Link>
                 ))}
               </div>
             </div>
