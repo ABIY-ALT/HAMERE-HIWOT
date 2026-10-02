@@ -86,7 +86,20 @@ try {
   else ok('Migration 010 (governance) applied');
   const { error: auditFn } = await db.rpc('audit_actor');
   if (auditFn) problem('Automatic audit trail missing — run migration 011_audit_trail.sql');
-  else ok('Migration 011 (audit trail) applied');
+  else {
+    ok('Migration 011 (audit trail) applied');
+    // The server tells the database who is acting via the x-ssms-actor header.
+    const { data: someUser } = await db.from('system_users').select('id').limit(1).maybeSingle();
+    if (someUser) {
+      const asUser = createClient(url, serviceKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+        global: { headers: { 'x-ssms-actor': someUser.id } },
+      });
+      const { data: actor } = await asUser.rpc('audit_actor');
+      if (actor === someUser.id) ok('Audit trail records which user made each change');
+      else problem('Audit trail cannot see the acting user — changes will show as "System / database"');
+    }
+  }
 } catch (e) {
   problem(e.message);
 }
