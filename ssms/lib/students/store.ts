@@ -74,6 +74,22 @@ export function addStudents(students: Student[]): boolean {
   }
 }
 
+/** Replace a student saved in this browser. Returns false if it isn't one of them (or storage failed). */
+export function replaceSavedStudent(student: Student): boolean {
+  try {
+    const saved = parseStudents(readRawStudents());
+    if (!saved.some((s) => s.id === student.id)) return false;
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(saved.map((s) => (s.id === student.id ? student : s)))
+    );
+    window.dispatchEvent(new Event(CHANGE_EVENT));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Demo students plus saved ones, saved first. */
 export function mergeStudents(saved: Student[]): Student[] {
   return [...saved, ...DEMO_STUDENTS];

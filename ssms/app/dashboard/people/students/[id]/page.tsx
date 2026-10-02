@@ -1,10 +1,13 @@
 'use client';
 
-import React, { useSyncExternalStore } from 'react';
+import React, { useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, Phone, ClipboardCheck, Printer } from 'lucide-react';
+import { ArrowLeft, Phone, ClipboardCheck, Printer, Pencil } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { AdminToast } from '@/components/admin/AdminModeNotice';
+import { EditStudentModal } from '@/components/education/EditStudentModal';
 import { useEducation } from '@/lib/education/client';
 import { useStudents } from '@/lib/students/useStudents';
 import { attendanceRate, totalsOf, type AttendanceStatus } from '@/lib/attendance/store';
@@ -27,6 +30,9 @@ export default function StudentProfilePage() {
   const savedSessions = useSavedSessions();
   const students = useStudents();
   const { grades: allGrades, mode } = useEducation();
+  const { can } = useAuth();
+  const [editing, setEditing] = useState(false);
+  const [toast, setToast] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   // Students added in this browser are only known after hydration; don't flash "not found" before that.
   const hydrated = useSyncExternalStore(noopSubscribe, () => true, () => false);
 
@@ -82,6 +88,7 @@ export default function StudentProfilePage() {
 
   return (
     <div className="space-y-6">
+      <AdminToast toast={toast} />
       <div>{backLink}</div>
 
       {/* Header */}
@@ -101,6 +108,15 @@ export default function StudentProfilePage() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2 self-start">
+          {can('STUDENT_UPDATE') && (
+            <button
+              onClick={() => setEditing(true)}
+              className="btn btn-primary text-xs inline-flex items-center gap-2"
+            >
+              <Pencil size={14} />
+              {t('Edit', 'አርትዕ')}
+            </button>
+          )}
           <Link
             href={`/dashboard/people/students/${student.id}/report-card`}
             className="btn btn-secondary text-xs inline-flex items-center gap-2"
@@ -252,6 +268,18 @@ export default function StudentProfilePage() {
           </div>
         </div>
       </div>
+
+      {editing && (
+        <EditStudentModal
+          student={student}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            setToast({ kind: 'success', text: t('Student updated', 'የተማሪው መረጃ ተቀይሯል') });
+            setTimeout(() => setToast(null), 3500);
+          }}
+        />
+      )}
     </div>
   );
 }

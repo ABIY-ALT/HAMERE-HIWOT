@@ -21,8 +21,9 @@ import {
   saveAttendance as saveAttendanceAction,
   saveGrade as saveGradeAction,
   setCurrentAcademicYear as setCurrentYearAction,
+  updateStudent as updateStudentAction,
 } from '@/app/dashboard/education/actions';
-import { addStudents, nextRegNos, subscribeStudents } from '@/lib/students/store';
+import { addStudents, nextRegNos, replaceSavedStudent, subscribeStudents } from '@/lib/students/store';
 import { saveSession, subscribeSessions } from '@/lib/attendance/store';
 import type { ActionResult } from '@/lib/admin/types';
 import { demoEducation } from './demo';
@@ -250,6 +251,30 @@ export async function enrollStudents(drafts: NewStudent[]): Promise<EnrollOutcom
   const stamp = Date.now();
   const ok = addStudents(drafts.map((d, i) => ({ ...d, id: `stu-${stamp}-${i}`, reg_no: regNos[i] })));
   return ok ? { ok: true, regNos } : { ok: false, error: STORAGE_ERROR };
+}
+
+export type StudentPatch = Pick<
+  Student,
+  'name_en' | 'name_am' | 'baptismal' | 'gender' | 'class_id' | 'parent' | 'phone' | 'status'
+>;
+
+export async function updateStudent(studentId: string, patch: StudentPatch): Promise<ActionResult> {
+  if (state.mode === 'live') return afterLive(await updateStudentAction(studentId, patch));
+
+  const current = state.students.find((s) => s.id === studentId);
+  if (!current) return { ok: false, error: 'Student not found' };
+  const cls = state.classes.find((c) => c.id === patch.class_id);
+  const next: Student = {
+    ...current,
+    ...patch,
+    class: cls?.name_en ?? current.class,
+    grade_level: cls?.grade_level ?? current.grade_level,
+  };
+  // Students added in this browser are stored; built-in demo students change until reload.
+  if (!replaceSavedStudent(next)) {
+    patchDemo({ students: state.students.map((s) => (s.id === studentId ? next : s)) });
+  }
+  return { ok: true };
 }
 
 export async function saveAttendance(input: {

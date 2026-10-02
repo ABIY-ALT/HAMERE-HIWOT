@@ -438,6 +438,67 @@ export async function enrollStudents(input: z.input<typeof StudentSchema>[]): Pr
   }
 }
 
+const StudentUpdateSchema = z.object({
+  name_en: z.string().trim().min(2, 'Enter the student name'),
+  name_am: z.string().trim(),
+  baptismal: z.string().trim(),
+  gender: z.enum(['MALE', 'FEMALE']),
+  class_id: z.string(),
+  parent: z.string().trim(),
+  phone: z.string().trim(),
+  status: z.enum(['ACTIVE', 'INACTIVE']),
+});
+
+/** Edit a student's details, status, and class for the class's academic year. */
+export async function updateStudent(
+  studentId: string,
+  input: z.input<typeof StudentUpdateSchema>
+): Promise<ActionResult> {
+  try {
+    const { db } = await authorize('STUDENT_UPDATE');
+    const s = StudentUpdateSchema.parse(input);
+
+    const student = (await db.from('students').select('id, person_id').eq('id', studentId).single().then(check)) as {
+      id: string; person_id: string;
+    };
+
+    await db.from('persons')
+      .update({
+        full_name_en: s.name_en,
+        full_name_am: s.name_am || null,
+        baptismal_name: s.baptismal || null,
+        gender: s.gender,
+        emergency_contact_name: s.parent || null,
+        emergency_contact_phone: s.phone || null,
+      })
+      .eq('id', student.person_id)
+      .then(check);
+    await db.from('students').update({ status: s.status }).eq('id', studentId).then(check);
+
+    if (s.class_id) {
+      const cls = (await db.from('classes').select('id, academic_year_id').eq('id', s.class_id).single().then(check)) as {
+        id: string; academic_year_id: string;
+      };
+      const enrollment = (await db.from('enrollments')
+        .select('id')
+        .eq('student_id', studentId)
+        .eq('academic_year_id', cls.academic_year_id)
+        .maybeSingle()
+        .then(check)) as { id: string } | null;
+      if (enrollment) {
+        await db.from('enrollments').update({ class_id: cls.id, status: s.status }).eq('id', enrollment.id).then(check);
+      } else {
+        await db.from('enrollments')
+          .insert({ student_id: studentId, class_id: cls.id, academic_year_id: cls.academic_year_id, status: s.status })
+          .then(check);
+      }
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) };
+  }
+}
+
 // ── Attendance ───────────────────────────────────────────────────────────────
 
 const AttendanceSchema = z.object({

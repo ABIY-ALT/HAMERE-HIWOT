@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
@@ -23,6 +23,21 @@ import {
   MOCK_PERSONS,
 } from '@/lib/mock/data';
 import { formatDate } from '@/lib/utils';
+import { loadDashboard, type DashboardData } from '@/app/dashboard/actions';
+
+const DEMO_DASHBOARD: DashboardData = {
+  totalMembers: MOCK_DASHBOARD_STATS.totalMembers,
+  newMembersThisYear: 12,
+  activeStudents: MOCK_DASHBOARD_STATS.activeStudents,
+  activeTeachers: MOCK_DASHBOARD_STATS.activeTeachers,
+  departments: MOCK_DASHBOARD_STATS.departments,
+  coordinations: MOCK_DASHBOARD_STATS.coordinations,
+  currentAcademicYear: MOCK_DASHBOARD_STATS.currentAcademicYear,
+  pendingApprovals: MOCK_DASHBOARD_STATS.pendingApprovals,
+  governanceBodies: MOCK_GOVERNANCE_BODIES.map((b) => ({ id: b.id, name_en: b.name_en, name_am: b.name_am, is_active: b.is_active })),
+  recentAudit: MOCK_AUDIT_LOGS.map((l) => ({ id: l.id, action: l.action, table_name: l.table_name, created_at: l.created_at })),
+  recentMembers: MOCK_PERSONS.slice(0, 5),
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stat Card
@@ -102,7 +117,20 @@ function SectionHeader({ en, am }: { en: string; am: string }) {
 export default function DashboardPage() {
   const { user, can } = useAuth();
   const { t } = useLang();
-  const stats = MOCK_DASHBOARD_STATS;
+  const [mode, setMode] = useState<'loading' | 'demo' | 'live' | 'error'>('loading');
+  const [error, setError] = useState('');
+  const [stats, setStats] = useState<DashboardData | null>(null);
+
+  useEffect(() => {
+    loadDashboard().then((res) => {
+      if (res.mode === 'live') setStats(res.data);
+      else if (res.mode === 'demo') setStats(DEMO_DASHBOARD);
+      else setError(res.error);
+      setMode(res.mode);
+    });
+  }, []);
+
+  const n = (v: number | undefined) => (stats ? v ?? 0 : '…');
 
   return (
     <div>
@@ -150,6 +178,14 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {mode === 'error' && (
+        <div className="mb-4 p-3 rounded-xl border border-red-200 bg-red-50 flex items-center gap-2 text-sm text-red-700">
+          <AlertCircle size={16} />
+          {t('Could not load dashboard figures: ', 'የዳሽቦርድ መረጃ መጫን አልተቻለም: ')}
+          {error}
+        </div>
+      )}
+
       {/* Academic Year Banner */}
       <div
         className="rounded-xl p-4 mb-6 flex items-center gap-3"
@@ -160,15 +196,24 @@ export default function DashboardPage() {
           <span className="text-white font-semibold text-sm">
             {t('Current Academic Year', 'ወቅታዊ የትምህርት ዓመት')}:{' '}
           </span>
-          <span className="text-yellow-300 font-bold">{stats.currentAcademicYear}</span>
+          {stats?.currentAcademicYear ? (
+            <span className="text-yellow-300 font-bold">{stats.currentAcademicYear}</span>
+          ) : (
+            <Link href="/dashboard/education/academic-years" className="text-yellow-300 font-semibold underline">
+              {stats ? t('Not set — open one', 'አልተዘጋጀም — ይክፈቱ') : '…'}
+            </Link>
+          )}
         </div>
-        {stats.pendingApprovals > 0 && (
-          <div className="ml-auto flex items-center gap-2 bg-yellow-500/20 rounded-lg px-3 py-1.5">
+        {(stats?.pendingApprovals ?? 0) > 0 && (
+          <Link
+            href="/dashboard/education/grades"
+            className="ml-auto flex items-center gap-2 bg-yellow-500/20 rounded-lg px-3 py-1.5 hover:bg-yellow-500/30"
+          >
             <AlertCircle size={15} className="text-yellow-300" />
             <span className="text-yellow-200 text-sm font-medium">
-              {stats.pendingApprovals} {t('Pending Approvals', 'በጥበቃ ላይ ያሉ ፈቃዶች')}
+              {stats?.pendingApprovals} {t('Grades awaiting approval', 'ማጽደቅ የሚጠብቁ ውጤቶች')}
             </span>
-          </div>
+          </Link>
         )}
       </div>
 
@@ -177,30 +222,28 @@ export default function DashboardPage() {
         <StatCard
           labelEn="Total Members"
           labelAm="ጠቅላላ አባላት"
-          value={stats.totalMembers}
+          value={n(stats?.totalMembers)}
           subLabel={t('Registered members', 'የተመዘገቡ አባላት')}
           icon={Users}
           iconBg="bg-blue-50"
           iconColor="text-blue-600"
-          trend="+12 this year"
+          trend={stats?.newMembersThisYear ? t(`+${stats.newMembersThisYear} this year`, `+${stats.newMembersThisYear} በዚህ ዓመት`) : undefined}
           trendUp
         />
         <StatCard
           labelEn="Active Students"
           labelAm="ንቁ ተማሪዎች"
-          value={stats.activeStudents}
+          value={n(stats?.activeStudents)}
           subLabel={t('Enrolled this year', 'በዚህ ዓመት የተመዘገቡ')}
           icon={GraduationCap}
           iconBg="bg-violet-50"
           iconColor="text-violet-600"
-          trend="+8 this term"
-          trendUp
         />
         <StatCard
           labelEn="Teachers"
           labelAm="አስተማሪዎች"
-          value={stats.activeTeachers}
-          subLabel={t('Active teachers', 'ንቁ አስተማሪዎች')}
+          value={n(stats?.activeTeachers)}
+          subLabel={t('Assigned to classes this year', 'በዚህ ዓመት ለክፍል የተመደቡ')}
           icon={BookOpen}
           iconBg="bg-amber-50"
           iconColor="text-amber-600"
@@ -208,7 +251,7 @@ export default function DashboardPage() {
         <StatCard
           labelEn="Departments"
           labelAm="ክፍሎች"
-          value={`${stats.departments} / ${stats.coordinations}`}
+          value={stats ? `${stats.departments} / ${stats.coordinations}` : '…'}
           subLabel={t('Departments / Coordinations', 'ክፍሎች / ቅንጅቶች')}
           icon={Building2}
           iconBg="bg-emerald-50"
@@ -222,7 +265,7 @@ export default function DashboardPage() {
         <div className="card p-5 lg:col-span-1">
           <SectionHeader en="Governance Bodies" am="የአስተዳደር አካላት" />
           <div className="space-y-2">
-            {MOCK_GOVERNANCE_BODIES.map((body) => (
+            {(stats?.governanceBodies ?? []).map((body) => (
               <div
                 key={body.id}
                 className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0"
@@ -232,9 +275,9 @@ export default function DashboardPage() {
                     {t(body.name_en, body.name_am)}
                   </div>
                 </div>
-                <div className="badge bg-emerald-100 text-emerald-700 text-xs">
+                <div className={cn('badge text-xs', body.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600')}>
                   <span className="status-dot active" style={{ width: 6, height: 6 }} />
-                  {t('Active', 'ንቁ')}
+                  {body.is_active ? t('Active', 'ንቁ') : t('Inactive', 'የቦዘነ')}
                 </div>
               </div>
             ))}
@@ -245,6 +288,14 @@ export default function DashboardPage() {
         {can('FINANCE_VIEW') && (
           <div className="card p-5">
             <SectionHeader en="Finance Summary" am="የፋይናንስ ማጠቃለያ" />
+            {mode === 'live' ? (
+              <p className="text-sm text-slate-500 py-2">
+                {t(
+                  'The finance module is not connected to the database yet, so no figures are shown.',
+                  'የፋይናንስ ክፍሉ ገና ከዳታቤዝ ጋር አልተገናኘም፤ ስለዚህ አሃዞች አይታዩም።'
+                )}
+              </p>
+            ) : (
             <div className="space-y-3">
               {[
                 { label: t('Total Income', 'ጠቅላላ ገቢ'), value: 'ETB 145,000', color: 'text-emerald-600' },
@@ -257,6 +308,7 @@ export default function DashboardPage() {
                 </div>
               ))}
             </div>
+            )}
             <div className="mt-4 pt-2 flex items-center justify-between">
               <Link href="/dashboard/finance/income" className="text-xs font-semibold text-primary-700 hover:underline">
                 {t('View Income →', 'ገቢዎችን እይ →')}
@@ -273,7 +325,10 @@ export default function DashboardPage() {
           <div className="card p-5">
             <SectionHeader en="Recent Audit Events" am="የቅርብ ጊዜ ኦዲት ክስተቶች" />
             <div className="space-y-2">
-              {MOCK_AUDIT_LOGS.map((log) => (
+              {stats && stats.recentAudit.length === 0 && (
+                <p className="text-sm text-slate-400 py-2">{t('No audit events yet.', 'እስካሁን የኦዲት ክስተት የለም።')}</p>
+              )}
+              {(stats?.recentAudit ?? []).map((log) => (
                 <div
                   key={log.id}
                   className="flex items-start gap-3 py-2 border-b border-slate-100 last:border-0"
@@ -317,7 +372,14 @@ export default function DashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {MOCK_PERSONS.slice(0, 5).map((person) => (
+              {stats && stats.recentMembers.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="text-center text-sm text-slate-400 py-6">
+                    {t('No members registered yet.', 'እስካሁን የተመዘገበ አባል የለም።')}
+                  </td>
+                </tr>
+              )}
+              {(stats?.recentMembers ?? []).map((person) => (
                 <tr key={person.id}>
                   <td>
                     <span className="font-mono text-xs font-semibold text-primary-700">
