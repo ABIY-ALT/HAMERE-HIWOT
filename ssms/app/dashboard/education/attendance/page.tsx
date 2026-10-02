@@ -1,94 +1,73 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Plus, Search, CheckCircle2 } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import Link from 'next/link';
+import { ClipboardCheck, Search } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
-import { MOCK_ATTENDANCE_SESSIONS } from '@/lib/mock/modules';
+import { MOCK_ATTENDANCE_SESSIONS, MOCK_STUDENTS } from '@/lib/mock/modules';
 import { Modal } from '@/components/ui/Modal';
+import { attendanceRate, totalsOf, type AttendanceSession, type AttendanceStatus } from '@/lib/attendance/store';
+import { useSavedSessions } from '@/lib/attendance/useSavedSessions';
+import { formatEthiopianDate } from '@/lib/utils/ethiopian-calendar';
 
-interface AttendanceSession {
-  id: string;
-  date: string;
-  class: string;
-  topic: string;
-  topic_am: string;
-  teacher: string;
-  present: number;
-  absent: number;
-  late: number;
-  excused: number;
-}
+// Sessions that ship with the demo data only kept totals, not per-student marks.
+const DEMO_SESSIONS: AttendanceSession[] = MOCK_ATTENDANCE_SESSIONS.map((s) => ({
+  id: s.id,
+  class_id: s.class_id,
+  class: s.class,
+  date: s.date,
+  topic: s.topic,
+  topic_am: s.topic_am,
+  teacher: s.teacher,
+  records: {},
+  totals: { present: s.present, absent: s.absent, late: s.late, excused: s.excused },
+}));
+
+const STATUS_BADGE: Record<AttendanceStatus, { cls: string; label: [string, string] }> = {
+  PRESENT: { cls: 'text-emerald-700 bg-emerald-50', label: ['Present', 'የተገኘ'] },
+  ABSENT: { cls: 'text-red-700 bg-red-50', label: ['Absent', 'የቀረ'] },
+  LATE: { cls: 'text-amber-700 bg-amber-50', label: ['Late', 'የዘገየ'] },
+  EXCUSED: { cls: 'text-blue-700 bg-blue-50', label: ['Excused', 'በፈቃድ'] },
+};
 
 export default function AttendancePage() {
   const { t, locale } = useLang();
-  const [sessions, setSessions] = useState<AttendanceSession[]>(MOCK_ATTENDANCE_SESSIONS as AttendanceSession[]);
+  const savedSessions = useSavedSessions();
   const [search, setSearch] = useState('');
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [selectedSession, setSelectedSession] = useState<AttendanceSession | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // Form State
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [className, setClassName] = useState('Grade 1A');
-  const [topicEn, setTopicEn] = useState('');
-  const [topicAm, setTopicAm] = useState('');
-  const [teacher, setTeacher] = useState('');
-  const [presentCount, setPresentCount] = useState('25');
-  const [absentCount, setAbsentCount] = useState('2');
-  const [lateCount, setLateCount] = useState('1');
+  // A roll call saved for the same class and date replaces the demo entry.
+  const sessions = useMemo(() => {
+    const savedKeys = new Set(savedSessions.map((s) => `${s.class_id}|${s.date}`));
+    const demo = DEMO_SESSIONS.filter((s) => !savedKeys.has(`${s.class_id}|${s.date}`));
+    return [...savedSessions, ...demo].sort((a, b) => b.date.localeCompare(a.date));
+  }, [savedSessions]);
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
-  };
+  const selectedSession = sessions.find((s) => s.id === selectedId) ?? null;
 
-  const handleAddSession = (e: React.FormEvent) => {
-    e.preventDefault();
-    const newSession: AttendanceSession = {
-      id: `att-${Date.now()}`,
-      date,
-      class: className,
-      topic: topicEn,
-      topic_am: topicAm || topicEn,
-      teacher: teacher || 'Assigned Instructor',
-      present: Number(presentCount) || 0,
-      absent: Number(absentCount) || 0,
-      late: Number(lateCount) || 0,
-      excused: 0,
-    };
-
-    setSessions([newSession, ...sessions]);
-    setIsAddModalOpen(false);
-    showToast(t(`Attendance recorded for ${className}!`, `ለ${className} የክትትል መዝገብ ተቀምጧል!`));
-
-    // Reset
-    setTopicEn('');
-    setTopicAm('');
-    setTeacher('');
-  };
-
-  const filtered = sessions.filter((att) =>
-    att.class.toLowerCase().includes(search.toLowerCase()) ||
-    (locale === 'am' ? att.topic_am : att.topic).toLowerCase().includes(search.toLowerCase()) ||
-    att.teacher.toLowerCase().includes(search.toLowerCase())
+  const needle = search.toLowerCase();
+  const filtered = sessions.filter(
+    (att) =>
+      att.class.toLowerCase().includes(needle) ||
+      (locale === 'am' ? att.topic_am : att.topic).toLowerCase().includes(needle) ||
+      att.teacher.toLowerCase().includes(needle)
   );
 
-  const totalPresent = sessions.reduce((s, a) => s + a.present, 0);
-  const totalAbsent = sessions.reduce((s, a) => s + a.absent, 0);
-  const totalLate = sessions.reduce((s, a) => s + a.late, 0);
-  const grandTotal = totalPresent + totalAbsent + totalLate;
-  const overallRate = grandTotal > 0 ? Math.round((totalPresent / grandTotal) * 100) : 100;
+  const grand = sessions.reduce(
+    (sum, s) => {
+      const tt = totalsOf(s);
+      return {
+        present: sum.present + tt.present,
+        absent: sum.absent + tt.absent,
+        late: sum.late + tt.late,
+        excused: sum.excused + tt.excused,
+      };
+    },
+    { present: 0, absent: 0, late: 0, excused: 0 }
+  );
 
   return (
     <div className="space-y-6">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700 animate-in fade-in slide-in-from-bottom-4">
-          <CheckCircle2 size={18} className="text-emerald-400" />
-          <span className="text-sm font-medium">{toastMessage}</span>
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -102,31 +81,31 @@ export default function AttendancePage() {
             )}
           </p>
         </div>
-        <button
-          onClick={() => setIsAddModalOpen(true)}
+        <Link
+          href="/dashboard/education/attendance/roll-call"
           className="btn btn-primary self-start sm:self-auto inline-flex items-center gap-2"
         >
-          <Plus size={16} />
-          {t('Take New Attendance', 'ክትትል መዝግብ')}
-        </button>
+          <ClipboardCheck size={16} />
+          {t('Take Roll Call', 'የስም ጥሪ ይጀምሩ')}
+        </Link>
       </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div className="card p-5">
-          <div className="text-2xl font-bold text-slate-800">{overallRate}%</div>
+          <div className="text-2xl font-bold text-slate-800">{attendanceRate(grand)}%</div>
           <div className="text-xs text-slate-500 mt-1">{t('Average Attendance', 'አማካይ ተገኝነት')}</div>
         </div>
         <div className="card p-5">
-          <div className="text-2xl font-bold text-emerald-600">{totalPresent}</div>
+          <div className="text-2xl font-bold text-emerald-600">{grand.present}</div>
           <div className="text-xs text-slate-500 mt-1">{t('Total Present', 'የተገኙ')}</div>
         </div>
         <div className="card p-5">
-          <div className="text-2xl font-bold text-red-500">{totalAbsent}</div>
+          <div className="text-2xl font-bold text-red-500">{grand.absent}</div>
           <div className="text-xs text-slate-500 mt-1">{t('Total Absent', 'የቀሩ')}</div>
         </div>
         <div className="card p-5">
-          <div className="text-2xl font-bold text-amber-500">{totalLate}</div>
+          <div className="text-2xl font-bold text-amber-500">{grand.late}</div>
           <div className="text-xs text-slate-500 mt-1">{t('Late Arrivals', 'የዘገዩ')}</div>
         </div>
       </div>
@@ -166,35 +145,39 @@ export default function AttendancePage() {
             </thead>
             <tbody>
               {filtered.map((att) => {
-                const total = att.present + att.absent + att.late + (att.excused || 0);
-                const pct = total > 0 ? Math.round((att.present / total) * 100) : 100;
+                const tt = totalsOf(att);
                 return (
                   <tr key={att.id}>
-                    <td className="font-mono text-xs text-slate-600">{att.date}</td>
+                    <td>
+                      <div className="text-xs font-medium text-slate-800">
+                        {formatEthiopianDate(att.date, locale)}
+                      </div>
+                      <div className="font-mono text-[11px] text-slate-400">{att.date}</div>
+                    </td>
                     <td className="font-semibold text-slate-900">{att.class}</td>
-                    <td className="text-slate-700">{locale === 'am' ? att.topic_am : att.topic}</td>
+                    <td className="text-slate-700">{(locale === 'am' ? att.topic_am : att.topic) || '—'}</td>
                     <td className="text-slate-600 text-xs">{att.teacher}</td>
                     <td>
                       <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
-                        {att.present}
+                        {tt.present}
                       </span>
                     </td>
                     <td>
                       <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded">
-                        {att.absent}
+                        {tt.absent}
                       </span>
                     </td>
                     <td>
                       <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
-                        {att.late}
+                        {tt.late}
                       </span>
                     </td>
                     <td>
-                      <span className="font-bold text-xs text-slate-800">{pct}%</span>
+                      <span className="font-bold text-xs text-slate-800">{attendanceRate(tt)}%</span>
                     </td>
                     <td className="text-right">
                       <button
-                        onClick={() => setSelectedSession(att)}
+                        onClick={() => setSelectedId(att.id)}
                         className="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors"
                       >
                         {t('Details', 'ዝርዝር')}
@@ -208,193 +191,101 @@ export default function AttendancePage() {
         </div>
       </div>
 
-      {/* Take Attendance Modal */}
-      <Modal
-        isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        title={t('Take New Attendance Session', 'አዲስ የክፍል ክትትል መዝግብ')}
-        subtitle={t('Record student attendance, session date, and lesson topic', 'የተማሪዎችን ተገኝነት፣ ቀንና የተማሩትን ርዕስ ያስገቡ')}
-      >
-        <form onSubmit={handleAddSession} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Class Session Date', 'የክፍለ-ጊዜ ቀን')} *
-              </label>
-              <input
-                type="date"
-                required
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="form-input text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Class Group', 'ክፍል')} *
-              </label>
-              <select
-                value={className}
-                onChange={(e) => setClassName(e.target.value)}
-                className="form-input text-sm"
-              >
-                <option value="Grade 1A">Grade 1A (ክፍል 1ሀ)</option>
-                <option value="Grade 1B">Grade 1B (ክፍል 1ለ)</option>
-                <option value="Grade 2A">Grade 2A (ክፍል 2ሀ)</option>
-                <option value="Grade 3A">Grade 3A (ክፍል 3ሀ)</option>
-                <option value="Youth Fellowship">Youth Fellowship (የወጣቶች ክፍል)</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Lesson Topic (English)', 'የትምህርት ርዕስ (እንግሊዝኛ)')} *
-              </label>
-              <input
-                type="text"
-                required
-                value={topicEn}
-                onChange={(e) => setTopicEn(e.target.value)}
-                placeholder="e.g. The Creation of the World"
-                className="form-input text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Lesson Topic (Amharic)', 'የትምህርት ርዕስ (አማርኛ)')}
-              </label>
-              <input
-                type="text"
-                value={topicAm}
-                onChange={(e) => setTopicAm(e.target.value)}
-                placeholder="ለምሳሌ: ሥነ-ፍጥረት"
-                className="form-input text-sm"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs font-semibold text-slate-700 block mb-1">
-              {t('Teacher / Proctor Name', 'አስተማሪ / ተቆጣጣሪ')} *
-            </label>
-            <input
-              type="text"
-              required
-              value={teacher}
-              onChange={(e) => setTeacher(e.target.value)}
-              placeholder="መምህር..."
-              className="form-input text-sm"
-            />
-          </div>
-
-          <div className="grid grid-cols-3 gap-3 pt-2">
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Present Count', 'የተገኙ')}
-              </label>
-              <input
-                type="number"
-                min="0"
-                value={presentCount}
-                onChange={(e) => setPresentCount(e.target.value)}
-                className="form-input text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Absent Count', 'የቀሩ')}
-              </label>
-              <input
-                type="number"
-                min="0"
-                value={absentCount}
-                onChange={(e) => setAbsentCount(e.target.value)}
-                className="form-input text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Late Count', 'የዘገዩ')}
-              </label>
-              <input
-                type="number"
-                min="0"
-                value={lateCount}
-                onChange={(e) => setLateCount(e.target.value)}
-                className="form-input text-sm"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => setIsAddModalOpen(false)}
-              className="btn btn-secondary text-xs py-2"
-            >
-              {t('Cancel', 'ሰርዝ')}
-            </button>
-            <button type="submit" className="btn btn-primary text-xs py-2 px-4">
-              {t('Save Attendance', 'ክትትል መዝግብ')}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* View Session Details Modal */}
+      {/* Session details */}
       {selectedSession && (
-        <Modal
-          isOpen={Boolean(selectedSession)}
-          onClose={() => setSelectedSession(null)}
-          title={`${selectedSession.class} — ${selectedSession.date}`}
-          subtitle={locale === 'am' ? selectedSession.topic_am : selectedSession.topic}
-        >
-          <div className="space-y-4 text-sm">
-            <div className="grid grid-cols-3 gap-3 text-center">
-              <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-xl">
-                <div className="text-2xl font-bold text-emerald-600">{selectedSession.present}</div>
-                <div className="text-xs text-emerald-700 font-medium mt-0.5">{t('Present', 'የተገኙ')}</div>
-              </div>
-              <div className="p-3 bg-red-50 border border-red-100 rounded-xl">
-                <div className="text-2xl font-bold text-red-600">{selectedSession.absent}</div>
-                <div className="text-xs text-red-700 font-medium mt-0.5">{t('Absent', 'የቀሩ')}</div>
-              </div>
-              <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl">
-                <div className="text-2xl font-bold text-amber-600">{selectedSession.late}</div>
-                <div className="text-xs text-amber-700 font-medium mt-0.5">{t('Late', 'የዘገዩ')}</div>
-              </div>
-            </div>
-
-            <div className="divide-y divide-slate-100 border-y border-slate-100 text-xs">
-              <div className="py-2.5 flex justify-between">
-                <span className="text-slate-500">{t('Lead Teacher', 'አስተማሪ')}:</span>
-                <span className="font-semibold text-slate-900">{selectedSession.teacher}</span>
-              </div>
-              <div className="py-2.5 flex justify-between">
-                <span className="text-slate-500">{t('Lesson Topic', 'የትምህርት ርዕስ')}:</span>
-                <span className="font-medium text-slate-900">{locale === 'am' ? selectedSession.topic_am : selectedSession.topic}</span>
-              </div>
-              <div className="py-2.5 flex justify-between">
-                <span className="text-slate-500">{t('Attendance Rate', 'የተገኝነት ምጣኔ')}:</span>
-                <span className="font-bold text-blue-600 font-mono">
-                  {Math.round((selectedSession.present / (selectedSession.present + selectedSession.absent + selectedSession.late || 1)) * 100)}%
-                </span>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <button
-                onClick={() => setSelectedSession(null)}
-                className="btn btn-secondary text-xs"
-              >
-                {t('Close', 'ዝጋ')}
-              </button>
-            </div>
-          </div>
-        </Modal>
+        <SessionDetails session={selectedSession} onClose={() => setSelectedId(null)} />
       )}
+    </div>
+  );
+}
+
+function SessionDetails({ session, onClose }: { session: AttendanceSession; onClose: () => void }) {
+  const { t, locale } = useLang();
+  const tt = totalsOf(session);
+  const studentIds = Object.keys(session.records);
+
+  const rows = studentIds
+    .map((id) => {
+      const stu = MOCK_STUDENTS.find((s) => s.id === id);
+      return {
+        id,
+        name: stu ? (locale === 'am' ? stu.name_am : stu.name_en) : id,
+        status: session.records[id],
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return (
+    <Modal
+      isOpen
+      onClose={onClose}
+      title={`${session.class} — ${formatEthiopianDate(session.date, locale)}`}
+      subtitle={(locale === 'am' ? session.topic_am : session.topic) || undefined}
+    >
+      <div className="space-y-4 text-sm">
+        <div className="grid grid-cols-4 gap-2 text-center">
+          <Stat value={tt.present} label={t('Present', 'የተገኙ')} tone="emerald" />
+          <Stat value={tt.absent} label={t('Absent', 'የቀሩ')} tone="red" />
+          <Stat value={tt.late} label={t('Late', 'የዘገዩ')} tone="amber" />
+          <Stat value={tt.excused} label={t('Excused', 'በፈቃድ')} tone="blue" />
+        </div>
+
+        <div className="divide-y divide-slate-100 border-y border-slate-100 text-xs">
+          <div className="py-2.5 flex justify-between">
+            <span className="text-slate-500">{t('Lead Teacher', 'አስተማሪ')}:</span>
+            <span className="font-semibold text-slate-900">{session.teacher}</span>
+          </div>
+          <div className="py-2.5 flex justify-between">
+            <span className="text-slate-500">{t('Gregorian date', 'የግሪጎሪያን ቀን')}:</span>
+            <span className="font-mono text-slate-900">{session.date}</span>
+          </div>
+          <div className="py-2.5 flex justify-between">
+            <span className="text-slate-500">{t('Attendance Rate', 'የተገኝነት ምጣኔ')}:</span>
+            <span className="font-bold text-blue-600 font-mono">{attendanceRate(tt)}%</span>
+          </div>
+        </div>
+
+        {rows.length > 0 ? (
+          <ul className="max-h-64 overflow-y-auto divide-y divide-slate-100 border border-slate-100 rounded-lg">
+            {rows.map((r) => (
+              <li key={r.id} className="px-3 py-2 flex items-center justify-between text-xs">
+                <span className="text-slate-800">{r.name}</span>
+                <span className={`px-2 py-0.5 rounded font-semibold ${STATUS_BADGE[r.status].cls}`}>
+                  {t(...STATUS_BADGE[r.status].label)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+            {t(
+              'This session only has totals. Per-student marks are recorded for roll calls taken from now on.',
+              'ይህ ክፍለ-ጊዜ ድምር ብቻ አለው። የእያንዳንዱ ተማሪ ምልክት ከአሁን በኋላ በሚደረጉ የስም ጥሪዎች ይመዘገባል።'
+            )}
+          </p>
+        )}
+
+        <div className="flex justify-end pt-2">
+          <button onClick={onClose} className="btn btn-secondary text-xs">
+            {t('Close', 'ዝጋ')}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function Stat({ value, label, tone }: { value: number; label: string; tone: 'emerald' | 'red' | 'amber' | 'blue' }) {
+  const tones = {
+    emerald: 'bg-emerald-50 border-emerald-100 text-emerald-600',
+    red: 'bg-red-50 border-red-100 text-red-600',
+    amber: 'bg-amber-50 border-amber-100 text-amber-600',
+    blue: 'bg-blue-50 border-blue-100 text-blue-600',
+  };
+  return (
+    <div className={`p-3 border rounded-xl ${tones[tone]}`}>
+      <div className="text-xl font-bold">{value}</div>
+      <div className="text-[11px] font-medium mt-0.5">{label}</div>
     </div>
   );
 }
