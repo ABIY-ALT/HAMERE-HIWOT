@@ -20,6 +20,7 @@ import { cn, getInitials } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLang } from '@/contexts/LangContext';
 import type { Locale } from '@/types';
+import { signOut } from '@/app/login/actions';
 
 interface HeaderProps {
   sidebarCollapsed: boolean;
@@ -113,9 +114,11 @@ export default function Header({
     setNotifications([]);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await signOut();
     logout();
     router.push('/login');
+    router.refresh();
   };
 
   const toggleLang = () => {

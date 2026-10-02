@@ -1,85 +1,218 @@
 'use client';
 
-import React, { useState } from 'react';
-import { UserPlus, Search, Shield, CheckCircle2 } from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { UserPlus, Search, Shield, CheckCircle2, KeyRound, AlertCircle } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
-import { MOCK_SYSTEM_USERS_FULL } from '@/lib/mock/modules';
+import { useAuth } from '@/contexts/AuthContext';
 import { Modal } from '@/components/ui/Modal';
+import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
+import { demoRoles, demoUnits, demoUsers } from '@/lib/admin/demo';
+import type { AdminRoleRow, AdminUnitRow, AdminUserRow, LoadMode } from '@/lib/admin/types';
+import { changeUserRole, createUser, loadUsers, resetUserPassword, setUserActive } from '../actions';
 
-interface SystemUserItem {
-  id: string;
-  username: string;
-  name: string;
-  name_am: string;
-  role: string;
-  role_am: string;
-  org: string;
-  last_login: string;
-  is_active: boolean;
-  permissions?: string[];
-}
+type Toast = { kind: 'success' | 'error'; text: string } | null;
 
 export default function AdminUsersPage() {
   const { t, locale } = useLang();
-  const [users, setUsers] = useState<SystemUserItem[]>(MOCK_SYSTEM_USERS_FULL as SystemUserItem[]);
+  const { user: me } = useAuth();
+
+  const [mode, setMode] = useState<LoadMode>('loading');
+  const [loadError, setLoadError] = useState('');
+  const [users, setUsers] = useState<AdminUserRow[]>([]);
+  const [roles, setRoles] = useState<AdminRoleRow[]>([]);
+  const [units, setUnits] = useState<AdminUnitRow[]>([]);
   const [search, setSearch] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<SystemUserItem | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [selectedUser, setSelectedUser] = useState<AdminUserRow | null>(null);
+  const [toast, setToast] = useState<Toast>(null);
+  const [busy, setBusy] = useState(false);
 
-  // Form State
-  const [username, setUsername] = useState('');
+  // Create form
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
   const [nameEn, setNameEn] = useState('');
   const [nameAm, setNameAm] = useState('');
-  const [role, setRole] = useState('EDUCATION_OFFICER');
-  const [roleAm, setRoleAm] = useState('የትምህርት ኃላፊ');
-  const [org, setOrg] = useState('Education Department');
+  const [gender, setGender] = useState<'MALE' | 'FEMALE'>('MALE');
+  const [roleId, setRoleId] = useState('');
+  const [unitId, setUnitId] = useState('');
+  const [formError, setFormError] = useState('');
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+  // Details modal
+  const [editRoleId, setEditRoleId] = useState('');
+  const [editUnitId, setEditUnitId] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+
+  const live = mode === 'live';
+
+  const refresh = useCallback(async () => {
+    const res = await loadUsers();
+    if (res.mode === 'demo') {
+      setUsers(demoUsers());
+      setRoles(demoRoles());
+      setUnits(demoUnits());
+    } else if (res.mode === 'live') {
+      setUsers(res.data.users);
+      setRoles(res.data.roles);
+      setUnits(res.data.units);
+    } else {
+      setLoadError(res.error);
+    }
+    setMode(res.mode);
+    return res.mode;
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const showToast = (kind: 'success' | 'error', text: string) => {
+    setToast({ kind, text });
+    setTimeout(() => setToast(null), 3500);
   };
 
-  const handleCreateUser = (e: React.FormEvent) => {
+  const formatLastLogin = (iso: string | null) =>
+    iso
+      ? new Date(iso).toLocaleString(locale === 'am' ? 'am-ET' : 'en-GB', {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        })
+      : t('Never', 'ገና አልገቡም');
+
+  const openCreate = () => {
+    setFormError('');
+    if (!roleId && roles[0]) setRoleId(roles[0].id);
+    if (!unitId && units[0]) setUnitId(units[0].id);
+    setIsAddModalOpen(true);
+  };
+
+  const openDetails = (u: AdminUserRow) => {
+    setSelectedUser(u);
+    setEditRoleId(u.role_id ?? roles[0]?.id ?? '');
+    setEditUnitId(u.org_id ?? units[0]?.id ?? '');
+    setNewPassword('');
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newUser: SystemUserItem = {
-      id: `usr-${Date.now()}`,
-      username: username.toLowerCase().replace(/\s+/g, ''),
-      name: nameEn,
-      name_am: nameAm || nameEn,
-      role,
-      role_am: roleAm || role,
-      org,
-      last_login: 'Never',
-      is_active: true,
-      permissions: ['VIEW_DASHBOARD', 'MODULE_OPERATOR'],
-    };
+    setFormError('');
+    const role = roles.find((r) => r.id === roleId);
+    const unit = units.find((u) => u.id === unitId);
 
-    setUsers([newUser, ...users]);
+    if (live) {
+      setBusy(true);
+      const res = await createUser({ phone, password, nameEn, nameAm, gender, roleId, unitId });
+      setBusy(false);
+      if (!res.ok) {
+        setFormError(res.error);
+        return;
+      }
+      await refresh();
+    } else {
+      setUsers((prev) => [
+        {
+          id: `demo-${Date.now()}`,
+          username: phone.trim(),
+          name: nameEn,
+          name_am: nameAm || nameEn,
+          role_id: roleId,
+          role: role?.name_en ?? '—',
+          role_am: role?.name_am ?? '—',
+          org_id: unitId,
+          org: unit?.name_en ?? '—',
+          org_am: unit?.name_am ?? '—',
+          last_login: null,
+          is_active: true,
+          permissions: role?.permissions ?? [],
+        },
+        ...prev,
+      ]);
+    }
+
     setIsAddModalOpen(false);
-    showToast(t(`User @${newUser.username} created successfully!`, `ተጠቃሚ @${newUser.username} ተፈጥሯል!`));
-
-    // Reset
-    setUsername('');
+    showToast('success', t(`User ${phone.trim()} created`, `ተጠቃሚ ${phone.trim()} ተፈጥሯል`));
+    setPhone('');
+    setPassword('');
     setNameEn('');
     setNameAm('');
   };
 
-  const filtered = users.filter((u) =>
-    (locale === 'am' ? u.name_am : u.name).toLowerCase().includes(search.toLowerCase()) ||
-    u.username.toLowerCase().includes(search.toLowerCase()) ||
-    u.role.toLowerCase().includes(search.toLowerCase())
+  const handleSaveRole = async () => {
+    if (!selectedUser) return;
+    const role = roles.find((r) => r.id === editRoleId);
+    const unit = units.find((u) => u.id === editUnitId);
+
+    if (live) {
+      setBusy(true);
+      const res = await changeUserRole(selectedUser.id, editRoleId, editUnitId);
+      setBusy(false);
+      if (!res.ok) return showToast('error', res.error);
+      await refresh();
+    } else {
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === selectedUser.id
+            ? {
+                ...u,
+                role_id: editRoleId,
+                role: role?.name_en ?? u.role,
+                role_am: role?.name_am ?? u.role_am,
+                org_id: editUnitId,
+                org: unit?.name_en ?? u.org,
+                org_am: unit?.name_am ?? u.org_am,
+                permissions: role?.permissions ?? [],
+              }
+            : u
+        )
+      );
+    }
+    setSelectedUser(null);
+    showToast('success', t('Role updated', 'ሚና ተቀይሯል'));
+  };
+
+  const handleToggleActive = async () => {
+    if (!selectedUser) return;
+    const next = !selectedUser.is_active;
+    if (live) {
+      setBusy(true);
+      const res = await setUserActive(selectedUser.id, next);
+      setBusy(false);
+      if (!res.ok) return showToast('error', res.error);
+      await refresh();
+    } else {
+      setUsers((prev) => prev.map((u) => (u.id === selectedUser.id ? { ...u, is_active: next } : u)));
+    }
+    setSelectedUser(null);
+    showToast('success', next ? t('Account enabled', 'መለያ ተከፍቷል') : t('Account disabled', 'መለያ ተዘግቷል'));
+  };
+
+  const handleResetPassword = async () => {
+    if (!selectedUser) return;
+    if (newPassword.length < 8) {
+      return showToast('error', t('Password must be at least 8 characters', 'የይለፍ ቃል ቢያንስ 8 ፊደል መሆን አለበት'));
+    }
+    if (live) {
+      setBusy(true);
+      const res = await resetUserPassword(selectedUser.id, newPassword);
+      setBusy(false);
+      if (!res.ok) return showToast('error', res.error);
+    }
+    setNewPassword('');
+    showToast('success', t('Password changed', 'የይለፍ ቃል ተቀይሯል'));
+  };
+
+  const q = search.toLowerCase();
+  const filtered = users.filter(
+    (u) =>
+      (locale === 'am' ? u.name_am : u.name).toLowerCase().includes(q) ||
+      u.username.toLowerCase().includes(q) ||
+      (locale === 'am' ? u.role_am : u.role).toLowerCase().includes(q)
   );
+
+  const isSelf = Boolean(selectedUser && me && me.systemUser.id === selectedUser.id);
 
   return (
     <div className="space-y-6">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700 animate-in fade-in slide-in-from-bottom-4">
-          <CheckCircle2 size={18} className="text-emerald-400" />
-          <span className="text-sm font-medium">{toastMessage}</span>
-        </div>
-      )}
+      <AdminToast toast={toast} />
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -95,13 +228,16 @@ export default function AdminUsersPage() {
           </p>
         </div>
         <button
-          onClick={() => setIsAddModalOpen(true)}
-          className="btn btn-primary self-start sm:self-auto inline-flex items-center gap-2"
+          onClick={openCreate}
+          disabled={mode === 'loading' || mode === 'error'}
+          className="btn btn-primary self-start sm:self-auto inline-flex items-center gap-2 disabled:opacity-50"
         >
           <UserPlus size={16} />
           {t('Create System User', 'አዲስ ተጠቃሚ ፍጠር')}
         </button>
       </div>
+
+      <AdminModeNotice mode={mode} error={loadError} />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -113,11 +249,13 @@ export default function AdminUsersPage() {
           <div className="text-2xl font-bold text-emerald-600">
             {users.filter((u) => u.is_active).length}
           </div>
-          <div className="text-xs text-slate-500 mt-1">{t('Active Logins', 'ንቁ መለያዎች')}</div>
+          <div className="text-xs text-slate-500 mt-1">{t('Active Accounts', 'ንቁ መለያዎች')}</div>
         </div>
         <div className="card p-5">
-          <div className="text-2xl font-bold text-blue-600">100%</div>
-          <div className="text-xs text-slate-500 mt-1">{t('Role Enforced Access', 'ሚና ተኮር ጥበቃ')}</div>
+          <div className="text-2xl font-bold text-red-600">
+            {users.filter((u) => !u.is_active).length}
+          </div>
+          <div className="text-xs text-slate-500 mt-1">{t('Disabled Accounts', 'የተዘጉ መለያዎች')}</div>
         </div>
       </div>
 
@@ -143,7 +281,7 @@ export default function AdminUsersPage() {
           <table>
             <thead>
               <tr>
-                <th>{t('Username', 'የመለያ ስም')}</th>
+                <th>{t('Phone / Login', 'ስልክ / መግቢያ')}</th>
                 <th>{t('User Full Name', 'ሙሉ ስም')}</th>
                 <th>{t('Assigned Role', 'የተሰጠው ሚና')}</th>
                 <th>{t('Unit Affiliation', 'ክፍል / ተቋም')}</th>
@@ -155,15 +293,15 @@ export default function AdminUsersPage() {
             <tbody>
               {filtered.map((u) => (
                 <tr key={u.id}>
-                  <td className="font-mono text-xs font-bold text-blue-600">@{u.username}</td>
+                  <td className="font-mono text-xs font-bold text-blue-600">{u.username}</td>
                   <td className="font-semibold text-slate-900">
                     {locale === 'am' ? u.name_am : u.name}
                   </td>
                   <td>
                     <span className="badge badge-info">{locale === 'am' ? u.role_am : u.role}</span>
                   </td>
-                  <td className="text-slate-600 text-xs">{u.org}</td>
-                  <td className="font-mono text-[11px] text-slate-500">{u.last_login}</td>
+                  <td className="text-slate-600 text-xs">{locale === 'am' ? u.org_am : u.org}</td>
+                  <td className="font-mono text-[11px] text-slate-500">{formatLastLogin(u.last_login)}</td>
                   <td>
                     <span className={u.is_active ? 'badge badge-success' : 'badge badge-danger'}>
                       {u.is_active ? t('Active', 'ንቁ') : t('Disabled', 'የተዘጋ')}
@@ -171,14 +309,21 @@ export default function AdminUsersPage() {
                   </td>
                   <td className="text-right">
                     <button
-                      onClick={() => setSelectedUser(u)}
+                      onClick={() => openDetails(u)}
                       className="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors"
                     >
-                      {t('Permissions', 'ፈቃዶች')}
+                      {t('Manage', 'አስተዳድር')}
                     </button>
                   </td>
                 </tr>
               ))}
+              {mode !== 'loading' && filtered.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="text-center text-sm text-slate-400 py-8">
+                    {t('No users found', 'ምንም ተጠቃሚ አልተገኘም')}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -189,33 +334,43 @@ export default function AdminUsersPage() {
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
         title={t('Create Sunday School System User', 'አዲስ የስርዓት ተጠቃሚ ፍጠር')}
-        subtitle={t('Provision credentialed login account for parish officer', 'ለአጥቢያ አመራር ወይም ሠራተኛ የመግቢያ መለያ ያዘጋጁ')}
+        subtitle={t('The user signs in with this phone number and password', 'ተጠቃሚው በዚህ ስልክ ቁጥርና የይለፍ ቃል ይገባል')}
       >
         <form onSubmit={handleCreateUser} className="space-y-4">
+          {formError && (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200 flex items-center gap-2 text-red-700 text-sm">
+              <AlertCircle size={16} />
+              {formError}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Username / Login ID', 'የመለያ ስም')} *
+                {t('Phone Number (login)', 'ስልክ ቁጥር (መግቢያ)')} *
               </label>
               <input
-                type="text"
+                type="tel"
                 required
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="e.g. solomon.g"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="09..."
                 className="form-input text-sm font-mono"
               />
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Unit Affiliation', 'ክፍል / ተቋም')} *
+                {t('Initial Password', 'የመጀመሪያ የይለፍ ቃል')} *
               </label>
               <input
                 type="text"
                 required
-                value={org}
-                onChange={(e) => setOrg(e.target.value)}
-                className="form-input text-sm"
+                minLength={8}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={t('At least 8 characters', 'ቢያንስ 8 ፊደል')}
+                className="form-input text-sm font-mono"
+                autoComplete="new-password"
               />
             </div>
           </div>
@@ -248,26 +403,54 @@ export default function AdminUsersPage() {
             </div>
           </div>
 
-          <div>
-            <label className="text-xs font-semibold text-slate-700 block mb-1">
-              {t('Assigned Statutory Role', 'የተሰጠው ሚና')} *
-            </label>
-            <select
-              value={role}
-              onChange={(e) => {
-                setRole(e.target.value);
-                if (e.target.value === 'SUPER_ADMIN') setRoleAm('ዋና የበላይ አስተዳዳሪ');
-                if (e.target.value === 'MANAGEMENT_BOARD_CHAIR') setRoleAm('የሥራ አመራር ጉባኤ ሰብሳቢ');
-                if (e.target.value === 'EDUCATION_OFFICER') setRoleAm('የትምህርት ኃላፊ');
-                if (e.target.value === 'FINANCE_OFFICER') setRoleAm('የፋይናንስ ኃላፊ');
-              }}
-              className="form-input text-sm"
-            >
-              <option value="EDUCATION_OFFICER">Education Officer (የትምህርት ኃላፊ)</option>
-              <option value="FINANCE_OFFICER">Finance Officer (የፋይናንስ ኃላፊ)</option>
-              <option value="MANAGEMENT_BOARD_CHAIR">Board Chair (የሥራ አመራር ሰብሳቢ)</option>
-              <option value="SUPER_ADMIN">System Administrator (ስርዓት አስተዳዳሪ)</option>
-            </select>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">
+                {t('Gender', 'ጾታ')} *
+              </label>
+              <select
+                value={gender}
+                onChange={(e) => setGender(e.target.value as 'MALE' | 'FEMALE')}
+                className="form-input text-sm"
+              >
+                <option value="MALE">{t('Male', 'ወንድ')}</option>
+                <option value="FEMALE">{t('Female', 'ሴት')}</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">
+                {t('Role', 'ሚና')} *
+              </label>
+              <select
+                required
+                value={roleId}
+                onChange={(e) => setRoleId(e.target.value)}
+                className="form-input text-sm"
+              >
+                {roles.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {locale === 'am' ? r.name_am : r.name_en}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">
+                {t('Unit', 'ክፍል')} *
+              </label>
+              <select
+                required
+                value={unitId}
+                onChange={(e) => setUnitId(e.target.value)}
+                className="form-input text-sm"
+              >
+                {units.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {locale === 'am' ? u.name_am : u.name_en}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
@@ -278,66 +461,143 @@ export default function AdminUsersPage() {
             >
               {t('Cancel', 'ሰርዝ')}
             </button>
-            <button type="submit" className="btn btn-primary text-xs py-2 px-4">
-              {t('Create User Account', 'ተጠቃሚ ፍጠር')}
+            <button type="submit" disabled={busy} className="btn btn-primary text-xs py-2 px-4 disabled:opacity-60">
+              {busy ? t('Creating…', 'በመፍጠር ላይ…') : t('Create User Account', 'ተጠቃሚ ፍጠር')}
             </button>
           </div>
         </form>
       </Modal>
 
-      {/* View User Permissions Modal */}
+      {/* Manage User Modal */}
       {selectedUser && (
         <Modal
           isOpen={Boolean(selectedUser)}
           onClose={() => setSelectedUser(null)}
-          title={`@${selectedUser.username} — ${locale === 'am' ? selectedUser.name_am : selectedUser.name}`}
-          subtitle={`${locale === 'am' ? selectedUser.role_am : selectedUser.role} • ${selectedUser.org}`}
+          title={`${locale === 'am' ? selectedUser.name_am : selectedUser.name} — ${selectedUser.username}`}
+          subtitle={`${locale === 'am' ? selectedUser.role_am : selectedUser.role} • ${
+            locale === 'am' ? selectedUser.org_am : selectedUser.org
+          }`}
         >
-          <div className="space-y-4 text-sm">
+          <div className="space-y-5 text-sm">
             <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-              <div className="flex justify-between">
-                <span className="text-slate-500">{t('User ID', 'መለያ ቁጥር')}:</span>
-                <span className="font-mono text-blue-600 font-semibold">{selectedUser.id}</span>
-              </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <span className="text-slate-500">{t('Account Status', 'የመለያ ሁኔታ')}:</span>
                 <span className={selectedUser.is_active ? 'badge badge-success' : 'badge badge-danger'}>
-                  {selectedUser.is_active ? 'Active Login' : 'Suspended'}
+                  {selectedUser.is_active ? t('Active', 'ንቁ') : t('Disabled', 'የተዘጋ')}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">{t('Last System Login', 'የመጨረሻ እንቅስቃሴ')}:</span>
-                <span className="font-mono text-slate-700">{selectedUser.last_login}</span>
+                <span className="font-mono text-slate-700">{formatLastLogin(selectedUser.last_login)}</span>
               </div>
             </div>
 
+            {/* Role assignment */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                {t('Role & Unit', 'ሚና እና ክፍል')}
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <select
+                  value={editRoleId}
+                  onChange={(e) => setEditRoleId(e.target.value)}
+                  disabled={isSelf}
+                  className="form-input text-sm"
+                >
+                  {roles.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {locale === 'am' ? r.name_am : r.name_en}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={editUnitId}
+                  onChange={(e) => setEditUnitId(e.target.value)}
+                  disabled={isSelf}
+                  className="form-input text-sm"
+                >
+                  {units.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {locale === 'am' ? u.name_am : u.name_en}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={handleSaveRole}
+                disabled={busy || isSelf || !editRoleId || !editUnitId}
+                className="btn btn-primary text-xs py-2 px-3 disabled:opacity-50"
+              >
+                {t('Save Role', 'ሚና መዝግብ')}
+              </button>
+              {isSelf && (
+                <p className="text-xs text-slate-400">
+                  {t('You cannot change your own role or disable your own account.', 'የራስዎን ሚና መቀየር ወይም መለያዎን መዝጋት አይችሉም።')}
+                </p>
+              )}
+            </div>
+
+            {/* Password reset */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <KeyRound size={14} className="text-blue-600" />
+                {t('Set New Password', 'አዲስ የይለፍ ቃል')}
+              </h4>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder={t('At least 8 characters', 'ቢያንስ 8 ፊደል')}
+                  className="form-input text-sm font-mono flex-1"
+                  autoComplete="new-password"
+                />
+                <button
+                  onClick={handleResetPassword}
+                  disabled={busy || !newPassword}
+                  className="btn btn-secondary text-xs disabled:opacity-50"
+                >
+                  {t('Change', 'ቀይር')}
+                </button>
+              </div>
+            </div>
+
+            {/* Permissions from the assigned role */}
             <div>
               <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                 <Shield size={14} className="text-blue-600" />
-                {t('RBAC Enforced System Entitlements', 'የተፈቀዱ የስርዓት ፈቃዶች')}
+                {t('Permissions from Role', 'ከሚናው የተገኙ ፈቃዶች')} ({selectedUser.permissions.length})
               </h4>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  'VIEW_DASHBOARD',
-                  'READ_DIRECTORY',
-                  'WRITE_STUDENT_GRADES',
-                  'MANAGE_ATTENDANCE',
-                  'EXECUTE_REPORTS',
-                  'INTERNAL_COMMUNICATIONS',
-                ].map((perm) => (
-                  <div key={perm} className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs font-mono text-slate-700">
-                    <CheckCircle2 size={13} className="text-emerald-500 flex-shrink-0" />
-                    <span>{perm}</span>
-                  </div>
-                ))}
-              </div>
+              {selectedUser.permissions.length === 0 ? (
+                <p className="text-xs text-slate-400">{t('No permissions', 'ምንም ፈቃድ የለም')}</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                  {selectedUser.permissions.map((perm) => (
+                    <div
+                      key={perm}
+                      className="p-2 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2 text-xs font-mono text-slate-700"
+                    >
+                      <CheckCircle2 size={13} className="text-emerald-500 flex-shrink-0" />
+                      <span>{perm}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <div className="flex justify-end pt-2">
+            <div className="flex justify-between pt-2 border-t border-slate-100">
               <button
-                onClick={() => setSelectedUser(null)}
-                className="btn btn-secondary text-xs"
+                onClick={handleToggleActive}
+                disabled={busy || isSelf}
+                className={`btn text-xs disabled:opacity-50 ${
+                  selectedUser.is_active ? 'btn-danger' : 'btn-primary'
+                }`}
               >
+                {selectedUser.is_active
+                  ? t('Disable Account', 'መለያ ዝጋ')
+                  : t('Enable Account', 'መለያ ክፈት')}
+              </button>
+              <button onClick={() => setSelectedUser(null)} className="btn btn-secondary text-xs">
                 {t('Close', 'ዝጋ')}
               </button>
             </div>

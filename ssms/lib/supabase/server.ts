@@ -1,0 +1,47 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Supabase clients — SERVER ONLY (uses cookies and the service-role key)
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { cookies } from 'next/headers';
+import { createServerClient } from '@supabase/ssr';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing environment variable ${name}`);
+  return value;
+}
+
+/** Client bound to the visitor's session cookies. */
+export async function createSessionClient(): Promise<SupabaseClient> {
+  const cookieStore = await cookies();
+  return createServerClient(
+    requireEnv('NEXT_PUBLIC_SUPABASE_URL'),
+    requireEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
+    {
+      cookies: {
+        getAll: () => cookieStore.getAll(),
+        setAll: (cookiesToSet) => {
+          // Server Components can't write cookies; proxy.ts refreshes the session there.
+          try {
+            cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
+          } catch {
+            /* read-only context */
+          }
+        },
+      },
+    }
+  );
+}
+
+/**
+ * Service-role client — bypasses RLS. Only use after the caller's permissions
+ * have been checked (see getCurrentUser / authorize in admin actions).
+ */
+export function createAdminClient(): SupabaseClient {
+  return createClient(
+    requireEnv('NEXT_PUBLIC_SUPABASE_URL'),
+    requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
+    { auth: { persistSession: false, autoRefreshToken: false } }
+  );
+}

@@ -1,18 +1,33 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Search, CheckCircle2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Search, CheckCircle2, XCircle } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
-import { MOCK_PERMISSIONS } from '@/lib/mock/data';
+import { AdminModeNotice } from '@/components/admin/AdminModeNotice';
+import { demoPermissions } from '@/lib/admin/demo';
+import type { AdminPermissionRow, LoadMode } from '@/lib/admin/types';
+import { loadPermissions } from '../actions';
 
 export default function PermissionsPage() {
   const { t, locale } = useLang();
+  const [mode, setMode] = useState<LoadMode>('loading');
+  const [loadError, setLoadError] = useState('');
+  const [permissions, setPermissions] = useState<AdminPermissionRow[]>([]);
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState('ALL');
 
-  const categories = Array.from(new Set(MOCK_PERMISSIONS.map((p) => p.category)));
+  useEffect(() => {
+    loadPermissions().then((res) => {
+      if (res.mode === 'demo') setPermissions(demoPermissions());
+      else if (res.mode === 'live') setPermissions(res.data);
+      else setLoadError(res.error);
+      setMode(res.mode);
+    });
+  }, []);
 
-  const filtered = MOCK_PERMISSIONS.filter((p) => {
+  const categories = Array.from(new Set(permissions.map((p) => p.category)));
+
+  const filtered = permissions.filter((p) => {
     const matchesSearch =
       (locale === 'am' ? p.name_am : p.name_en).toLowerCase().includes(search.toLowerCase()) ||
       p.code.toLowerCase().includes(search.toLowerCase());
@@ -36,6 +51,8 @@ export default function PermissionsPage() {
           </p>
         </div>
       </div>
+
+      <AdminModeNotice mode={mode} error={loadError} />
 
       {/* Table Card */}
       <div className="card overflow-hidden">
@@ -88,10 +105,17 @@ export default function PermissionsPage() {
                     <span className="badge badge-info">{p.category}</span>
                   </td>
                   <td>
-                    <span className="badge badge-success inline-flex items-center gap-1">
-                      <CheckCircle2 size={12} />
-                      {t('Active', 'ንቁ')}
-                    </span>
+                    {p.is_active ? (
+                      <span className="badge badge-success inline-flex items-center gap-1">
+                        <CheckCircle2 size={12} />
+                        {t('Active', 'ንቁ')}
+                      </span>
+                    ) : (
+                      <span className="badge badge-danger inline-flex items-center gap-1">
+                        <XCircle size={12} />
+                        {t('Inactive', 'ንቁ ያልሆነ')}
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}

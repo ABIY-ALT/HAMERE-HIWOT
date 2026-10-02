@@ -1,15 +1,44 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
-import { Save, Shield, Database, Globe, CheckCircle2 } from 'lucide-react';
+import { Save, Shield, Database, Globe, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
+import { AdminModeNotice } from '@/components/admin/AdminModeNotice';
+import { DEFAULT_PARISH_SETTINGS, type LoadMode, type ParishSettings } from '@/lib/admin/types';
+import { loadSettings, saveSettings } from '../actions';
 
 export default function SettingsPage() {
   const { t, locale, setLocale } = useLang();
+  const [mode, setMode] = useState<LoadMode>('loading');
+  const [loadError, setLoadError] = useState('');
+  const [settings, setSettings] = useState<ParishSettings>(DEFAULT_PARISH_SETTINGS);
+  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
-  const handleSave = () => {
+  useEffect(() => {
+    loadSettings().then((res) => {
+      if (res.mode === 'live') setSettings(res.data);
+      else if (res.mode === 'error') setLoadError(res.error);
+      setMode(res.mode);
+    });
+  }, []);
+
+  const update = (key: keyof ParishSettings) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setSettings((prev) => ({ ...prev, [key]: e.target.value }));
+
+  const handleSave = async () => {
+    setSaveError('');
+    if (mode === 'live') {
+      setSaving(true);
+      const res = await saveSettings(settings);
+      setSaving(false);
+      if (!res.ok) {
+        setSaveError(res.error);
+        return;
+      }
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   };
@@ -31,17 +60,29 @@ export default function SettingsPage() {
         </div>
         <button
           onClick={handleSave}
-          className="btn btn-primary self-start sm:self-auto inline-flex items-center gap-2"
+          disabled={saving || mode === 'loading' || mode === 'error'}
+          className="btn btn-primary self-start sm:self-auto inline-flex items-center gap-2 disabled:opacity-50"
         >
           <Save size={16} />
-          {t('Save Configuration', 'ቅንብሮችን መዝግብ')}
+          {saving ? t('Saving…', 'በመመዝገብ ላይ…') : t('Save Configuration', 'ቅንብሮችን መዝግብ')}
         </button>
       </div>
+
+      <AdminModeNotice mode={mode} error={loadError} />
 
       {saved && (
         <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-emerald-800 text-sm font-medium">
           <CheckCircle2 size={18} className="text-emerald-600" />
-          {t('Settings saved successfully!', 'ቅንብሮች በሚገባ ተመዝግበዋል!')}
+          {mode === 'live'
+            ? t('Settings saved successfully!', 'ቅንብሮች በሚገባ ተመዝግበዋል!')
+            : t('Demo mode — settings were not saved.', 'የሙከራ ሁኔታ — ቅንብሮቹ አልተቀመጡም።')}
+        </div>
+      )}
+
+      {saveError && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-red-700 text-sm font-medium">
+          <AlertCircle size={18} />
+          {saveError}
         </div>
       )}
 
@@ -102,7 +143,8 @@ export default function SettingsPage() {
             </label>
             <input
               type="text"
-              defaultValue="Sallo Debre Tsehay Saint George Church Hamere Hiwot Sabbath School"
+              value={settings.parish_name_en}
+              onChange={update('parish_name_en')}
               className="form-input text-sm"
             />
           </div>
@@ -112,7 +154,8 @@ export default function SettingsPage() {
             </label>
             <input
               type="text"
-              defaultValue="ሳሎ ደብረ ፀሐይ ቅዱስ ጊዮርጊስ ቤተክርስቲያን ሐመረ ሕይወት ሰንበት ትምህርት ቤት"
+              value={settings.parish_name_am}
+              onChange={update('parish_name_am')}
               className="form-input text-sm"
             />
           </div>
@@ -133,7 +176,8 @@ export default function SettingsPage() {
             </label>
             <input
               type="text"
-              defaultValue="Addis Ababa Diocese (አዲስ አበባ ሀገረ ስብከት)"
+              value={settings.diocese}
+              onChange={update('diocese')}
               className="form-input text-sm"
             />
           </div>
@@ -143,7 +187,8 @@ export default function SettingsPage() {
             </label>
             <input
               type="text"
-              defaultValue="፲፱፻፺፪ ዓ.ም (1992 E.C.)"
+              value={settings.foundation_year}
+              onChange={update('foundation_year')}
               className="form-input text-sm"
             />
           </div>
@@ -153,7 +198,8 @@ export default function SettingsPage() {
             </label>
             <input
               type="text"
-              defaultValue="ነህ 2፥20 (Nehemiah 2:20)"
+              value={settings.motto}
+              onChange={update('motto')}
               className="form-input text-sm"
             />
           </div>

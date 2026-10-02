@@ -5,13 +5,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Eye, EyeOff, Globe, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-// Demo credentials (mock mode)
-const DEMO_CREDENTIALS = [
-  { username: 'admin', phone: '0912345678', password: 'admin123', label: 'Super Admin', labelAm: 'ዋና አስተዳዳሪ' },
-  { username: 'board_chair', phone: '0911000002', password: 'board123', label: 'Board Officer', labelAm: 'የሥራ አመራር ኃላፊ' },
-  { username: 'audit_inspector', phone: '0911000003', password: 'audit123', label: 'Audit Inspector', labelAm: 'ኦዲት ተቆጣጣሪ' },
-];
+import { signIn } from '@/app/login/actions';
 
 export default function LoginForm() {
   const router = useRouter();
@@ -29,27 +23,22 @@ export default function LoginForm() {
     setLoading(true);
     setError('');
 
-    // Simulate auth delay
-    await new Promise((r) => setTimeout(r, 500));
-
-    const cleanUsername = username.trim().toLowerCase();
-    const cleanPassword = password.trim();
-
-    // Check demo credentials
-    const valid = DEMO_CREDENTIALS.find(
-      (c) => (c.phone === cleanUsername || c.username.toLowerCase() === cleanUsername) && c.password === cleanPassword
+    const result = await signIn(username, password).catch(
+      () => ({ ok: false, error: 'SERVER' }) as const
     );
-
-    if (valid) {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('ssms_user', JSON.stringify(valid));
-        document.cookie = `ssms_user=${valid.username}; path=/; max-age=86400`;
-      }
+    if (result.ok) {
       router.push('/dashboard');
+      router.refresh();
       return;
     }
 
-    setError(t('Invalid phone number or password', 'ስልክ ቁጥር ወይም የይለፍ ቃል ትክክል አይደለም'));
+    if (result.error === 'INACTIVE') {
+      setError(t('This account is disabled. Contact the administrator.', 'ይህ መለያ ተዘግቷል። አስተዳዳሪውን ያነጋግሩ።'));
+    } else if (result.error === 'SERVER') {
+      setError(t('Could not sign in right now. Please try again.', 'አሁን መግባት አልተቻለም። እባክዎ እንደገና ይሞክሩ።'));
+    } else {
+      setError(t('Invalid phone number or password', 'ስልክ ቁጥር ወይም የይለፍ ቃል ትክክል አይደለም'));
+    }
     setLoading(false);
   };
 
