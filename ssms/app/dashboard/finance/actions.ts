@@ -16,7 +16,10 @@ import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
 import type { SessionUser } from '@/lib/auth/session';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
+import { computeBudget, loadYears } from '@/lib/finance/budget';
 import type {
+  BudgetLine,
+  BudgetYear,
   FinanceData,
   FinanceRequest,
   FinanceTxn,
@@ -119,7 +122,20 @@ export async function loadFinance(): Promise<Loaded<FinanceData>> {
     // Requesters only need their own units in the "New request" form
     const units = staff ? unitRows : unitRows.filter((u) => me.organizationIds.includes(u.id));
 
-    return { mode: 'live', data: { requests, transactions, units } };
+    // Current year's budget, so the request form and the reviewer can see what is left.
+    let budget: BudgetLine[] = [];
+    let budgetYear: string | null = null;
+    try {
+      const year = (await loadYears(db)).find((y) => y.is_current);
+      if (year) {
+        budgetYear = year.name;
+        budget = await computeBudget(db, year, staff ? undefined : units.map((u) => u.id));
+      }
+    } catch {
+      // Budget table not created yet (migration 009) — the pages simply show no budget
+    }
+
+    return { mode: 'live', data: { requests, transactions, units, budget, budgetYear } };
   } catch (e) {
     return { mode: 'error', error: errorMessage(e) };
   }
@@ -326,6 +342,62 @@ export async function recordTransaction(input: z.input<typeof TxnSchema>): Promi
         description: t.description || null,
         recorded_by: me.systemUser.id,
       })
+      .then(check);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) };
+  }
+}
+
+// ── Budget ───────────────────────────────────────────────────────────────────
+
+export interface BudgetView {
+  years: BudgetYear[];
+  yearId: string | null;
+  lines: BudgetLine[];
+}
+
+/** Budget of one academic year (default: the current one) for every department. */
+export async function loadBudget(yearId?: string): Promise<Loaded<BudgetView>> {
+  if (!isSupabaseEnabled()) return { mode: 'demo' };
+  try {
+    const { db } = await authorize('FINANCE_VIEW', 'FINANCE_APPROVE');
+    const years = await loadYears(db);
+    const year = years.find((y) => y.id === yearId) ?? years.find((y) => y.is_current) ?? years[0];
+    if (!year) return { mode: 'live', data: { years, yearId: null, lines: [] } };
+    return { mode: 'live', data: { years, yearId: year.id, lines: await computeBudget(db, year) } };
+  } catch (e) {
+    const msg = errorMessage(e);
+    return {
+      mode: 'error',
+      error: msg.includes('budget_allocations') ? 'Run database migration 009 (budgets) first' : msg,
+    };
+  }
+}
+
+const BudgetSchema = z.object({
+  year_id: z.string().min(1),
+  unit_id: z.string().min(1),
+  allocated: z.coerce.number().min(0, 'The budget cannot be negative').max(1_000_000_000, 'Amount is too large'),
+  notes: z.string().trim(),
+});
+
+/** Set (or change) a department's budget for an academic year. */
+export async function setBudget(input: z.input<typeof BudgetSchema>): Promise<ActionResult> {
+  try {
+    const { me, db } = await authorize('FINANCE_APPROVE');
+    const b = BudgetSchema.parse(input);
+    await db.from('budget_allocations')
+      .upsert(
+        {
+          academic_year_id: b.year_id,
+          organization_unit_id: b.unit_id,
+          allocated: b.allocated,
+          notes: b.notes || null,
+          updated_by: me.systemUser.id,
+        },
+        { onConflict: 'academic_year_id,organization_unit_id' }
+      )
       .then(check);
     return { ok: true };
   } catch (e) {

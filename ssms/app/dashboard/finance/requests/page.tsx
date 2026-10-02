@@ -16,6 +16,7 @@ import { useLang } from '@/contexts/LangContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Modal } from '@/components/ui/Modal';
 import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
+import { BudgetCheck } from '@/components/finance/BudgetCheck';
 import {
   cancelRequest,
   markRequestPaid,
@@ -28,6 +29,7 @@ import {
   EXPENSE_CATEGORIES,
   categoryLabel,
   formatETB,
+  type BudgetLine,
   type FinanceRequest,
   type RequestPriority,
   type RequestStatus,
@@ -415,6 +417,14 @@ export default function FinanceRequestsPage() {
             </Field>
           </div>
 
+          {form.unit_id && (
+            <BudgetCheck
+              line={fin.budget.find((b) => b.unit_id === form.unit_id)}
+              year={fin.budgetYear}
+              amount={Number(form.amount) || 0}
+            />
+          )}
+
           <Field label={t('Reason / details', 'ምክንያት / ዝርዝር') + ' *'}>
             <textarea required rows={4} value={form.justification} onChange={set('justification')} placeholder={t('Explain why it is needed, what will be bought, quantities, etc.', 'ለምን እንደሚያስፈልግ፣ ምን እንደሚገዛ፣ ብዛቱን ወዘተ ያብራሩ።')} className="form-input text-sm" />
           </Field>
@@ -434,6 +444,8 @@ export default function FinanceRequestsPage() {
       {selected && (
         <RequestDetails
           request={selected}
+          budgetLine={fin.budget.find((b) => b.unit_id === selected.unit_id)}
+          budgetYear={fin.budgetYear}
           myId={myId}
           myName={myName}
           isApprover={isApprover}
@@ -454,6 +466,8 @@ export default function FinanceRequestsPage() {
 
 function RequestDetails({
   request: r,
+  budgetLine,
+  budgetYear,
   myId,
   myName,
   isApprover,
@@ -465,6 +479,8 @@ function RequestDetails({
   onDone,
 }: {
   request: FinanceRequest;
+  budgetLine: BudgetLine | undefined;
+  budgetYear: string | null;
   myId: string;
   myName: string;
   isApprover: boolean;
@@ -549,6 +565,7 @@ function RequestDetails({
         {/* Finance head: review */}
         {canReview && (
           <div className="space-y-2 pt-2 border-t border-slate-100">
+            <BudgetCheck line={budgetLine} year={budgetYear} amount={r.amount} />
             <label className="text-xs font-semibold text-slate-700 block">
               {t('Note to the requester (required to reject or return)', 'ለጠያቂው ማስታወሻ (ውድቅ ለማድረግ ወይም ለመመለስ አስፈላጊ)')}
             </label>

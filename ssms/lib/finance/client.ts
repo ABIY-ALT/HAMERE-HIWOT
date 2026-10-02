@@ -17,10 +17,17 @@ import {
   submitRequest as submitAction,
   type RequestInput,
 } from '@/app/dashboard/finance/actions';
-import { MOCK_APPROVALS, MOCK_EXPENSES, MOCK_INCOME } from '@/lib/mock/modules';
+import { MOCK_APPROVALS, MOCK_BUDGET_ITEMS, MOCK_EXPENSES, MOCK_INCOME } from '@/lib/mock/modules';
 import { MOCK_ORG_UNITS } from '@/lib/mock/data';
 import type { ActionResult } from '@/lib/admin/types';
-import { EMPTY_FINANCE, type FinanceData, type FinanceRequest, type FinanceTxn, type TxnType } from './types';
+import {
+  EMPTY_FINANCE,
+  type BudgetLine,
+  type FinanceData,
+  type FinanceRequest,
+  type FinanceTxn,
+  type TxnType,
+} from './types';
 
 export type FinanceMode = 'loading' | 'demo' | 'live' | 'error';
 export interface FinanceState extends FinanceData {
@@ -76,7 +83,26 @@ function demoFinance(): FinanceData {
       description: e.description, party: '', receipt_no: '', unit: '', request_no: '', recorded_by: e.paid_by,
     })),
   ].sort((a, b) => b.date.localeCompare(a.date));
-  return { requests, transactions, units };
+  return { requests, transactions, units, budget: demoBudget(requests), budgetYear: '2025/2026' };
+}
+
+/** Demo budget: the sample allocations spread over the departments. */
+export function demoBudget(requests: FinanceRequest[] = []): BudgetLine[] {
+  return MOCK_ORG_UNITS.filter((u) => u.unit_type === 'DEPARTMENT' || u.unit_type === 'COORDINATION').map((u, i) => {
+    const item = u.unit_type === 'DEPARTMENT' ? MOCK_BUDGET_ITEMS[i % MOCK_BUDGET_ITEMS.length] : undefined;
+    const mine = requests.filter((r) => r.unit_id === u.id);
+    return {
+      unit_id: u.id,
+      unit: u.name_en,
+      unit_am: u.name_am,
+      unit_type: u.unit_type,
+      allocated: item ? item.allocated : null,
+      notes: '',
+      spent: item ? item.spent : 0,
+      committed: mine.filter((r) => r.status === 'APPROVED').reduce((s, r) => s + r.amount, 0),
+      pending: mine.filter((r) => r.status === 'PENDING').reduce((s, r) => s + r.amount, 0),
+    };
+  });
 }
 
 export function refreshFinance(): Promise<void> {

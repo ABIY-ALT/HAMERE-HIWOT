@@ -78,6 +78,9 @@ try {
   const { error: financeTables } = await db.from('finance_requests').select('id').limit(1);
   if (financeTables) problem('Finance tables missing — run migration 008_finance.sql');
   else ok('Migration 008 (finance) applied');
+  const { error: budgetTable } = await db.from('budget_allocations').select('id').limit(1);
+  if (budgetTable) problem('Budget table missing — run migration 009_budget.sql');
+  else ok('Migration 009 (budgets) applied');
 } catch (e) {
   problem(e.message);
 }

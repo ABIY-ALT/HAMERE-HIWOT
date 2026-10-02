@@ -49,13 +49,42 @@ export interface FinanceUnit {
   name_am: string;
 }
 
+/** One department's budget for an academic year, with what has been used. */
+export interface BudgetLine {
+  unit_id: string;
+  unit: string;
+  unit_am: string;
+  unit_type: string;
+  allocated: number | null; // null = no budget set
+  notes: string;
+  spent: number; // paid expenses
+  committed: number; // approved requests not yet paid
+  pending: number; // requests awaiting approval
+}
+
+export interface BudgetYear {
+  id: string;
+  name: string;
+  is_current: boolean;
+  start_date: string;
+  end_date: string;
+}
+
+/** Money still free: allocation minus spent and committed. null when no budget is set. */
+export function budgetRemaining(line: Pick<BudgetLine, 'allocated' | 'spent' | 'committed'>): number | null {
+  return line.allocated === null ? null : line.allocated - line.spent - line.committed;
+}
+
 export interface FinanceData {
   requests: FinanceRequest[];
   transactions: FinanceTxn[];
   units: FinanceUnit[];
+  /** Current academic year's budget for the units this user may see. */
+  budget: BudgetLine[];
+  budgetYear: string | null;
 }
 
-export const EMPTY_FINANCE: FinanceData = { requests: [], transactions: [], units: [] };
+export const EMPTY_FINANCE: FinanceData = { requests: [], transactions: [], units: [], budget: [], budgetYear: null };
 
 /** Stored in English; shown in Amharic when that language is chosen. */
 export const EXPENSE_CATEGORIES: [string, string][] = [
