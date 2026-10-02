@@ -4,7 +4,7 @@
 
 'use client';
 
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useCallback, useSyncExternalStore } from 'react';
 import type { Locale } from '@/types';
 
 interface LangContextValue {
@@ -17,6 +17,31 @@ interface LangContextValue {
 
 const LangContext = createContext<LangContextValue | null>(null);
 
+const LOCALE_KEY = 'ssms_locale';
+const LOCALE_EVENT = 'ssms-locale-changed';
+
+function subscribeLocale(onChange: () => void) {
+  window.addEventListener(LOCALE_EVENT, onChange);
+  window.addEventListener('storage', onChange);
+  return () => {
+    window.removeEventListener(LOCALE_EVENT, onChange);
+    window.removeEventListener('storage', onChange);
+  };
+}
+
+// Used when storage is blocked (e.g. a private window), so switching language still works for the session
+let memoryLocale: Locale | null = null;
+
+function readLocale(): Locale | null {
+  try {
+    const saved = window.localStorage.getItem(LOCALE_KEY);
+    if (saved === 'am' || saved === 'en') return saved;
+  } catch {
+    // fall through to the in-memory choice
+  }
+  return memoryLocale;
+}
+
 export function LangProvider({
   children,
   defaultLocale = 'en',
@@ -24,18 +49,19 @@ export function LangProvider({
   children: React.ReactNode;
   defaultLocale?: Locale;
 }) {
-  const [locale, setLocaleState] = useState<Locale>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('ssms_locale') as Locale) || defaultLocale;
-    }
-    return defaultLocale;
-  });
+  // The server and the first browser render both use defaultLocale, so hydration
+  // matches; the saved language is applied right after, without a mismatch.
+  const saved = useSyncExternalStore(subscribeLocale, readLocale, () => null);
+  const locale: Locale = saved ?? defaultLocale;
 
   const setLocale = useCallback((l: Locale) => {
-    setLocaleState(l);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('ssms_locale', l);
+    memoryLocale = l;
+    try {
+      window.localStorage.setItem(LOCALE_KEY, l);
+    } catch {
+      // Storage unavailable (private mode): the choice just isn't remembered
     }
+    window.dispatchEvent(new Event(LOCALE_EVENT));
   }, []);
 
   const t = useCallback(
