@@ -104,6 +104,19 @@ try {
       if (error) problem(`Property query (${name}) failed: ${error.message}`);
     }
   }
+  const { error: choirTable } = await db.from('choir_members').select('id').limit(1);
+  if (choirTable) problem('Choir tables missing — run migration 015_choir.sql');
+  else {
+    ok('Migration 015 (choir) applied');
+    const probes = {
+      'choir roster': db.from('choir_members').select('id, person:persons(full_name_en), vestment:assets(tag)').limit(1),
+      'choir sessions': db.from('choir_sessions').select('id, program:programs(title_en), hymns:choir_session_hymns(hymn_id), marks:choir_attendance(member_id)').limit(1),
+    };
+    for (const [name, q] of Object.entries(probes)) {
+      const { error } = await q;
+      if (error) problem(`Choir query (${name}) failed: ${error.message}`);
+    }
+  }
   const { error: auditFn } = await db.rpc('audit_actor');
   if (auditFn) problem('Automatic audit trail missing — run migration 011_audit_trail.sql');
   else {

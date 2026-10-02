@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Music, Mic2 } from 'lucide-react';
+import { BookOpen, CalendarCheck, Users } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 
 export default function SacredArtsHub() {
@@ -10,20 +10,28 @@ export default function SacredArtsHub() {
 
   const links = [
     {
-      titleEn: 'Choir & Cantors',
-      titleAm: 'የዝማሬ አባላት',
-      descEn: 'Vocal sections, traditional Ethiopian instruments, and vestments',
-      descAm: 'የድምፅ ክፍሎችና የሙዚቃ መሳሪያዎች',
-      href: '/dashboard/sacred-arts/choir',
-      icon: Music,
+      titleEn: 'Choir Members',
+      titleAm: 'የመዘምራን አባላት',
+      descEn: 'Voice parts, traditional instruments, vestments and attendance',
+      descAm: 'የድምፅ ክፍል፣ የዜማ መሣሪያዎች፣ አልባሳትና ተገኝነት',
+      href: '/dashboard/people/choir',
+      icon: Users,
     },
     {
-      titleEn: 'Hymn Assignments',
-      titleAm: 'የዜማ ምደባ',
-      descEn: 'Kidasie hymns, Wedase Maryam chants, and liturgical leads',
-      descAm: 'የቅዳሴና የበዓላት ዜማዎች ምደባ',
+      titleEn: 'Rehearsals & Services',
+      titleAm: 'ልምምድና አገልግሎት',
+      descEn: 'Plan sessions, choose the hymns and take attendance',
+      descAm: 'መርሐ ግብር፣ የሚዘመሩ መዝሙራትና ተገኝነት',
+      href: '/dashboard/sacred-arts/choir',
+      icon: CalendarCheck,
+    },
+    {
+      titleEn: 'Hymn Library',
+      titleAm: 'የመዝሙራት ማውጫ',
+      descEn: 'Kidase, mezmur, wedase and chants with their lyrics',
+      descAm: 'ቅዳሴ፣ መዝሙር፣ ውዳሴና ዜማዎች ከግጥማቸው ጋር',
       href: '/dashboard/sacred-arts/hymns',
-      icon: Mic2,
+      icon: BookOpen,
     },
   ];
 
@@ -41,7 +49,7 @@ export default function SacredArtsHub() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         {links.map((item, idx) => {
           const Icon = item.icon;
           return (

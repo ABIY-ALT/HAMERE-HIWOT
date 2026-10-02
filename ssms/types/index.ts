@@ -91,6 +91,7 @@ export type PermissionCode =
   | 'PROGRAM_VIEW'
   | 'PROGRAM_CREATE'
   | 'PROGRAM_MANAGE'
+  | 'CHOIR_MANAGE'
   // HR
   | 'HR_VIEW'
   | 'HR_MANAGE';

@@ -24,6 +24,7 @@ import { signOut } from '@/app/login/actions';
 import { resetEducation } from '@/lib/education/client';
 import { resetFinance } from '@/lib/finance/client';
 import { resetProperty } from '@/lib/property/client';
+import { resetChoir } from '@/lib/choir/client';
 
 interface HeaderProps {
   onToggleMobileSidebar: () => void;
@@ -118,6 +119,7 @@ export default function Header({
     resetEducation();
     resetFinance();
     resetProperty();
+    resetChoir();
     logout();
     router.push('/login');
     router.refresh();
