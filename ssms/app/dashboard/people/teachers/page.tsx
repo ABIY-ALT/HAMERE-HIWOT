@@ -1,298 +1,152 @@
 'use client';
 
 import React, { useState } from 'react';
-import { UserPlus, Search, Phone, CheckCircle2 } from 'lucide-react';
+import { BookOpen, Download, Phone, Search, ShieldAlert, UserPlus } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
-import { MOCK_PERSONNEL } from '@/lib/mock/modules';
-import { Modal } from '@/components/ui/Modal';
+import { useAuth } from '@/contexts/AuthContext';
+import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
+import { personName, useHrDialogs } from '@/components/hr/HrDialogs';
+import { useHr } from '@/lib/hr/client';
+import { activeSuspension, addDays, tally } from '@/lib/hr/types';
+import { cell, downloadXlsx, headerCell } from '@/lib/export/xlsx';
+import { formatEthiopianDate, todayIso } from '@/lib/utils/ethiopian-calendar';
 
 export default function TeachersPage() {
   const { t, locale } = useLang();
-  const [teachers, setTeachers] = useState(
-    MOCK_PERSONNEL.filter((p) => p.role === 'Teacher' || p.classes.length > 0)
-  );
+  const { can } = useAuth();
+  const hr = useHr();
+  const canManage = can('HR_MANAGE');
+  const today = todayIso();
+  const since12w = addDays(today, -84);
+
   const [search, setSearch] = useState('');
+  const [toast, setToast] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+  const dialogs = useHrDialogs((text) => {
+    setToast({ kind: 'success', text });
+    setTimeout(() => setToast(null), 3000);
+  });
 
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [selectedTeacher, setSelectedTeacher] = useState<typeof MOCK_PERSONNEL[0] | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const teaching = hr.assignments.filter((a) => a.status === 'ACTIVE' && a.role_kind === 'TEACHER');
+  const education = hr.units.find((u) => u.code === 'DEPT_EDUCATION');
+  const ids = [...new Set([...teaching.map((a) => a.person_id), ...hr.homeroom.map((h) => h.person_id).filter((id): id is string => Boolean(id))])];
 
-  // Form State
-  const [nameEn, setNameEn] = useState('');
-  const [nameAm, setNameAm] = useState('');
-  const [phone, setPhone] = useState('');
-  const [assignedClass, setAssignedClass] = useState('Grade 1 — Angels');
+  const teachers = ids
+    .map((id) => {
+      const mine = teaching.filter((a) => a.person_id === id);
+      const homeroom = hr.homeroom.filter((h) => h.person_id === id);
+      const classes = [...new Set([...homeroom.map((h) => h.class_name), ...mine.map((a) => a.class_name).filter(Boolean)])];
+      return {
+        id,
+        name: personName(hr, id, locale),
+        phone: hr.people.find((p) => p.id === id)?.phone ?? '',
+        classes,
+        homeroom: new Set(homeroom.map((h) => h.class_name)),
+        since: mine.map((a) => a.start_date).sort()[0] ?? null,
+        x: tally(hr.attendance.filter((m) => m.person_id === id && m.date >= since12w)),
+        suspended: activeSuspension(hr.cases, id, today),
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+  const needle = search.trim().toLowerCase();
+  const rows = teachers.filter((r) => !needle || [r.name, r.phone, ...r.classes].some((v) => v.toLowerCase().includes(needle)));
+  const covered = new Set([...hr.homeroom.filter((h) => h.person_id).map((h) => h.class_id), ...teaching.map((a) => a.class_id).filter(Boolean)]);
+  const uncovered = hr.classes.filter((c) => !covered.has(c.id));
+  const rate = tally(hr.attendance.filter((m) => ids.includes(m.person_id) && m.date >= since12w)).rate;
+
+  const assign = (class_id = '') => dialogs.newAssignment({ role_kind: 'TEACHER', unit_id: education?.id ?? '', class_id });
+
+  const exportExcel = async () => {
+    const header = [t('Teacher', 'መምህር'), t('Phone', 'ስልክ'), t('Classes', 'ክፍሎች'), t('Teaching since', 'ማስተማር የጀመረበት'), t('Attendance % (12 wks)', 'ተገኝነት % (12 ሳምንት)')].map(headerCell);
+    const body = rows.map((r) => [cell(r.name), r.phone, r.classes.join(', '), r.since ?? '', r.x.rate]);
+    await downloadXlsx(`teachers_${today}`, [header, ...body], { sheet: 'Teachers', widths: [26, 14, 40, 14, 14] });
   };
-
-  const handleAssign = (e: React.FormEvent) => {
-    e.preventDefault();
-    const newTeacher = {
-      id: `per-${Date.now()}`,
-      name_en: nameEn,
-      name_am: nameAm || nameEn,
-      role: 'Teacher',
-      role_am: 'አስተማሪ',
-      dept: 'Education & Training',
-      dept_am: 'ትምህርትና ስልጠና',
-      phone,
-      status: 'ACTIVE',
-      joined: new Date().toISOString().slice(0, 10),
-      classes: [assignedClass],
-    };
-
-    setTeachers([...teachers, newTeacher]);
-    setIsAddModalOpen(false);
-    showToast(t(`Teacher ${nameEn} assigned successfully!`, `መምህር ${nameAm || nameEn} ተመድቧል!`));
-
-    setNameEn('');
-    setNameAm('');
-    setPhone('');
-  };
-
-  const filtered = teachers.filter((tch) =>
-    (locale === 'am' ? tch.name_am : tch.name_en).toLowerCase().includes(search.toLowerCase()) ||
-    tch.phone.includes(search)
-  );
 
   return (
     <div className="space-y-6">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700 animate-in fade-in slide-in-from-bottom-4">
-          <CheckCircle2 size={18} className="text-emerald-400" />
-          <span className="text-sm font-medium">{toastMessage}</span>
+      <AdminToast toast={toast} />
+      {dialogs.node}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">{t('Teachers', 'መምህራን')}</h1>
+          <p className="text-sm text-slate-500 mt-1">{t('Who teaches which class this academic year', 'በዚህ የትምህርት ዘመን ማን የትኛውን ክፍል እንደሚያስተምር')}</p>
+        </div>
+        <div className="flex gap-2 self-start sm:self-auto">
+          <button onClick={exportExcel} disabled={rows.length === 0} className="btn btn-secondary text-xs inline-flex items-center gap-1.5 disabled:opacity-50"><Download size={14} /> {t('Export Excel', 'ወደ ኤክሴል')}</button>
+          {canManage && <button onClick={() => assign()} className="btn btn-primary text-xs inline-flex items-center gap-1.5"><UserPlus size={14} /> {t('Assign Teacher', 'መምህር መድብ')}</button>}
+        </div>
+      </div>
+
+      <AdminModeNotice mode={hr.mode} error={hr.error} />
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Kpi value={teachers.length} label={t('Teachers', 'መምህራን')} />
+        <Kpi value={hr.classes.length ? `${hr.classes.length - uncovered.length} / ${hr.classes.length}` : '—'} label={t('Classes with a teacher', 'መምህር ያላቸው ክፍሎች')} />
+        <Kpi value={uncovered.length} label={t('Classes without a teacher', 'መምህር የሌላቸው ክፍሎች')} warn={uncovered.length > 0} />
+        <Kpi value={rate === null ? '—' : `${rate}%`} label={t('Teacher attendance, 12 weeks', 'የመምህራን ተገኝነት፣ 12 ሳምንት')} />
+      </div>
+
+      {uncovered.length > 0 && (
+        <div className="card p-4">
+          <div className="text-xs font-semibold text-slate-700 mb-2">{t('Classes without a teacher', 'መምህር የሌላቸው ክፍሎች')}</div>
+          <div className="flex flex-wrap gap-1.5">
+            {uncovered.map((c) => (
+              <button key={c.id} disabled={!canManage} onClick={() => assign(c.id)} className="text-[11px] px-2 py-1 rounded border border-dashed border-amber-300 text-amber-800 bg-amber-50 hover:border-blue-400 hover:text-blue-700 disabled:hover:border-amber-300 disabled:hover:text-amber-800">
+                {c.name}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            {t('Sunday School Teaching Staff', 'የሰንበት ት/ቤት መምህራን')}
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            {t(
-              'Spiritual educators, deacons, and teachers leading classes and doctrine',
-              'ክፍሎችን እና የትምህርት ዘርፎችን የሚያስተምሩ መምህራን'
-            )}
-          </p>
-        </div>
-        <button
-          onClick={() => setIsAddModalOpen(true)}
-          className="btn btn-primary self-start sm:self-auto inline-flex items-center gap-2"
-        >
-          <UserPlus size={16} />
-          {t('Assign Teacher', 'አስተማሪ መድብ')}
-        </button>
-      </div>
-
-      {/* Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="card p-5">
-          <div className="text-2xl font-bold text-slate-800">{teachers.length}</div>
-          <div className="text-xs text-slate-500 mt-1">{t('Active Teachers', 'ንቁ መምህራን')}</div>
-        </div>
-        <div className="card p-5">
-          <div className="text-2xl font-bold text-emerald-600">8</div>
-          <div className="text-xs text-slate-500 mt-1">{t('Classes Covered', 'የተሸፈኑ ክፍሎች')}</div>
-        </div>
-        <div className="card p-5">
-          <div className="text-2xl font-bold text-blue-600">100%</div>
-          <div className="text-xs text-slate-500 mt-1">{t('Teacher Qualification Met', 'የመምህራን ብቃት ተሟልቷል')}</div>
-        </div>
-      </div>
-
-      {/* Teachers Grid */}
       <div className="card p-5 space-y-4">
         <div className="relative max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-          <input
-            type="text"
-            placeholder={t('Search teachers...', 'መምህራንን ፈልግ...')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="form-input pl-9 text-sm"
-          />
+          <input type="text" placeholder={t('Search name, phone or class…', 'ስም፣ ስልክ ወይም ክፍል ፈልግ…')} value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-9 text-sm" />
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
-          {filtered.map((tch) => (
-            <div key={tch.id} className="border border-slate-200/80 rounded-xl p-5 bg-white hover:shadow-sm transition-all flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="badge badge-primary">{t(tch.role, tch.role_am)}</span>
-                  <span className="badge badge-success">{t('Active', 'ንቁ')}</span>
-                </div>
-                <h3 className="font-bold text-slate-800 text-base">
-                  {locale === 'am' ? tch.name_am : tch.name_en}
-                </h3>
-                <div className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
-                  <Phone size={13} className="text-slate-400" />
-                  <span>{tch.phone}</span>
-                </div>
-
-                <div className="mt-4">
-                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-                    {t('Assigned Classes', 'የተመደቡባቸው ክፍሎች')}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {rows.map((r) => (
+            <button key={r.id} onClick={() => dialogs.openPerson(r.id)} className="text-left border border-slate-200/80 rounded-xl p-4 bg-white hover:shadow-sm hover:border-blue-300 transition-all flex flex-col gap-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-bold text-slate-800 truncate flex items-center gap-1.5">
+                    {r.name}
+                    {r.suspended && <ShieldAlert size={13} className="text-red-600 shrink-0" />}
                   </div>
-                  <div className="flex flex-wrap gap-1">
-                    {tch.classes.length > 0 ? (
-                      tch.classes.map((cls, idx) => (
-                        <span key={idx} className="text-[11px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
-                          {cls}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-xs text-slate-400 italic">{t('General Assignment', 'ጠቅላላ ምደባ')}</span>
-                    )}
-                  </div>
+                  {r.phone && <div className="text-[11px] font-mono text-slate-500 inline-flex items-center gap-1"><Phone size={10} />{r.phone}</div>}
                 </div>
+                <span className={`text-xs font-semibold tabular-nums ${r.x.rate !== null && r.x.rate < 60 ? 'text-amber-700' : 'text-slate-600'}`} title={t('Attendance, last 12 weeks', 'ተገኝነት፣ ያለፉት 12 ሳምንታት')}>
+                  {r.x.rate === null ? '—' : `${r.x.rate}%`}
+                </span>
               </div>
-
-              <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
-                <span>{t('Joined', 'የተቀላቀሉበት')}: {tch.joined}</span>
-                <button
-                  onClick={() => setSelectedTeacher(tch)}
-                  className="text-blue-600 hover:text-blue-800 font-semibold hover:underline"
-                >
-                  {t('Schedules →', 'መርሐ ግብር →')}
-                </button>
+              <div className="flex flex-wrap gap-1">
+                {r.classes.length ? (
+                  r.classes.map((c) => (
+                    <span key={c} className={`text-[11px] px-2 py-0.5 rounded ${r.homeroom.has(c) ? 'bg-blue-50 text-blue-800 border border-blue-100' : 'bg-slate-100 text-slate-700'}`}>
+                      {c}{r.homeroom.has(c) && ` · ${t('homeroom', 'ኃላፊ')}`}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-[11px] text-slate-400 italic">{t('Not tied to a class', 'ለአንድ ክፍል ያልተመደበ')}</span>
+                )}
               </div>
-            </div>
+              {r.since && <div className="text-[11px] text-slate-400">{t('Teaching since', 'ማስተማር የጀመረበት')} {formatEthiopianDate(r.since, locale)}</div>}
+            </button>
           ))}
         </div>
+        {hr.mode !== 'loading' && rows.length === 0 && (
+          <p className="text-center text-sm text-slate-400 py-6"><BookOpen size={18} className="inline mr-1" /> {teachers.length ? t('No teachers match.', 'የሚዛመድ መምህር የለም።') : t('No teachers yet — use “Assign Teacher”, or set a teacher on each class.', 'እስካሁን መምህር የለም — "መምህር መድብ"ን ይጠቀሙ ወይም በክፍሉ ላይ መምህር ይመድቡ።')}</p>
+        )}
       </div>
+    </div>
+  );
+}
 
-      {/* Assign Teacher Modal */}
-      <Modal
-        isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        title={t('Assign Sunday School Teacher', 'አስተማሪ መድብ')}
-        subtitle={t('Select course and classroom allocation', 'ክፍልና የትምህርት ዓይነት ምረጥ')}
-      >
-        <form onSubmit={handleAssign} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Teacher Name (English)', 'የመምህሩ ስም (እንግሊዝኛ)')} *
-              </label>
-              <input
-                type="text"
-                required
-                value={nameEn}
-                onChange={(e) => setNameEn(e.target.value)}
-                placeholder="e.g. Deacon Daniel Bekele"
-                className="form-input text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Teacher Name (Amharic)', 'የመምህሩ ስም (አማርኛ)')}
-              </label>
-              <input
-                type="text"
-                value={nameAm}
-                onChange={(e) => setNameAm(e.target.value)}
-                placeholder="ለምሳሌ: ዲ/ን ዳንኤል በቀለ"
-                className="form-input text-sm"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Phone Number', 'ስልክ ቁጥር')} *
-              </label>
-              <input
-                type="tel"
-                required
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+2519..."
-                className="form-input text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Assigned Class', 'የሚመደብበት ክፍል')} *
-              </label>
-              <select
-                value={assignedClass}
-                onChange={(e) => setAssignedClass(e.target.value)}
-                className="form-input text-sm"
-              >
-                <option value="Grade 1 — Angels">Grade 1 — Angels</option>
-                <option value="Grade 2 — Cherubs">Grade 2 — Cherubs</option>
-                <option value="Grade 3 — Seraphim">Grade 3 — Seraphim</option>
-                <option value="Grade 4 — Apostles">Grade 4 — Apostles</option>
-                <option value="Youth — Daniel">Youth — Daniel</option>
-                <option value="Senior — Solomon">Senior — Solomon</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => setIsAddModalOpen(false)}
-              className="btn btn-secondary text-xs"
-            >
-              {t('Cancel', 'ሰርዝ')}
-            </button>
-            <button type="submit" className="btn btn-primary text-xs">
-              {t('Confirm Assignment', 'ምደባ አጽድቅ')}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Teacher Schedule Modal */}
-      {selectedTeacher && (
-        <Modal
-          isOpen={Boolean(selectedTeacher)}
-          onClose={() => setSelectedTeacher(null)}
-          title={locale === 'am' ? selectedTeacher.name_am : selectedTeacher.name_en}
-          subtitle={`${selectedTeacher.phone} • ${selectedTeacher.role}`}
-        >
-          <div className="space-y-4 text-sm">
-            <div className="p-4 bg-slate-50 rounded-xl">
-              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-2">
-                {t('Weekly Teaching Schedule', 'የሳምንቱ የማስተማር መርሐ ግብር')}
-              </span>
-              <div className="space-y-2 text-xs">
-                <div className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-slate-100">
-                  <div>
-                    <span className="font-bold text-slate-800 block">Sunday 08:30 — 10:00 AM</span>
-                    <span className="text-slate-500">{selectedTeacher.classes[0] || 'Grade 3'} &bull; Holy Bible Studies</span>
-                  </div>
-                  <span className="badge badge-success">{t('Weekly', 'ሳምንታዊ')}</span>
-                </div>
-                <div className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-slate-100">
-                  <div>
-                    <span className="font-bold text-slate-800 block">Sunday 10:30 — 12:00 PM</span>
-                    <span className="text-slate-500">Youth Class &bull; Ethiopian Liturgy (ቅዳሴ)</span>
-                  </div>
-                  <span className="badge badge-info">{t('Weekly', 'ሳምንታዊ')}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <button
-                onClick={() => setSelectedTeacher(null)}
-                className="btn btn-secondary text-xs"
-              >
-                {t('Close', 'ዝጋ')}
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
+function Kpi({ value, label, warn = false }: { value: React.ReactNode; label: string; warn?: boolean }) {
+  return (
+    <div className="card p-5">
+      <div className={`text-2xl font-bold tabular-nums ${warn ? 'text-amber-600' : 'text-slate-800'}`}>{value}</div>
+      <div className="text-xs text-slate-500 mt-1">{label}</div>
     </div>
   );
 }

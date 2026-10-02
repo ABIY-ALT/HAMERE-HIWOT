@@ -261,7 +261,7 @@ export default function MembersPage() {
             <select
               value={genderFilter}
               onChange={(e) => setGenderFilter(e.target.value)}
-              className="form-input text-xs py-1.5 px-3"
+              className="form-input text-xs py-1.5 px-3 w-auto"
             >
               <option value="ALL">{t('All Genders', 'ሁሉም ጾታ')}</option>
               <option value="MALE">{t('Male', 'ወንድ')}</option>
@@ -270,7 +270,7 @@ export default function MembersPage() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="form-input text-xs py-1.5 px-3"
+              className="form-input text-xs py-1.5 px-3 w-auto"
             >
               <option value="ALL">{t('All Statuses', 'ሁሉም ሁኔታ')}</option>
               {STATUSES.map((s) => (

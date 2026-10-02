@@ -1,348 +1,184 @@
 'use client';
 
 import React, { useState } from 'react';
-import { UserPlus, Search, CheckCircle2 } from 'lucide-react';
+import { Download, Phone, Search, ShieldAlert, UserPlus, Users } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
-import { MOCK_PERSONNEL } from '@/lib/mock/modules';
-import { Modal } from '@/components/ui/Modal';
-
-interface PersonnelItem {
-  id: string;
-  name_en: string;
-  name_am: string;
-  role: string;
-  role_am: string;
-  dept: string;
-  dept_am: string;
-  phone: string;
-  joined: string;
-  status: string;
-}
+import { useAuth } from '@/contexts/AuthContext';
+import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
+import { useHrDialogs } from '@/components/hr/HrDialogs';
+import { useHr } from '@/lib/hr/client';
+import { activeSuspension, addDays, ROLE_KINDS, roleLabel, tally, type RoleKind } from '@/lib/hr/types';
+import { cell, downloadXlsx, headerCell } from '@/lib/export/xlsx';
+import { formatEthiopianDate, todayIso } from '@/lib/utils/ethiopian-calendar';
 
 export default function PersonnelPage() {
   const { t, locale } = useLang();
-  const [personnel, setPersonnel] = useState<PersonnelItem[]>(MOCK_PERSONNEL as PersonnelItem[]);
+  const { can } = useAuth();
+  const hr = useHr();
+  const canManage = can('HR_MANAGE');
+  const today = todayIso();
+  const since12w = addDays(today, -84);
+
   const [search, setSearch] = useState('');
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [selectedPersonnel, setSelectedPersonnel] = useState<PersonnelItem | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [unit, setUnit] = useState('ALL');
+  const [role, setRole] = useState<'ALL' | RoleKind>('ALL');
+  const [showFormer, setShowFormer] = useState(false);
+  const [toast, setToast] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+  const dialogs = useHrDialogs((text) => {
+    setToast({ kind: 'success', text });
+    setTimeout(() => setToast(null), 3000);
+  });
 
-  // Form State
-  const [nameEn, setNameEn] = useState('');
-  const [nameAm, setNameAm] = useState('');
-  const [roleEn, setRoleEn] = useState('Sunday School Instructor');
-  const [roleAm, setRoleAm] = useState('የሰንበት ት/ቤት አስተማሪ');
-  const [deptEn, setDeptEn] = useState('Education Department');
-  const [deptAm, setDeptAm] = useState('የትምህርት ክፍል');
-  const [phone, setPhone] = useState('');
-  const [joined, setJoined] = useState(new Date().toISOString().slice(0, 10));
+  const active = hr.assignments.filter((a) => a.status === 'ACTIVE');
+  const homeroomIds = new Set(hr.homeroom.map((h) => h.person_id).filter(Boolean));
+  const servingIds = new Set([...active.map((a) => a.person_id), ...homeroomIds]);
+  const everIds = new Set([...hr.assignments.map((a) => a.person_id), ...homeroomIds]);
+  const recent = hr.attendance.filter((m) => m.date >= since12w);
+  const marksOf = (id: string) => recent.filter((m) => m.person_id === id);
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+  const needle = search.trim().toLowerCase();
+  const rows = hr.people
+    .filter((p) => (showFormer ? everIds.has(p.id) : servingIds.has(p.id)))
+    .map((p) => {
+      const mine = hr.assignments.filter((a) => a.person_id === p.id && (a.status === 'ACTIVE' || !servingIds.has(p.id)));
+      return { p, mine, x: tally(marksOf(p.id)), since: mine.map((a) => a.start_date).sort()[0] ?? null, suspended: activeSuspension(hr.cases, p.id, today) };
+    })
+    .filter((r) => unit === 'ALL' || r.mine.some((a) => a.unit_id === unit))
+    .filter((r) => role === 'ALL' || r.mine.some((a) => a.role_kind === role) || (role === 'TEACHER' && homeroomIds.has(r.p.id)))
+    .filter((r) => !needle || [r.p.name, r.p.name_am, r.p.phone].some((v) => v.toLowerCase().includes(needle)))
+    .sort((a, b) => a.p.name.localeCompare(b.p.name));
+
+  const staffable = hr.units.filter((u) => u.type === 'DEPARTMENT' || u.type === 'COORDINATION');
+  const staffed = new Set(active.map((a) => a.unit_id));
+  const unstaffed = staffable.filter((u) => !staffed.has(u.id));
+  const overall = tally(recent.filter((m) => servingIds.has(m.person_id)));
+  const teachers = new Set([...active.filter((a) => a.role_kind === 'TEACHER').map((a) => a.person_id), ...homeroomIds]);
+  const openCases = hr.cases.filter((c) => c.status === 'OPEN').length;
+  const unitLabel = (u: { name: string; name_am: string }) => (locale === 'am' ? u.name_am : u.name);
+
+  const exportExcel = async () => {
+    const header = [t('Name', 'ስም'), t('Name (Amharic)', 'ስም (አማርኛ)'), t('Phone', 'ስልክ'), t('Serving as', 'የአገልግሎት ኃላፊነት'), t('Since', 'ከ'), t('Attendance % (12 wks)', 'ተገኝነት % (12 ሳምንት)'), t('Present', 'የተገኘ'), t('Late', 'የዘገየ'), t('Absent', 'የቀረ'), t('Excused', 'በፈቃድ')].map(headerCell);
+    const body = rows.map(({ p, mine, x, since }) => [
+      cell(p.name), p.name_am, p.phone,
+      mine.map((a) => `${roleLabel(a, t)} — ${locale === 'am' ? a.unit_am : a.unit}${a.class_name ? ` (${a.class_name})` : ''}`).join('; '),
+      since ?? '', x.rate, x.present, x.late, x.absent, x.excused,
+    ]);
+    await downloadXlsx(`servants_${today}`, [header, ...body], { sheet: 'Servants', widths: [24, 24, 14, 60, 12, 12, 8, 8, 8, 8] });
   };
-
-  const handleAddPersonnel = (e: React.FormEvent) => {
-    e.preventDefault();
-    const newStaff: PersonnelItem = {
-      id: `pers-${Date.now()}`,
-      name_en: nameEn,
-      name_am: nameAm || nameEn,
-      role: roleEn,
-      role_am: roleAm || roleEn,
-      dept: deptEn,
-      dept_am: deptAm || deptEn,
-      phone,
-      joined,
-      status: 'ACTIVE',
-    };
-
-    setPersonnel([newStaff, ...personnel]);
-    setIsAddModalOpen(false);
-    showToast(t(`Personnel ${nameEn} added successfully!`, `ሠራተኛ ${nameAm || nameEn} ተመዝግቧል!`));
-
-    // Reset
-    setNameEn('');
-    setNameAm('');
-    setPhone('');
-  };
-
-  const filtered = personnel.filter((p) =>
-    (locale === 'am' ? p.name_am : p.name_en).toLowerCase().includes(search.toLowerCase()) ||
-    (locale === 'am' ? p.dept_am : p.dept).toLowerCase().includes(search.toLowerCase()) ||
-    p.phone.includes(search)
-  );
 
   return (
     <div className="space-y-6">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700 animate-in fade-in slide-in-from-bottom-4">
-          <CheckCircle2 size={18} className="text-emerald-400" />
-          <span className="text-sm font-medium">{toastMessage}</span>
-        </div>
-      )}
-
-      {/* Header */}
+      <AdminToast toast={toast} />
+      {dialogs.node}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            {t('Human Resources & Personnel', 'የሰው ሀብት አስተዳደር')}
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            {t(
-              'Parish Sunday school active staff, officers, teachers, and ministry personnel directory',
-              'የሰንበት ት/ቤት ሠራተኞች፣ ኃላፊዎች፣ አስተማሪዎችና አገልጋዮች ማውጫ'
-            )}
-          </p>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">{t('Servants & Personnel', 'አገልጋዮችና ሠራተኞች')}</h1>
+          <p className="text-sm text-slate-500 mt-1">{t('Who serves where, since when, and how regularly they come', 'ማን የት እንደሚያገለግል፣ ከመቼ ጀምሮና ተገኝነቱ')}</p>
         </div>
-        <button
-          onClick={() => setIsAddModalOpen(true)}
-          className="btn btn-primary self-start sm:self-auto inline-flex items-center gap-2"
-        >
-          <UserPlus size={16} />
-          {t('Add Personnel', 'አዲስ ሠራተኛ ጨምር')}
-        </button>
-      </div>
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div className="card p-5">
-          <div className="text-2xl font-bold text-slate-800">{personnel.length}</div>
-          <div className="text-xs text-slate-500 mt-1">{t('Total Personnel', 'አጠቃላይ ሠራተኞች')}</div>
-        </div>
-        <div className="card p-5">
-          <div className="text-2xl font-bold text-emerald-600">
-            {personnel.filter((p) => p.status === 'ACTIVE').length}
-          </div>
-          <div className="text-xs text-slate-500 mt-1">{t('Active Service', 'በአገልግሎት ላይ')}</div>
-        </div>
-        <div className="card p-5">
-          <div className="text-2xl font-bold text-blue-600">7</div>
-          <div className="text-xs text-slate-500 mt-1">{t('Operational Departments', 'ክፍሎች')}</div>
-        </div>
-        <div className="card p-5">
-          <div className="text-2xl font-bold text-purple-600">100%</div>
-          <div className="text-xs text-slate-500 mt-1">{t('Compliance Verified', 'ተገዢነት የተረጋገጠ')}</div>
+        <div className="flex gap-2 self-start sm:self-auto">
+          <button onClick={exportExcel} disabled={rows.length === 0} className="btn btn-secondary text-xs inline-flex items-center gap-1.5 disabled:opacity-50"><Download size={14} /> {t('Export Excel', 'ወደ ኤክሴል')}</button>
+          {canManage && <button onClick={() => dialogs.newAssignment()} className="btn btn-primary text-xs inline-flex items-center gap-1.5"><UserPlus size={14} /> {t('Assign a Servant', 'አገልጋይ መድብ')}</button>}
         </div>
       </div>
 
-      {/* Table Card */}
+      <AdminModeNotice mode={hr.mode} error={hr.error} />
+
+      <div className={`grid grid-cols-2 gap-4 ${hr.canSeeCases ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}`}>
+        <Kpi value={servingIds.size} label={t('Serving now', 'አሁን የሚያገለግሉ')} />
+        <Kpi value={staffable.length ? `${staffable.length - unstaffed.length} / ${staffable.length}` : '—'} label={t('Units staffed', 'አገልጋይ ያላቸው ክፍሎች')} />
+        <Kpi value={teachers.size} label={t('Teachers', 'መምህራን')} />
+        <Kpi value={overall.rate === null ? '—' : `${overall.rate}%`} label={t('Attendance, last 12 weeks', 'ተገኝነት፣ ያለፉት 12 ሳምንታት')} />
+        {hr.canSeeCases && <Kpi value={openCases} label={t('Open discipline cases', 'በሂደት ያሉ የዲሲፕሊን ጉዳዮች')} warn={openCases > 0} />}
+      </div>
+
       <div className="card overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between gap-3">
-          <div className="relative flex-1 max-w-sm">
+        <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-            <input
-              type="text"
-              placeholder={t('Search personnel...', 'ሠራተኞችን ፈልግ...')}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="form-input pl-9 text-sm"
-            />
+            <input type="text" placeholder={t('Search name or phone…', 'ስም ወይም ስልክ ፈልግ…')} value={search} onChange={(e) => setSearch(e.target.value)} className="form-input pl-9 text-sm" />
           </div>
-          <span className="text-xs text-slate-400">
-            {filtered.length} {t('staff', 'ሠራተኞች')}
-          </span>
+          <select value={unit} onChange={(e) => setUnit(e.target.value)} className="form-input text-xs py-1.5 w-auto max-w-[260px]">
+            <option value="ALL">{t('All units', 'ሁሉም ክፍሎች')}</option>
+            {hr.units.map((u) => <option key={u.id} value={u.id}>{unitLabel(u)}</option>)}
+          </select>
+          <select value={role} onChange={(e) => setRole(e.target.value as typeof role)} className="form-input text-xs py-1.5 w-auto">
+            <option value="ALL">{t('All roles', 'ሁሉም ኃላፊነቶች')}</option>
+            {(Object.keys(ROLE_KINDS) as RoleKind[]).map((k) => <option key={k} value={k}>{t(...ROLE_KINDS[k])}</option>)}
+          </select>
+          <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={showFormer} onChange={(e) => setShowFormer(e.target.checked)} /> {t('Include former servants', 'የቀድሞ አገልጋዮችንም አሳይ')}</label>
         </div>
-
         <div className="table-container rounded-none border-0">
           <table>
             <thead>
               <tr>
                 <th>{t('Name', 'ስም')}</th>
-                <th>{t('Role', 'የሥራ ሚና')}</th>
-                <th>{t('Department', 'ክፍል')}</th>
-                <th>{t('Phone', 'ስልክ')}</th>
-                <th>{t('Joined Date', 'የተቀጠሩበት ቀን')}</th>
-                <th>{t('Status', 'ሁኔታ')}</th>
-                <th className="text-right">{t('Action', 'ተግባር')}</th>
+                <th>{t('Serving as', 'የአገልግሎት ኃላፊነት')}</th>
+                <th>{t('Since', 'ከ')}</th>
+                <th className="text-right">{t('Attendance (12 wks)', 'ተገኝነት (12 ሳምንት)')}</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((p) => (
-                <tr key={p.id}>
-                  <td className="font-semibold text-slate-900">
-                    {locale === 'am' ? p.name_am : p.name_en}
+              {rows.map(({ p, mine, x, since, suspended }) => (
+                <tr key={p.id} onClick={() => dialogs.openPerson(p.id)} className={`cursor-pointer hover:bg-slate-50 ${servingIds.has(p.id) ? '' : 'opacity-60'}`}>
+                  <td>
+                    <div className="font-medium text-slate-900 flex items-center gap-1.5">
+                      {locale === 'am' ? p.name_am : p.name}
+                      {suspended && <span title={t('Suspended', 'ታግዷል')}><ShieldAlert size={13} className="text-red-600" /></span>}
+                    </div>
+                    {p.phone && <a href={`tel:${p.phone}`} onClick={(e) => e.stopPropagation()} className="text-[11px] font-mono text-blue-600 inline-flex items-center gap-1"><Phone size={10} />{p.phone}</a>}
                   </td>
                   <td>
-                    <span className="badge badge-info">{locale === 'am' ? p.role_am : p.role}</span>
+                    <div className="flex flex-wrap gap-1">
+                      {mine.map((a) => (
+                        <span key={a.id} className={`text-[11px] px-2 py-0.5 rounded border ${a.role_kind === 'HEAD' ? 'bg-blue-50 border-blue-100 text-blue-800' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
+                          {roleLabel(a, t)}{a.class_name && ` · ${a.class_name}`} — {locale === 'am' ? a.unit_am : a.unit}
+                        </span>
+                      ))}
+                      {hr.homeroom.filter((h) => h.person_id === p.id).map((h) => (
+                        <span key={h.class_id} className="text-[11px] px-2 py-0.5 rounded border bg-slate-50 border-slate-200 text-slate-700">{t('Homeroom teacher', 'የክፍል ኃላፊ መምህር')} · {h.class_name}</span>
+                      ))}
+                    </div>
                   </td>
-                  <td className="text-slate-700 text-xs">
-                    {locale === 'am' ? p.dept_am : p.dept}
-                  </td>
-                  <td className="font-mono text-xs text-slate-600">{p.phone}</td>
-                  <td className="font-mono text-xs text-slate-500">{p.joined}</td>
-                  <td>
-                    <span className="badge badge-success">{p.status}</span>
-                  </td>
-                  <td className="text-right">
-                    <button
-                      onClick={() => setSelectedPersonnel(p)}
-                      className="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors"
-                    >
-                      {t('Dossier', 'መዝገብ')}
-                    </button>
+                  <td className="text-xs text-slate-600 whitespace-nowrap">{since ? formatEthiopianDate(since, locale) : '—'}</td>
+                  <td className={`text-right text-xs tabular-nums whitespace-nowrap ${x.rate !== null && x.rate < 60 ? 'text-amber-700 font-semibold' : 'text-slate-700'}`}>
+                    {x.rate === null ? '—' : `${x.rate}% (${x.present + x.late}/${x.present + x.late + x.absent})`}
                   </td>
                 </tr>
               ))}
+              {hr.mode !== 'loading' && rows.length === 0 && (
+                <tr><td colSpan={4} className="text-center text-sm text-slate-400 py-8"><Users size={18} className="inline mr-1" /> {servingIds.size ? t('No servants match.', 'የሚዛመድ አገልጋይ የለም።') : t('No one is assigned yet — use “Assign a Servant”.', 'እስካሁን የተመደበ የለም — "አገልጋይ መድብ"ን ይጠቀሙ።')}</td></tr>
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Add Personnel Modal */}
-      <Modal
-        isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        title={t('Add Sunday School Personnel', 'አዲስ ሠራተኛ / አገልጋይ መዝግብ')}
-        subtitle={t('Register active Sunday school servant, teacher, or officer', 'የሰንበት ት/ቤት አስተማሪ ወይም አገልጋይ መረጃ ያስገቡ')}
-      >
-        <form onSubmit={handleAddPersonnel} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Full Name (English)', 'ሙሉ ስም (እንግሊዝኛ)')} *
-              </label>
-              <input
-                type="text"
-                required
-                value={nameEn}
-                onChange={(e) => setNameEn(e.target.value)}
-                placeholder="e.g. Deacon Michael Tadesse"
-                className="form-input text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Full Name (Amharic)', 'ሙሉ ስም (አማርኛ)')}
-              </label>
-              <input
-                type="text"
-                value={nameAm}
-                onChange={(e) => setNameAm(e.target.value)}
-                placeholder="ለምሳሌ: ዲ/ን ሚካኤል ታደሰ"
-                className="form-input text-sm"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Role Title (English)', 'የሥራ ሚና (እንግሊዝኛ)')} *
-              </label>
-              <input
-                type="text"
-                required
-                value={roleEn}
-                onChange={(e) => setRoleEn(e.target.value)}
-                className="form-input text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Role Title (Amharic)', 'የሥራ ሚና (አማርኛ)')}
-              </label>
-              <input
-                type="text"
-                value={roleAm}
-                onChange={(e) => setRoleAm(e.target.value)}
-                className="form-input text-sm"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Department / Unit', 'ክፍል')} *
-              </label>
-              <select
-                value={deptEn}
-                onChange={(e) => {
-                  setDeptEn(e.target.value);
-                  if (e.target.value === 'Education Department') setDeptAm('የትምህርት ክፍል');
-                  if (e.target.value === 'Choir Department') setDeptAm('የዝማሬ ክፍል');
-                  if (e.target.value === 'Property Department') setDeptAm('የንብረት ክፍል');
-                  if (e.target.value === 'Finance Department') setDeptAm('የፋይናንስ ክፍል');
-                }}
-                className="form-input text-sm"
-              >
-                <option value="Education Department">Education Department</option>
-                <option value="Choir Department">Choir Department</option>
-                <option value="Property Department">Property Department</option>
-                <option value="Finance Department">Finance Department</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Phone Number', 'ስልክ ቁጥር')} *
-              </label>
-              <input
-                type="tel"
-                required
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+2519..."
-                className="form-input text-sm font-mono"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => setIsAddModalOpen(false)}
-              className="btn btn-secondary text-xs py-2"
-            >
-              {t('Cancel', 'ሰርዝ')}
-            </button>
-            <button type="submit" className="btn btn-primary text-xs py-2 px-4">
-              {t('Save Personnel', 'ሠራተኛ መዝግብ')}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* View Personnel Dossier Modal */}
-      {selectedPersonnel && (
-        <Modal
-          isOpen={Boolean(selectedPersonnel)}
-          onClose={() => setSelectedPersonnel(null)}
-          title={locale === 'am' ? selectedPersonnel.name_am : selectedPersonnel.name_en}
-          subtitle={`${locale === 'am' ? selectedPersonnel.role_am : selectedPersonnel.role} • ${selectedPersonnel.status}`}
-        >
-          <div className="space-y-4 text-sm">
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-              <div className="flex justify-between">
-                <span className="text-slate-500">{t('Department', 'ክፍል')}:</span>
-                <span className="font-semibold text-slate-900">{locale === 'am' ? selectedPersonnel.dept_am : selectedPersonnel.dept}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">{t('Phone Number', 'ስልክ ቁጥር')}:</span>
-                <span className="font-mono text-slate-900">{selectedPersonnel.phone}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">{t('Service Start Date', 'የተመደበበት ቀን')}:</span>
-                <span className="font-mono text-slate-700">{selectedPersonnel.joined}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">{t('Statutory Standing', 'ህጋዊ ሁኔታ')}:</span>
-                <span className="badge badge-success">Good Standing / ንቁ አገልጋይ</span>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-2">
+      {hr.mode === 'live' && unstaffed.length > 0 && (
+        <div className="card p-4">
+          <div className="text-xs font-semibold text-slate-700 mb-2">{t('Departments and coordinations with no one assigned', 'ምንም አገልጋይ ያልተመደበላቸው ክፍሎች')}</div>
+          <div className="flex flex-wrap gap-1.5">
+            {unstaffed.map((u) => (
               <button
-                onClick={() => setSelectedPersonnel(null)}
-                className="btn btn-secondary text-xs"
+                key={u.id}
+                disabled={!canManage}
+                onClick={() => dialogs.newAssignment({ unit_id: u.id })}
+                className="text-[11px] px-2 py-1 rounded border border-dashed border-slate-300 text-slate-600 hover:border-blue-400 hover:text-blue-700 disabled:hover:border-slate-300 disabled:hover:text-slate-600"
               >
-                {t('Close', 'ዝጋ')}
+                {unitLabel(u)}
               </button>
-            </div>
+            ))}
           </div>
-        </Modal>
+        </div>
       )}
+    </div>
+  );
+}
+
+function Kpi({ value, label, warn = false }: { value: React.ReactNode; label: string; warn?: boolean }) {
+  return (
+    <div className="card p-5">
+      <div className={`text-2xl font-bold tabular-nums ${warn ? 'text-amber-600' : 'text-slate-800'}`}>{value}</div>
+      <div className="text-xs text-slate-500 mt-1">{label}</div>
     </div>
   );
 }

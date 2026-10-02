@@ -117,6 +117,20 @@ try {
       if (error) problem(`Choir query (${name}) failed: ${error.message}`);
     }
   }
+  const { error: hrTable } = await db.from('service_assignments').select('id').limit(1);
+  if (hrTable) problem('HR tables missing — run migration 016_hr.sql');
+  else {
+    ok('Migration 016 (HR) applied');
+    const probes = {
+      'service assignments': db.from('service_assignments').select('id, unit:organization_units(name_en), class:classes(name_en)').limit(1),
+      'servant attendance': db.from('servant_attendance').select('id, check_in').limit(1),
+      'discipline cases': db.from('discipline_cases').select('id, suspended_until').limit(1),
+    };
+    for (const [name, q] of Object.entries(probes)) {
+      const { error } = await q;
+      if (error) problem(`HR query (${name}) failed: ${error.message}`);
+    }
+  }
   const { error: auditFn } = await db.rpc('audit_actor');
   if (auditFn) problem('Automatic audit trail missing — run migration 011_audit_trail.sql');
   else {

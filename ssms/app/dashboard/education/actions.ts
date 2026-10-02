@@ -218,10 +218,19 @@ export async function loadEducationData(): Promise<Loaded<EducationData>> {
       });
     }
 
-    const teachers: Teacher[] = staffRows
-      .map((u) => ({ person_id: u.person_id as string, name: (u.person as Named)?.full_name_en ?? '' }))
-      .filter((u) => u.name)
-      .sort((a, b) => a.name.localeCompare(b.name));
+    // Teachers assigned under HR (migration 016) can be set on a class too; ignored if HR isn't set up yet
+    const { data: hrTeachers } = await db.from('service_assignments')
+      .select('person_id, person:persons(full_name_en)')
+      .eq('status', 'ACTIVE')
+      .eq('role_kind', 'TEACHER');
+    const teachers: Teacher[] = [
+      ...new Map(
+        [...staffRows, ...((hrTeachers ?? []) as unknown as Row[])]
+          .map((u) => ({ person_id: u.person_id as string, name: (u.person as Named)?.full_name_en ?? '' }))
+          .filter((u) => u.name)
+          .map((u) => [u.person_id, u] as const)
+      ).values(),
+    ].sort((a, b) => a.name.localeCompare(b.name));
 
     return {
       mode: 'live',

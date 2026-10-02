@@ -38,7 +38,7 @@ export default function PeopleHub() {
       titleAm: 'አገልጋዮች',
       descEn: 'Volunteers and servants deployed across all parish ministries',
       descAm: 'በተለያዩ ክፍሎች የሚያገለግሉ አገልጋዮች',
-      href: '/dashboard/people/servants',
+      href: '/dashboard/hr/personnel',
       icon: HeartHandshake,
     },
     {
