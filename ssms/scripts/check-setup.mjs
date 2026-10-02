@@ -87,6 +87,9 @@ try {
   const { error: donationsTable } = await db.from('donations').select('id').limit(1);
   if (donationsTable) problem('Donations table missing — run migration 012_donations.sql');
   else ok('Migration 012 (donations) applied');
+  const { error: programsTable } = await db.from('programs').select('id').limit(1);
+  if (programsTable) problem('Programs table missing — run migration 013_programs.sql');
+  else ok('Migration 013 (programs) applied');
   const { error: auditFn } = await db.rpc('audit_actor');
   if (auditFn) problem('Automatic audit trail missing — run migration 011_audit_trail.sql');
   else {
