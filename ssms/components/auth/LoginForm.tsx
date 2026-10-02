@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { Eye, EyeOff, Globe, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -60,7 +61,12 @@ export default function LoginForm() {
       <div className="absolute inset-0 bg-black/60 z-0" />
 
       <div className="absolute top-8 left-8 z-10">
-        <span className="text-2xl font-bold text-white">Hamere Hiwot</span>
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-lg bg-white p-1 flex items-center justify-center">
+            <Image src="/logo.png" alt="Hamere Hiwot Sunday School" width={40} height={40} className="w-full h-full object-contain" priority />
+          </div>
+          <span className="text-2xl font-bold text-white">Hamere Hiwot</span>
+        </div>
       </div>
 
       <div className="absolute top-8 right-8 z-10">
