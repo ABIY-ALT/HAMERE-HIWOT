@@ -11,5 +11,9 @@
   },
   "devDependencies": {
     "prisma": "^8.0.0-rc.13"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.117.2"
   }
 }
