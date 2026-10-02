@@ -84,6 +84,9 @@ try {
   const { count: bodies } = await db.from('governance_bodies').select('id', { count: 'exact', head: true });
   if ((bodies ?? 0) < 7) problem('Governance bodies missing — run migration 010_governance.sql');
   else ok('Migration 010 (governance) applied');
+  const { error: donationsTable } = await db.from('donations').select('id').limit(1);
+  if (donationsTable) problem('Donations table missing — run migration 012_donations.sql');
+  else ok('Migration 012 (donations) applied');
   const { error: auditFn } = await db.rpc('audit_actor');
   if (auditFn) problem('Automatic audit trail missing — run migration 011_audit_trail.sql');
   else {
