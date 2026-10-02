@@ -3,12 +3,25 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: {
-    template: '%s | SSMS — Sunday School Management',
-    default: 'SSMS — Sunday School Management Information System',
+    template: '%s | ሐመረ ሕይወት ሰንበት ት/ቤት — SSMS',
+    default: 'ሐመረ ሕይወት ሰንበት ት/ቤት (Hamere Hiwot) — SSMS',
   },
   description:
-    'Sunday School Management Information System (SSMS) — ምድብ ሁለት አጥቢያ ሰንበት ት/ቤት',
-  keywords: ['Sunday School', 'Church', 'Management', 'Ethiopia', 'ሰንበት ት/ቤት'],
+    'ሳሎ ደብረ ፀሐይ ቅዱስ ጊዮርጊስ ቤተክርስቲያን ሐመረ ሕይወት ሰንበት ትምህርት ቤት አስተዳደር መረጃ ስርዓት — Sallo Debre Tsehay Saint George Church Hamere Hiwot Sabbath School MIS',
+  keywords: [
+    'Hamere Hiwot',
+    'ሐመረ ሕይወት',
+    'ሳሎ ደብረ ፀሐይ',
+    'Sunday School',
+    'Church MIS',
+    'Ethiopian Orthodox',
+    'ሰንበት ት/ቤት',
+  ],
+  icons: {
+    icon: '/logo.png',
+    shortcut: '/logo.png',
+    apple: '/logo.png',
+  },
 };
 
 export default function RootLayout({

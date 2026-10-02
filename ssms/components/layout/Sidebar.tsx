@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
@@ -328,12 +329,18 @@ export default function Sidebar({ collapsed, mobileOpen }: SidebarProps) {
         {/* Brand */}
         <div className="brand-logo">
           <div className="brand-icon">
-            <Church size={20} color="#1e2770" />
+            <Image
+              src="/logo.png"
+              alt="ሳሎ ደብረ ፀሐይ ሐመረ ሕይወት ሰንበት ት/ቤት"
+              width={42}
+              height={42}
+              priority
+            />
           </div>
           {!collapsed && (
             <div className="brand-text">
-              <div className="name">SSMS</div>
-              <div className="sub">{t('Sunday School MIS', 'ሰንበት ት/ቤት')}</div>
+              <div className="name">{t('Hamere Hiwot', 'ሐመረ ሕይወት')}</div>
+              <div className="sub">{t('Sallo Debre Tsehay SSMS', 'ሳሎ ደ/ፀ/ቅ/ጊዮርጊስ ሰ/ት/ቤት')}</div>
             </div>
           )}
         </div>

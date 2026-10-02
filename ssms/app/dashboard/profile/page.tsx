@@ -231,7 +231,7 @@ export default function ProfilePage() {
 
               <div className="flex justify-between py-1.5 border-b border-slate-50">
                 <span className="text-slate-500">{t('Parish Sunday School', 'ሰንበት ት/ቤት')}</span>
-                <span className="font-medium text-slate-900">Debre Bisrat Saint Gabriel</span>
+                <span className="font-medium text-slate-900">{t('Sallo Debre Tsehay Hamere Hiwot', 'ሳሎ ደብረ ፀሐይ ሐመረ ሕይወት')}</span>
               </div>
 
               <div className="flex justify-between py-1.5 border-b border-slate-50">

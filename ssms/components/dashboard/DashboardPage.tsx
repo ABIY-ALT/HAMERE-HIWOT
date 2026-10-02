@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import {
   Users,
   GraduationCap,
@@ -110,17 +111,40 @@ export default function DashboardPage() {
   return (
     <div>
       {/* Page Header */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">
-            {t('Dashboard', 'ዳሽቦርድ')}
-          </h1>
-          <p className="page-subtitle">
-            {t(
-              `Welcome back, ${user?.person.full_name_en ?? 'User'}. Here's your overview.`,
-              `እንኳን ደህና መጡ፣ ${user?.person.full_name_am ?? user?.person.full_name_en ?? 'ተጠቃሚ'}። ይህ አጠቃላይ እይታዎ ነው።`
-            )}
-          </p>
+      <div className="page-header flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div
+            className="w-12 h-12 rounded-full p-0.5 shrink-0 shadow-md hidden sm:flex items-center justify-center"
+            style={{
+              background: 'linear-gradient(135deg, #fbbf24, #d97706)',
+              boxShadow: '0 4px 14px rgba(251,191,36,0.35)',
+            }}
+          >
+            <div className="w-full h-full rounded-full overflow-hidden bg-slate-950 flex items-center justify-center">
+              <Image
+                src="/logo.png"
+                alt="ሳሎ ደብረ ፀሐይ ሐመረ ሕይወት ሰንበት ት/ቤት"
+                width={48}
+                height={48}
+                className="w-full h-full object-cover"
+                priority
+              />
+            </div>
+          </div>
+          <div>
+            <h1 className="page-title flex items-center gap-2">
+              <span>{t('Dashboard', 'ዳሽቦርድ')}</span>
+              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200/60 font-sans hidden md:inline-block">
+                {t('Hamere Hiwot SSMS', 'ሐመረ ሕይወት ሰ/ት/ቤት')}
+              </span>
+            </h1>
+            <p className="page-subtitle">
+              {t(
+                `Welcome back, ${user?.person.full_name_en ?? 'User'} • Sallo Debre Tsehay Saint George Church`,
+                `እንኳን ደህና መጡ፣ ${user?.person.full_name_am ?? user?.person.full_name_en ?? 'ተጠቃሚ'} • ሳሎ ደብረ ፀሐይ ቅዱስ ጊዮርጊስ ቤ/ክ`
+              )}
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <div className="badge bg-emerald-100 text-emerald-700 px-3 py-1.5">

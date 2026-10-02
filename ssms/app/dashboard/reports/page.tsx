@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Image from 'next/image';
 import { BarChart3, Download, FileText, Calendar, Filter, Printer, ArrowUpRight, CheckCircle2 } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { Modal } from '@/components/ui/Modal';
@@ -93,6 +94,42 @@ export default function ReportsPage() {
           <Download size={16} />
           {t('Export Consolidated Dossier', 'አጠቃላይ ሪፖርት አውርድ')}
         </button>
+      </div>
+
+      {/* Official Parish Letterhead Banner */}
+      <div className="card p-5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex flex-col sm:flex-row items-center gap-5 border border-amber-400/30 shadow-md">
+        <div
+          className="w-16 h-16 rounded-full p-0.5 shrink-0 shadow-lg"
+          style={{ background: 'linear-gradient(135deg, #fbbf24, #d97706)' }}
+        >
+          <div className="w-full h-full rounded-full overflow-hidden bg-slate-950 flex items-center justify-center">
+            <Image
+              src="/logo.png"
+              alt="Hamere Hiwot Seal"
+              width={64}
+              height={64}
+              className="w-full h-full object-cover"
+            />
+          </div>
+        </div>
+        <div className="text-center sm:text-left space-y-1">
+          <div className="text-xs font-semibold text-amber-300 tracking-wide uppercase">
+            {t('Official Sunday School Repository', 'ይፋዊ የሰንበት ት/ቤት ሪፖርቶች ማዕከል')}
+          </div>
+          <h2 className="text-base sm:text-lg font-bold text-white leading-snug">
+            {t(
+              'Sallo Debre Tsehay St. George Church Hamere Hiwot Sabbath School',
+              'ሳሎ ደብረ ፀሐይ ቅዱስ ጊዮርጊስ ቤተክርስቲያን ሐመረ ሕይወት ሰንበት ትምህርት ቤት'
+            )}
+          </h2>
+          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-xs text-slate-300">
+            <span>{t('Category 2 Parish MIS', 'ምድብ ሁለት አጥቢያ')}</span>
+            <span>•</span>
+            <span className="font-mono">፲፱፻፺፪ ዓ.ም (Est. 1992 E.C.)</span>
+            <span>•</span>
+            <span className="font-mono">ነህ 2፥20</span>
+          </div>
+        </div>
       </div>
 
       {/* Grid of Report Categories */}

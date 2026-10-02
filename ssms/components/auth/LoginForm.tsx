@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { Church, Eye, EyeOff, LogIn, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -62,31 +63,56 @@ export default function LoginForm() {
     <div className="min-h-screen flex" style={{ background: 'linear-gradient(135deg, #161a4b 0%, #1e2770 50%, #2f43c8 100%)' }}>
       {/* Left branding panel */}
       <div className="hidden lg:flex flex-col justify-center items-center flex-1 p-12 text-white">
-        <div className="max-w-md text-center">
+        <div className="max-w-md text-center flex flex-col items-center">
           <div
-            className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6"
-            style={{ background: 'linear-gradient(135deg, #fbbf24, #d97706)', boxShadow: '0 8px 32px rgba(251,191,36,0.35)' }}
+            className="w-28 h-28 rounded-full overflow-hidden p-1 mb-5 relative"
+            style={{
+              background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #b45309 100%)',
+              boxShadow: '0 12px 36px rgba(0,0,0,0.5), 0 0 24px rgba(251,191,36,0.35)',
+            }}
           >
-            <Church size={40} color="#1e2770" />
+            <div className="w-full h-full rounded-full overflow-hidden bg-slate-950 flex items-center justify-center">
+              <Image
+                src="/logo.png"
+                alt="ሳሎ ደብረ ፀሐይ ቅዱስ ጊዮርጊስ ሐመረ ሕይወት ሰንበት ትምህርት ቤት"
+                width={112}
+                height={112}
+                className="w-full h-full object-cover"
+                priority
+              />
+            </div>
           </div>
-          <h1 className="text-3xl font-bold mb-2">SSMS</h1>
-          <p className="text-blue-200 text-lg font-medium mb-1">
-            Sunday School Management Information System
+          <h1 className="text-2xl font-bold mb-1 tracking-tight text-white" lang="am">
+            ሐመረ ሕይወት ሰንበት ት/ቤት
+          </h1>
+          <p className="text-amber-300 text-sm font-semibold mb-1" lang="am">
+            ሳሎ ደብረ ፀሐይ ቅዱስ ጊዮርጊስ ቤተክርስቲያን
           </p>
-          <p className="text-blue-300 text-base" lang="am">
-            ሰንበት ት/ቤት አስተዳደር መረጃ ስርዓት
+          <p className="text-blue-200 text-xs font-medium mb-3">
+            Sallo Debre Tsehay St. George Church Hamere Hiwot Sabbath School
           </p>
-          <div className="mt-8 p-4 rounded-xl border border-white/10 bg-white/5 text-left text-sm text-blue-200 space-y-2">
+
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400/10 border border-amber-400/30 text-amber-300 text-xs font-mono mb-4">
+            <span>፲፱፻፺፪ ዓ.ም</span>
+            <span>•</span>
+            <span>ነህ 2፥20</span>
+          </div>
+
+          <p className="text-blue-300 text-xs tracking-wide">
+            Sunday School Management Information System (SSMS)
+          </p>
+
+          <div className="mt-6 w-full p-4 rounded-xl border border-white/10 bg-white/5 text-left text-xs text-blue-200 space-y-2">
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-yellow-400" />
+              <div className="w-2 h-2 rounded-full bg-amber-400" />
               <span>{t('ምድብ ሁለት አጥቢያ ሰንበት ት/ቤት', 'Category 2 Parish Sunday School')}</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-yellow-400" />
+              <div className="w-2 h-2 rounded-full bg-amber-400" />
               <span>7 {t('Coordinations', 'ቅንጅቶች')} · 7 {t('Departments', 'ክፍሎች')}</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-yellow-400" />
+              <div className="w-2 h-2 rounded-full bg-amber-400" />
               <span>{t('Bilingual: English & Amharic', 'ሁለት ቋንቋ: ቋንቋ እንግሊዝኛ እና አማርኛ')}</span>
             </div>
           </div>
@@ -99,14 +125,22 @@ export default function LoginForm() {
           {/* Mobile logo */}
           <div className="flex items-center gap-3 mb-6 lg:hidden">
             <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center"
+              className="w-12 h-12 rounded-full p-0.5 shrink-0"
               style={{ background: 'linear-gradient(135deg, #fbbf24, #d97706)' }}
             >
-              <Church size={22} color="#1e2770" />
+              <div className="w-full h-full rounded-full overflow-hidden bg-slate-900 flex items-center justify-center">
+                <Image
+                  src="/logo.png"
+                  alt="Hamere Hiwot"
+                  width={48}
+                  height={48}
+                  className="w-full h-full object-cover"
+                />
+              </div>
             </div>
             <div>
-              <div className="text-base font-bold text-slate-800">SSMS</div>
-              <div className="text-xs text-slate-400">Sunday School MIS</div>
+              <div className="text-sm font-bold text-slate-900 leading-tight">ሐመረ ሕይወት ሰ/ት/ቤት</div>
+              <div className="text-[11px] text-slate-500">ሳሎ ደብረ ፀሐይ ቅ/ጊዮርጊስ</div>
             </div>
           </div>
 

@@ -6,6 +6,10 @@
     "dev": "npm run dev --prefix ssms",
     "build": "npm run build --prefix ssms",
     "start": "npm run start --prefix ssms",
-    "lint": "npm run lint --prefix ssms"
+    "lint": "npm run lint --prefix ssms",
+    "postinstall": "prisma skills sync || exit 0"
+  },
+  "devDependencies": {
+    "prisma": "^8.0.0-rc.13"
   }
 }
