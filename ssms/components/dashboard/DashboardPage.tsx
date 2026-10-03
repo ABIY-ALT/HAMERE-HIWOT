@@ -26,6 +26,7 @@ import { formatDate } from '@/lib/utils';
 import { loadDashboard, type DashboardData } from '@/app/dashboard/actions';
 import { formatETB } from '@/lib/finance/types';
 import { AUDIT_AREAS } from '@/lib/audit/types';
+import { todayIso } from '@/lib/utils/ethiopian-calendar';
 
 const DEMO_DASHBOARD: DashboardData = {
   totalMembers: MOCK_DASHBOARD_STATS.totalMembers,
@@ -263,7 +264,7 @@ export default function DashboardPage() {
           labelEn="Teachers"
           labelAm="አስተማሪዎች"
           value={n(stats?.activeTeachers)}
-          subLabel={t('Assigned to classes this year', 'በዚህ ዓመት ለክፍል የተመደቡ')}
+          subLabel={t('Class teachers and HR-assigned teachers', 'የክፍል መምህራንና በሰው ሀብት የተመደቡ')}
           icon={BookOpen}
           iconBg="bg-amber-50"
           iconColor="text-amber-600"
@@ -317,7 +318,7 @@ export default function DashboardPage() {
               </p>
             ) : (
             <div className="space-y-3">
-              <div className="text-[11px] text-slate-400">{t(`Year 2026 to date`, `ከ2026 መጀመሪያ እስካሁን`)}</div>
+              <div className="text-[11px] text-slate-400">{t(`Year ${todayIso().slice(0, 4)} to date`, `ከ${todayIso().slice(0, 4)} መጀመሪያ እስካሁን`)}</div>
               {[
                 { label: t('Total Income', 'ጠቅላላ ገቢ'), value: stats?.finance ? formatETB(stats.finance.income) : '…', color: 'text-emerald-600' },
                 { label: t('Total Expenses', 'ጠቅላላ ወጪ'), value: stats?.finance ? formatETB(stats.finance.expenses) : '…', color: 'text-red-500' },

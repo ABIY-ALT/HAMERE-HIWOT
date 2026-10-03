@@ -1,413 +1,402 @@
 'use client';
 
-import React, { useState } from 'react';
-import {
-  User,
-  Shield,
-  Phone,
-  Mail,
-  MapPin,
-  Calendar,
-  Lock,
-  Key,
-  CheckCircle2,
-  Edit3,
-  Church,
-  Save,
-} from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { AlertCircle, Briefcase, Church, Edit3, Key, Landmark, Lock, Music, Save, Shield, User } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLang } from '@/contexts/LangContext';
 import { getInitials } from '@/lib/utils';
 import { Modal } from '@/components/ui/Modal';
+import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
+import { changeMyPassword, loadMyProfile, updateMyContact, type ContactInput, type MyProfile } from './actions';
+import { VOICE_PARTS, type VoicePart } from '@/lib/choir/types';
+import type { MemberStatus, Person } from '@/types';
+import { formatEthiopianDate } from '@/lib/utils/ethiopian-calendar';
+
+const STATUS: Record<MemberStatus, { cls: string; label: [string, string] }> = {
+  ACTIVE: { cls: 'badge badge-success', label: ['Active', 'ንቁ'] },
+  INACTIVE: { cls: 'badge badge-warning', label: ['Inactive', 'የቦዘነ'] },
+  SUSPENDED: { cls: 'badge badge-danger', label: ['Suspended', 'የታገደ'] },
+  TRANSFERRED: { cls: 'badge badge-info', label: ['Transferred', 'የተዛወረ'] },
+  DECEASED: { cls: 'badge bg-slate-200 text-slate-700', label: ['Deceased', 'ያረፈ'] },
+};
+
+type Tab = 'details' | 'service' | 'permissions' | 'password';
+type Mode = 'loading' | 'demo' | 'live' | 'error';
+
+const contactOf = (p: Person): ContactInput => ({
+  phone_secondary: p.phone_secondary ?? '',
+  email: p.email ?? '',
+  address: p.address ?? '',
+  father_of_confession: p.father_of_confession ?? '',
+  emergency_contact_name: p.emergency_contact_name ?? '',
+  emergency_contact_phone: p.emergency_contact_phone ?? '',
+});
 
 export default function ProfilePage() {
   const { user } = useAuth();
   const { t, locale } = useLang();
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'permissions'>('profile');
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>('loading');
+  const [error, setError] = useState('');
+  const [profile, setProfile] = useState<MyProfile | null>(null);
+  const [tab, setTab] = useState<Tab>('details');
+  const [editing, setEditing] = useState(false);
+  const [contact, setContact] = useState<ContactInput>(contactOf({} as Person));
+  const [formError, setFormError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [pw, setPw] = useState({ current: '', next: '', confirm: '' });
+  const [toast, setToast] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
 
-  // Editable fields in state
-  const [phone, setPhone] = useState(user?.person.phone_primary ?? '+251911000005');
-  const [email, setEmail] = useState(user?.person.email ?? 'yohannes.tesfaye@ssms.local');
-  const [confessionFather, setConfessionFather] = useState(user?.person.father_of_confession ?? 'Memhir Girma');
-  const [address, setAddress] = useState(user?.person.address ?? 'Addis Ababa, Bole Sub-city');
+  const apply = React.useCallback(
+    (res: Awaited<ReturnType<typeof loadMyProfile>>) => {
+      setMode(res.mode);
+      if (res.mode === 'live') setProfile(res.data);
+      else if (res.mode === 'error') setError(res.error);
+      else if (user) {
+        // Demo mode: what the session already knows
+        setProfile({
+          person: user.person,
+          username: user.systemUser.username,
+          lastLogin: user.systemUser.last_login_at,
+          access: user.assignments.map((a) => ({
+            role: a.role?.name_en ?? '—', role_am: a.role?.name_am ?? a.role?.name_en ?? '—',
+            unit: a.organization_unit?.name_en ?? '—', unit_am: a.organization_unit?.name_am ?? a.organization_unit?.name_en ?? '—',
+          })),
+          service: [],
+          governance: [],
+          choir: null,
+          permissions: Array.from(user.permissions, (code) => ({ code: String(code), name_en: String(code), name_am: String(code), category: '' })),
+        });
+      }
+    },
+    [user]
+  );
 
-  // Password fields
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  useEffect(() => {
+    loadMyProfile().then(apply);
+  }, [apply]);
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+  const notify = (kind: 'success' | 'error', text: string) => {
+    setToast({ kind, text });
+    setTimeout(() => setToast(null), 3500);
   };
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const p = profile?.person;
+  const name = p ? (locale === 'am' ? p.full_name_am || p.full_name_en : p.full_name_en) : '';
+
+  const saveContact = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsEditModalOpen(false);
-    showToast(t('Profile updated successfully!', 'መገለጫው በሚገባ ተዘምኗል!'));
+    setBusy(true);
+    setFormError('');
+    const res = await updateMyContact(contact);
+    setBusy(false);
+    if (!res.ok) return setFormError(res.error);
+    setEditing(false);
+    notify('success', t('Your details were saved', 'መረጃዎ ተቀምጧል'));
+    loadMyProfile().then(apply);
   };
 
-  const handleChangePassword = (e: React.FormEvent) => {
+  const savePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPassword || newPassword !== confirmPassword) {
-      alert(t('Passwords do not match!', 'የይለፍ ቃሎች አይዛመዱም!'));
-      return;
-    }
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-    showToast(t('Password changed successfully!', 'የይለፍ ቃል በሚገባ ተቀይሯል!'));
+    setFormError('');
+    if (pw.next !== pw.confirm) return setFormError(t('The new passwords do not match', 'አዲሶቹ የይለፍ ቃሎች አይዛመዱም'));
+    setBusy(true);
+    const res = await changeMyPassword(pw.current, pw.next);
+    setBusy(false);
+    if (!res.ok) return setFormError(res.error);
+    setPw({ current: '', next: '', confirm: '' });
+    notify('success', t('Your password was changed', 'የይለፍ ቃልዎ ተቀይሯል'));
   };
 
-  const permissionsList = user ? Array.from(user.permissions) : [
-    'GOVERNANCE_VIEW', 'GOVERNANCE_MANAGE', 'MEMBER_VIEW', 'STUDENT_VIEW',
-    'HR_VIEW', 'FINANCE_VIEW', 'ASSET_VIEW', 'AUDIT_VIEW_ALL', 'USER_MANAGE'
+  const tabs: [Tab, string][] = [
+    ['details', t('My details', 'የእኔ መረጃ')],
+    ['service', t('Where I serve', 'የማገለግልበት')],
+    ['permissions', `${t('Permissions', 'ፈቃዶች')} (${profile?.permissions.length ?? 0})`],
+    ['password', t('Password', 'የይለፍ ቃል')],
   ];
+
+  const byCategory = new Map<string, MyProfile['permissions']>();
+  for (const perm of profile?.permissions ?? []) byCategory.set(perm.category, [...(byCategory.get(perm.category) ?? []), perm]);
 
   return (
     <div className="space-y-6 max-w-5xl">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700 animate-in fade-in slide-in-from-bottom-4">
-          <CheckCircle2 size={18} className="text-emerald-400" />
-          <span className="text-sm font-medium">{toastMessage}</span>
-        </div>
-      )}
+      <AdminToast toast={toast} />
+      {mode !== 'live' && <AdminModeNotice mode={mode} error={error} />}
 
-      {/* Header Profile Banner */}
-      <div className="card p-6 md:p-8 bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white rounded-2xl relative overflow-hidden shadow-lg border-0">
+      {/* Banner */}
+      <div className="p-6 md:p-8 bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white rounded-2xl relative overflow-hidden shadow-lg">
         <div className="absolute right-0 top-0 w-96 h-96 bg-white/5 rounded-full blur-3xl pointer-events-none" />
-
         <div className="relative z-10 flex flex-col sm:flex-row items-center sm:items-start gap-6">
-          {/* Avatar */}
           <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-3xl sm:text-4xl font-black text-white shadow-xl border-4 border-white/10 flex-shrink-0">
-            {user ? getInitials(user.person.full_name_en) : 'YT'}
+            {p ? getInitials(p.full_name_en) : '…'}
           </div>
-
-          <div className="flex-1 text-center sm:text-left">
+          <div className="flex-1 text-center sm:text-left min-w-0">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
-                  {locale === 'am'
-                    ? (user?.person.full_name_am || user?.person.full_name_en || 'ዮሐንስ ተስፋዬ')
-                    : (user?.person.full_name_en || 'Yohannes Tesfaye')}
-                </h1>
+              <div className="min-w-0">
+                <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">{name || '…'}</h1>
                 <p className="text-blue-200 text-sm mt-0.5">
-                  @{user?.systemUser.username ?? 'admin'} &bull; {user?.person.membership_code ?? 'MBR-2024-0005'}
+                  {profile ? `${profile.username} • ${p?.membership_code ?? ''}` : ''}
                 </p>
               </div>
-
-              <button
-                onClick={() => setIsEditModalOpen(true)}
-                className="btn btn-sm bg-white/10 hover:bg-white/20 text-white border-white/20 inline-flex items-center gap-2 self-center sm:self-auto shadow-sm backdrop-blur-md"
-              >
-                <Edit3 size={14} />
-                {t('Edit Profile', 'መገለጫ አርትዕ')}
-              </button>
+              {p && (
+                <button
+                  onClick={() => {
+                    setFormError('');
+                    setContact(contactOf(p));
+                    setEditing(true);
+                  }}
+                  className="btn btn-sm bg-white/10 hover:bg-white/20 text-white border-white/20 inline-flex items-center gap-2 self-center sm:self-auto shadow-sm backdrop-blur-md"
+                >
+                  <Edit3 size={14} />
+                  {t('Edit my details', 'መረጃዬን አርትዕ')}
+                </button>
+              )}
             </div>
-
-            <div className="mt-4 flex flex-wrap items-center justify-center sm:justify-start gap-2.5">
-              <span className="badge bg-blue-500/20 text-blue-200 border border-blue-400/30 px-3 py-1">
-                <Shield size={12} className="inline mr-1" />
-                {user?.assignments?.[0]?.role?.name_en ?? 'Super Administrator'}
-              </span>
-              <span className="badge bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 px-3 py-1">
-                <Church size={12} className="inline mr-1" />
-                {t('Category 2 Parish', 'ምድብ ሁለት አጥቢያ')}
-              </span>
-              <span className="badge bg-purple-500/20 text-purple-200 border border-purple-400/30 px-3 py-1">
-                {t('Active Servant', 'ንቁ አገልጋይ')}
-              </span>
+            <div className="mt-4 flex flex-wrap items-center justify-center sm:justify-start gap-2">
+              {(profile?.access ?? []).filter((a) => a.role !== '—').map((a, i) => (
+                <span key={i} className="badge bg-blue-500/20 text-blue-100 border border-blue-400/30 px-3 py-1">
+                  <Shield size={12} className="inline mr-1" />
+                  {locale === 'am' ? a.role_am : a.role}
+                </span>
+              ))}
+              {(profile?.service.length ?? 0) > 0 && (
+                <span className="badge bg-purple-500/20 text-purple-100 border border-purple-400/30 px-3 py-1">
+                  <Briefcase size={12} className="inline mr-1" />
+                  {t('Serving', 'በአገልግሎት ላይ')}
+                </span>
+              )}
+              {profile?.choir && (
+                <span className="badge bg-emerald-500/20 text-emerald-100 border border-emerald-400/30 px-3 py-1">
+                  <Music size={12} className="inline mr-1" />
+                  {t('Choir', 'መዘምራን')}
+                </span>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Tabs Navigation */}
-      <div className="flex border-b border-slate-200 gap-6">
-        <button
-          onClick={() => setActiveTab('profile')}
-          className={`pb-3 text-sm font-semibold transition-all border-b-2 ${
-            activeTab === 'profile'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          {t('Personal & Church Details', 'የግልና የቤተ ክርስቲያን መረጃ')}
-        </button>
-        <button
-          onClick={() => setActiveTab('permissions')}
-          className={`pb-3 text-sm font-semibold transition-all border-b-2 ${
-            activeTab === 'permissions'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          {t('Roles & Permissions', 'ሚናዎችና ፈቃዶች')} ({permissionsList.length})
-        </button>
-        <button
-          onClick={() => setActiveTab('security')}
-          className={`pb-3 text-sm font-semibold transition-all border-b-2 ${
-            activeTab === 'security'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          {t('Security & Password', 'ደህንነትና ይለፍ ቃል')}
-        </button>
+      {/* Tabs */}
+      <div className="flex border-b border-slate-200 gap-5 overflow-x-auto">
+        {tabs.map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => {
+              setFormError('');
+              setTab(key);
+            }}
+            className={`pb-3 text-sm font-semibold whitespace-nowrap transition-all border-b-2 ${tab === key ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
-      {/* Tab 1: Profile & Church Details */}
-      {activeTab === 'profile' && (
+      {tab === 'details' && p && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Personal Info */}
-          <div className="card p-6 space-y-4">
-            <h2 className="text-base font-bold text-slate-800 pb-2 border-b border-slate-100 flex items-center gap-2">
-              <User size={18} className="text-blue-600" />
-              {t('Contact & Personal Information', 'የግል መረጃና አድራሻ')}
-            </h2>
-
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between py-1.5 border-b border-slate-50">
-                <span className="text-slate-500 flex items-center gap-1.5">
-                  <Phone size={14} /> {t('Primary Phone', 'ዋና ስልክ')}
-                </span>
-                <span className="font-mono font-medium text-slate-900">{phone}</span>
-              </div>
-
-              <div className="flex justify-between py-1.5 border-b border-slate-50">
-                <span className="text-slate-500 flex items-center gap-1.5">
-                  <Mail size={14} /> {t('Email Address', 'ኢሜይል')}
-                </span>
-                <span className="font-medium text-slate-900">{email}</span>
-              </div>
-
-              <div className="flex justify-between py-1.5 border-b border-slate-50">
-                <span className="text-slate-500 flex items-center gap-1.5">
-                  <MapPin size={14} /> {t('Residence Address', 'የመኖሪያ አድራሻ')}
-                </span>
-                <span className="font-medium text-slate-900">{address}</span>
-              </div>
-
-              <div className="flex justify-between py-1.5 border-b border-slate-50">
-                <span className="text-slate-500 flex items-center gap-1.5">
-                  <Calendar size={14} /> {t('Date of Birth', 'የትውልድ ቀን')}
-                </span>
-                <span className="font-mono text-slate-900">1985-04-12</span>
-              </div>
-
-              <div className="flex justify-between py-1.5">
-                <span className="text-slate-500">{t('Gender', 'ጾታ')}</span>
-                <span className="font-medium text-slate-900">
-                  {user?.person.gender === 'FEMALE' ? t('Female', 'ሴት') : t('Male', 'ወንድ')}
-                </span>
-              </div>
+          <Card icon={<User size={18} className="text-blue-600" />} title={t('Contact', 'አድራሻ')}>
+            <Row label={t('Sign-in phone', 'የመግቢያ ስልክ')} value={p.phone_primary} mono hint={t('Ask an administrator to change it', 'ለመቀየር አስተዳዳሪውን ይጠይቁ')} />
+            <Row label={t('Other phone', 'ሌላ ስልክ')} value={p.phone_secondary} mono />
+            <Row label={t('E-mail', 'ኢሜይል')} value={p.email} />
+            <Row label={t('Address', 'አድራሻ')} value={p.address} />
+            <Row
+              label={t('Emergency contact', 'የአደጋ ጊዜ ተጠሪ')}
+              value={[p.emergency_contact_name, p.emergency_contact_phone].filter(Boolean).join(' · ') || null}
+            />
+          </Card>
+          <Card icon={<Church size={18} className="text-purple-600" />} title={t('Church & membership', 'መንፈሳዊና የአባልነት መረጃ')}>
+            <Row label={t('Baptismal name', 'የክርስትና ስም')} value={p.baptismal_name} />
+            <Row label={t('Father of confession', 'የንስሐ አባት')} value={p.father_of_confession} />
+            <Row label={t('Membership code', 'የአባልነት ኮድ')} value={p.membership_code} mono />
+            <Row label={t('Date of birth', 'የትውልድ ቀን')} value={p.date_of_birth ? formatEthiopianDate(p.date_of_birth, locale) : null} />
+            <Row label={t('Gender', 'ጾታ')} value={p.gender === 'FEMALE' ? t('Female', 'ሴት') : t('Male', 'ወንድ')} />
+            <div className="flex justify-between items-center py-1.5 border-b border-slate-50">
+              <span className="text-slate-500">{t('Membership status', 'የአባልነት ሁኔታ')}</span>
+              <span className={STATUS[p.status].cls}>{t(...STATUS[p.status].label)}</span>
             </div>
-          </div>
-
-          {/* Spiritual Information */}
-          <div className="card p-6 space-y-4">
-            <h2 className="text-base font-bold text-slate-800 pb-2 border-b border-slate-100 flex items-center gap-2">
-              <Church size={18} className="text-purple-600" />
-              {t('Ecclesiastical & Spiritual Details', 'መንፈሳዊና የክርስትና መረጃ')}
-            </h2>
-
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between py-1.5 border-b border-slate-50">
-                <span className="text-slate-500">{t('Baptismal Name', 'የክርስትና ስም')}</span>
-                <span className="font-semibold text-purple-700">
-                  {user?.person.baptismal_name || 'Haile Maryam (ኃይለ ማርያም)'}
-                </span>
-              </div>
-
-              <div className="flex justify-between py-1.5 border-b border-slate-50">
-                <span className="text-slate-500">{t('Father of Confession', 'የንስሐ አባት')}</span>
-                <span className="font-semibold text-slate-900">{confessionFather}</span>
-              </div>
-
-              <div className="flex justify-between py-1.5 border-b border-slate-50">
-                <span className="text-slate-500">{t('Parish Sunday School', 'ሰንበት ት/ቤት')}</span>
-                <span className="font-medium text-slate-900">{t('Sallo Debre Tsehay Hamere Hiwot', 'ሳሎ ደብረ ፀሐይ ሐመረ ሕይወት')}</span>
-              </div>
-
-              <div className="flex justify-between py-1.5 border-b border-slate-50">
-                <span className="text-slate-500">{t('Assigned Org Unit', 'የተመደበበት ክፍል')}</span>
-                <span className="font-medium text-slate-900">General Assembly / Administration</span>
-              </div>
-
-              <div className="flex justify-between py-1.5">
-                <span className="text-slate-500">{t('Service Status', 'የአገልግሎት ሁኔታ')}</span>
-                <span className="badge badge-success">{t('Active in Good Standing', 'በንቃት በማገልገል ላይ')}</span>
-              </div>
-            </div>
-          </div>
+            <Row label={t('Last sign-in', 'የመጨረሻ መግቢያ')} value={profile?.lastLogin ? formatEthiopianDate(profile.lastLogin.slice(0, 10), locale) : null} />
+          </Card>
         </div>
       )}
 
-      {/* Tab 2: Permissions Matrix */}
-      {activeTab === 'permissions' && (
-        <div className="card p-6 space-y-4">
-          <h2 className="text-base font-bold text-slate-800 pb-2 border-b border-slate-100 flex items-center gap-2">
-            <Key size={18} className="text-amber-600" />
-            {t('Authorized System Capabilities', 'የተፈቀዱ የስርዓት መዳረሻዎች')}
-          </h2>
-          <p className="text-xs text-slate-500">
-            {t(
-              'These permissions are determined by your assigned statutory role and organizational unit.',
-              'እነዚህ ፈቃዶች በተሰጡዎት ሕጋዊ ሚና እና ክፍል መሠረት የተሰጡ ናቸው።'
-            )}
+      {tab === 'service' && profile && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <Card icon={<Shield size={18} className="text-blue-600" />} title={t('System access', 'የስርዓት መዳረሻ')}>
+            <List
+              empty={t('No role assigned.', 'ሚና አልተሰጠም።')}
+              items={profile.access.map((a) => [locale === 'am' ? a.role_am : a.role, locale === 'am' ? a.unit_am : a.unit])}
+            />
+          </Card>
+          <Card icon={<Briefcase size={18} className="text-purple-600" />} title={t('Service assignments', 'የአገልግሎት ምደባዎች')}>
+            <List
+              empty={t('No current service assignment.', 'የአሁን የአገልግሎት ምደባ የለም።')}
+              items={profile.service.map((s) => [
+                `${locale === 'am' ? s.role_am : s.role}${s.class_name ? ` · ${s.class_name}` : ''}`,
+                `${locale === 'am' ? s.unit_am : s.unit} · ${t('since', 'ከ')} ${formatEthiopianDate(s.since, locale)}`,
+              ])}
+            />
+          </Card>
+          <Card icon={<Landmark size={18} className="text-amber-600" />} title={t('Governance', 'የአስተዳደር አካላት')}>
+            <List
+              empty={t('Not a member of a governing body.', 'የአስተዳደር አካል አባል አይደሉም።')}
+              items={profile.governance.map((g) => [
+                locale === 'am' ? g.position_am : g.position,
+                `${locale === 'am' ? g.body_am : g.body} · ${t('since', 'ከ')} ${formatEthiopianDate(g.since, locale)}`,
+              ])}
+            />
+          </Card>
+          <Card icon={<Music size={18} className="text-emerald-600" />} title={t('Choir', 'መዘምራን')}>
+            <List
+              empty={t('Not in the choir.', 'የመዘምራን አባል አይደሉም።')}
+              items={
+                profile.choir
+                  ? [[
+                      t(...(VOICE_PARTS[profile.choir.voice as VoicePart] ?? [profile.choir.voice, profile.choir.voice])),
+                      profile.choir.since ? `${t('since', 'ከ')} ${formatEthiopianDate(profile.choir.since, locale)}` : '',
+                    ]]
+                  : []
+              }
+            />
+          </Card>
+        </div>
+      )}
+
+      {tab === 'permissions' && profile && (
+        <div className="card p-6 space-y-5">
+          <p className="text-xs text-slate-500 flex items-center gap-1.5">
+            <Key size={14} className="text-amber-600" />
+            {t('What your roles allow you to do. An administrator changes roles under Administration → Users.', 'ሚናዎችዎ የሚፈቅዱልዎት። ሚና የሚቀየረው በአስተዳደር → ተጠቃሚዎች ነው።')}
           </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-2">
-            {permissionsList.map((perm, idx) => (
-              <div
-                key={idx}
-                className="p-3 bg-slate-50 border border-slate-200/70 rounded-xl flex items-center gap-2.5 text-xs font-mono text-slate-800"
-              >
-                <CheckCircle2 size={15} className="text-emerald-600 flex-shrink-0" />
-                <span className="truncate">{perm}</span>
+          {[...byCategory.entries()].map(([category, perms]) => (
+            <div key={category || 'all'}>
+              {category && <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">{category}</div>}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {perms.map((perm) => (
+                  <div key={perm.code} className="px-3 py-2 bg-slate-50 border border-slate-200/70 rounded-lg">
+                    <div className="text-xs font-medium text-slate-800">{locale === 'am' ? perm.name_am || perm.name_en : perm.name_en}</div>
+                    <div className="text-[10px] font-mono text-slate-400">{perm.code}</div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
+          {profile.permissions.length === 0 && <p className="text-sm text-slate-400">{t('No permissions yet.', 'እስካሁን ፈቃድ የለም።')}</p>}
         </div>
       )}
 
-      {/* Tab 3: Security & Password */}
-      {activeTab === 'security' && (
+      {tab === 'password' && (
         <div className="card p-6 max-w-xl space-y-4">
           <h2 className="text-base font-bold text-slate-800 pb-2 border-b border-slate-100 flex items-center gap-2">
             <Lock size={18} className="text-red-600" />
-            {t('Change Password', 'የይለፍ ቃል ቀይር')}
+            {t('Change password', 'የይለፍ ቃል ቀይር')}
           </h2>
-
-          <form onSubmit={handleChangePassword} className="space-y-4">
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Current Password', 'የአሁኑ የይለፍ ቃል')}
-              </label>
-              <input
-                type="password"
-                required
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                placeholder="••••••••"
-                className="form-input text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('New Password', 'አዲስ የይለፍ ቃል')}
-              </label>
-              <input
-                type="password"
-                required
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="••••••••"
-                className="form-input text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Confirm New Password', 'አዲሱን የይለፍ ቃል ያረጋግጡ')}
-              </label>
-              <input
-                type="password"
-                required
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="••••••••"
-                className="form-input text-sm"
-              />
-            </div>
-
-            <button type="submit" className="btn btn-primary text-sm py-2 px-4 inline-flex items-center gap-2">
+          <form onSubmit={savePassword} className="space-y-4">
+            {formError && <ErrorBox text={formError} />}
+            {(
+              [
+                ['current', t('Current password', 'የአሁኑ የይለፍ ቃል'), 'current-password'],
+                ['next', t('New password (at least 8 characters)', 'አዲስ የይለፍ ቃል (ቢያንስ 8 ፊደል)'), 'new-password'],
+                ['confirm', t('Repeat the new password', 'አዲሱን የይለፍ ቃል ይድገሙ'), 'new-password'],
+              ] as const
+            ).map(([key, label, auto]) => (
+              <div key={key}>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">{label}</label>
+                <input
+                  type="password"
+                  required
+                  minLength={key === 'current' ? undefined : 8}
+                  autoComplete={auto}
+                  value={pw[key]}
+                  onChange={(e) => setPw((s) => ({ ...s, [key]: e.target.value }))}
+                  className="form-input text-sm"
+                />
+              </div>
+            ))}
+            <button type="submit" disabled={busy} className="btn btn-primary text-sm py-2 px-4 inline-flex items-center gap-2 disabled:opacity-60">
               <Save size={15} />
-              {t('Update Password', 'የይለፍ ቃል አዘምን')}
+              {busy ? t('Saving…', 'በመመዝገብ ላይ…') : t('Change password', 'የይለፍ ቃል ቀይር')}
             </button>
           </form>
         </div>
       )}
 
-      {/* Edit Profile Modal */}
-      <Modal
-        isOpen={isEditModalOpen}
-        onClose={() => setIsEditModalOpen(false)}
-        title={t('Edit Personal Profile', 'የግል መገለጫ አርትዕ')}
-        subtitle={t('Update your contact info and ecclesiastical details', 'የመገናኛ አድራሻና መንፈሳዊ መረጃ ያዘምኑ')}
-      >
-        <form onSubmit={handleSaveProfile} className="space-y-4">
-          <div>
-            <label className="text-xs font-semibold text-slate-700 block mb-1">
-              {t('Primary Phone', 'ዋና ስልክ')}
-            </label>
-            <input
-              type="text"
-              required
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="form-input text-sm"
-            />
-          </div>
+      {editing && (
+        <Modal isOpen onClose={() => setEditing(false)} title={t('Edit my details', 'መረጃዬን አርትዕ')} subtitle={t('Your name and sign-in phone are changed by an administrator.', 'ስምዎና የመግቢያ ስልክዎ የሚቀየሩት በአስተዳዳሪ ነው።')}>
+          <form onSubmit={saveContact} className="space-y-4">
+            {formError && <ErrorBox text={formError} />}
+            {(
+              [
+                ['phone_secondary', t('Other phone', 'ሌላ ስልክ'), 'tel'],
+                ['email', t('E-mail', 'ኢሜይል'), 'email'],
+                ['address', t('Address', 'አድራሻ'), 'text'],
+                ['father_of_confession', t('Father of confession', 'የንስሐ አባት'), 'text'],
+                ['emergency_contact_name', t('Emergency contact — name', 'የአደጋ ጊዜ ተጠሪ — ስም'), 'text'],
+                ['emergency_contact_phone', t('Emergency contact — phone', 'የአደጋ ጊዜ ተጠሪ — ስልክ'), 'tel'],
+              ] as const
+            ).map(([key, label, type]) => (
+              <div key={key}>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">{label}</label>
+                <input
+                  type={type}
+                  value={contact[key] ?? ''}
+                  onChange={(e) => setContact((c) => ({ ...c, [key]: e.target.value }))}
+                  className="form-input text-sm"
+                />
+              </div>
+            ))}
+            <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
+              <button type="button" onClick={() => setEditing(false)} className="btn btn-secondary text-xs">{t('Cancel', 'ሰርዝ')}</button>
+              <button type="submit" disabled={busy} className="btn btn-primary text-xs disabled:opacity-60">{busy ? t('Saving…', 'በመመዝገብ ላይ…') : t('Save', 'መዝግብ')}</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </div>
+  );
+}
 
-          <div>
-            <label className="text-xs font-semibold text-slate-700 block mb-1">
-              {t('Email Address', 'ኢሜይል')}
-            </label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="form-input text-sm"
-            />
-          </div>
+function Card({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+  return (
+    <div className="card p-6 space-y-3">
+      <h2 className="text-base font-bold text-slate-800 pb-2 border-b border-slate-100 flex items-center gap-2">
+        {icon}
+        {title}
+      </h2>
+      <div className="space-y-1 text-sm">{children}</div>
+    </div>
+  );
+}
 
-          <div>
-            <label className="text-xs font-semibold text-slate-700 block mb-1">
-              {t('Father of Confession', 'የንስሐ አባት')}
-            </label>
-            <input
-              type="text"
-              required
-              value={confessionFather}
-              onChange={(e) => setConfessionFather(e.target.value)}
-              className="form-input text-sm"
-            />
-          </div>
+function Row({ label, value, mono = false, hint }: { label: string; value: string | null; mono?: boolean; hint?: string }) {
+  return (
+    <div className="flex justify-between gap-4 py-1.5 border-b border-slate-50 last:border-0">
+      <span className="text-slate-500 shrink-0">
+        {label}
+        {hint && <span className="block text-[10px] text-slate-400">{hint}</span>}
+      </span>
+      <span className={`text-right text-slate-900 font-medium break-words min-w-0 ${mono ? 'font-mono text-xs' : ''}`}>{value || '—'}</span>
+    </div>
+  );
+}
 
-          <div>
-            <label className="text-xs font-semibold text-slate-700 block mb-1">
-              {t('Residence Address', 'የመኖሪያ አድራሻ')}
-            </label>
-            <input
-              type="text"
-              required
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              className="form-input text-sm"
-            />
-          </div>
+function List({ items, empty }: { items: [string, string][]; empty: string }) {
+  if (items.length === 0) return <p className="text-xs text-slate-400">{empty}</p>;
+  return (
+    <ul className="divide-y divide-slate-50">
+      {items.map(([main, sub], i) => (
+        <li key={i} className="py-2">
+          <div className="font-medium text-slate-900">{main}</div>
+          {sub && <div className="text-xs text-slate-500">{sub}</div>}
+        </li>
+      ))}
+    </ul>
+  );
+}
 
-          <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => setIsEditModalOpen(false)}
-              className="btn btn-secondary text-xs"
-            >
-              {t('Cancel', 'ሰርዝ')}
-            </button>
-            <button type="submit" className="btn btn-primary text-xs">
-              {t('Save Changes', 'ለውጦችን መዝግብ')}
-            </button>
-          </div>
-        </form>
-      </Modal>
+function ErrorBox({ text }: { text: string }) {
+  return (
+    <div className="p-3 rounded-lg bg-red-50 border border-red-200 flex items-center gap-2 text-red-700 text-sm">
+      <AlertCircle size={16} /> {text}
     </div>
   );
 }

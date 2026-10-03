@@ -14,82 +14,84 @@ import {
   AlertCircle,
   CheckCircle,
   Check,
-  Trash2,
 } from 'lucide-react';
 import { cn, getInitials } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLang } from '@/contexts/LangContext';
 import type { Locale } from '@/types';
 import { signOut } from '@/app/login/actions';
+import { loadNotifications, type Notice } from '@/app/dashboard/actions';
 import { resetEducation } from '@/lib/education/client';
 import { resetFinance } from '@/lib/finance/client';
 import { resetProperty } from '@/lib/property/client';
 import { resetChoir } from '@/lib/choir/client';
 import { resetHr } from '@/lib/hr/client';
+import { formatEthiopianDate } from '@/lib/utils/ethiopian-calendar';
 
 interface HeaderProps {
   onToggleMobileSidebar: () => void;
   breadcrumbs?: { label: string; href?: string }[];
 }
 
-interface NotificationItem {
-  id: string;
-  titleEn: string;
-  titleAm: string;
-  timeEn: string;
-  timeAm: string;
-  type: 'alert' | 'info' | 'success';
-  read: boolean;
-  href: string;
-}
-
-const INITIAL_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: 'n-001',
-    titleEn: 'Board of Management quorum verified (9 members)',
-    titleAm: 'የሥራ አመራር ጉባኤ ምልዓተ ጉባኤ ተረጋግጧል (9 አባላት)',
-    timeEn: '10m ago',
-    timeAm: 'ከ10 ደቂቃ በፊት',
-    type: 'success',
-    read: false,
-    href: '/dashboard/governance/management-board',
-  },
-  {
-    id: 'n-002',
-    titleEn: 'Expense authorization pending: Youth Conference (ETB 8,000)',
-    titleAm: 'የወጪ ፈቃድ ጥያቄ በጥበቃ ላይ: የወጣቶች ጉባኤ (8,000 ብር)',
-    timeEn: '1h ago',
-    timeAm: 'ከ1 ሰዓት በፊት',
-    type: 'alert',
-    read: false,
-    href: '/dashboard/finance/approvals',
-  },
-  {
-    id: 'n-003',
-    titleEn: 'Grade 3 attendance session recorded by Abebe Bekele',
-    titleAm: 'የክፍል 3 ክትትል በአበበ በቀለ ተመዝግቧል',
-    timeEn: '3h ago',
-    timeAm: 'ከ3 ሰዓት በፊት',
-    type: 'info',
-    read: false,
-    href: '/dashboard/education/attendance',
-  },
+const DEMO_NOTICES: Notice[] = [
+  { id: 'demo-1', version: '1', kind: 'alert', href: '/dashboard/finance/requests', at: null, en: '2 payment requests are waiting for your approval', am: '2 የክፍያ ጥያቄዎች የእርስዎን ማጽደቅ ይጠብቃሉ' },
+  { id: 'demo-2', version: '1', kind: 'info', href: '/dashboard/hr/attendance', at: null, en: "Take today's servant attendance", am: 'የዛሬውን የአገልጋዮች ተገኝነት ይያዙ' },
+  { id: 'demo-3', version: '1', kind: 'success', href: '/dashboard/finance/requests', at: null, en: 'Your request FR-2026-0003 was approved', am: 'ጥያቄዎ FR-2026-0003 ጸድቋል' },
 ];
+
+// Which notices this device has seen, per user: { id: version }
+const SEEN_KEY = 'ssms_notices_seen';
+function readSeen(uid: string): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(`${SEEN_KEY}:${uid}`) ?? '{}') as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+function writeSeen(uid: string, seen: Record<string, string>) {
+  try {
+    localStorage.setItem(`${SEEN_KEY}:${uid}`, JSON.stringify(seen));
+  } catch {
+    // storage unavailable — read state just won't persist
+  }
+}
 
 export default function Header({
   onToggleMobileSidebar,
   breadcrumbs,
 }: HeaderProps) {
-  const { user, logout } = useAuth();
+  const { user, logout, can } = useAuth();
   const { locale, setLocale, t } = useLang();
   const router = useRouter();
 
   const [userMenuOpen, setUserMenuOpen] = React.useState(false);
   const [notifOpen, setNotifOpen] = React.useState(false);
-  const [notifications, setNotifications] = React.useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
+  const [notices, setNotices] = React.useState<Notice[]>([]);
+  const [seen, setSeen] = React.useState<Record<string, string>>({});
+  const loadedAt = React.useRef(0);
+  const uid = user?.systemUser.id ?? 'anonymous';
 
   const userMenuRef = React.useRef<HTMLDivElement>(null);
   const notifRef = React.useRef<HTMLDivElement>(null);
+
+  const refreshNotices = React.useCallback(() => {
+    loadedAt.current = Date.now();
+    return loadNotifications()
+      .then((res) => {
+        setSeen(readSeen(uid));
+        setNotices(res.mode === 'live' ? res.data : res.mode === 'demo' ? DEMO_NOTICES : []);
+      })
+      .catch(() => {
+        // offline — keep what is shown
+      });
+  }, [uid]);
+
+  // Load now and every five minutes
+  React.useEffect(() => {
+    void refreshNotices();
+    const timer = setInterval(() => void refreshNotices(), 5 * 60_000);
+    return () => clearInterval(timer);
+  }, [refreshNotices]);
 
   // Close menus on outside click
   React.useEffect(() => {
@@ -105,14 +107,16 @@ export default function Header({
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const isUnread = (n: Notice) => seen[n.id] !== n.version;
+  const unreadCount = notices.filter(isUnread).length;
 
-  const handleMarkAllAsRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-  };
-
-  const handleClearNotifications = () => {
-    setNotifications([]);
+  const markSeen = (list: Notice[]) => {
+    const next = { ...seen };
+    for (const n of list) next[n.id] = n.version;
+    // Keep only notices that still exist
+    const kept = Object.fromEntries(Object.entries(next).filter(([id]) => notices.some((n) => n.id === id)));
+    setSeen(kept);
+    writeSeen(uid, kept);
   };
 
   const handleLogout = async () => {
@@ -182,6 +186,7 @@ export default function Header({
         <button
           className="btn btn-ghost btn-sm relative"
           onClick={() => {
+            if (!notifOpen && Date.now() - loadedAt.current > 60_000) void refreshNotices();
             setNotifOpen((o) => !o);
             setUserMenuOpen(false);
           }}
@@ -204,67 +209,61 @@ export default function Header({
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-2">
-                {unreadCount > 0 && (
-                  <button
-                    onClick={handleMarkAllAsRead}
-                    className="text-xs text-blue-600 hover:text-blue-800 font-medium inline-flex items-center gap-1"
-                  >
-                    <Check size={12} />
-                    {t('Mark read', 'እንደተነበበ')}
-                  </button>
-                )}
-                {notifications.length > 0 && (
-                  <button
-                    onClick={handleClearNotifications}
-                    className="text-xs text-slate-400 hover:text-red-600 font-medium p-1"
-                    title={t('Clear all', 'ሁሉንም አጽዳ')}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                )}
-              </div>
+              {unreadCount > 0 && (
+                <button
+                  onClick={() => markSeen(notices)}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-medium inline-flex items-center gap-1"
+                >
+                  <Check size={12} />
+                  {t('Mark all read', 'ሁሉንም እንደተነበበ')}
+                </button>
+              )}
             </div>
 
             <div className="max-h-80 overflow-y-auto divide-y divide-slate-50">
-              {notifications.length === 0 ? (
+              {notices.length === 0 ? (
                 <div className="p-8 text-center text-xs text-slate-400">
-                  {t('No notifications at this time', 'ምንም ማሳወቂያዎች የሉም')}
+                  {t('Nothing needs your attention right now', 'አሁን ትኩረትዎን የሚሻ ነገር የለም')}
                 </div>
               ) : (
-                notifications.map((n) => (
+                notices.map((n) => (
                   <Link
                     key={n.id}
                     href={n.href}
-                    onClick={() => setNotifOpen(false)}
+                    onClick={() => {
+                      markSeen([n]);
+                      setNotifOpen(false);
+                    }}
                     className={cn(
                       'p-3.5 flex items-start gap-3 hover:bg-slate-50 transition-colors block text-left',
-                      !n.read && 'bg-blue-50/40'
+                      isUnread(n) && 'bg-blue-50/40'
                     )}
                   >
                     <div
                       className={cn(
                         'w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5',
-                        n.type === 'alert' && 'bg-amber-100 text-amber-700',
-                        n.type === 'success' && 'bg-emerald-100 text-emerald-700',
-                        n.type === 'info' && 'bg-blue-100 text-blue-700'
+                        n.kind === 'alert' && 'bg-amber-100 text-amber-700',
+                        n.kind === 'success' && 'bg-emerald-100 text-emerald-700',
+                        n.kind === 'info' && 'bg-blue-100 text-blue-700'
                       )}
                     >
-                      {n.type === 'alert' && <AlertCircle size={14} />}
-                      {n.type === 'success' && <CheckCircle size={14} />}
-                      {n.type === 'info' && <Calendar size={14} />}
+                      {n.kind === 'alert' && <AlertCircle size={14} />}
+                      {n.kind === 'success' && <CheckCircle size={14} />}
+                      {n.kind === 'info' && <Calendar size={14} />}
                     </div>
 
                     <div className="min-w-0 flex-1">
-                      <p className={cn('text-xs text-slate-800 leading-snug', !n.read && 'font-semibold')}>
-                        {locale === 'am' ? n.titleAm : n.titleEn}
+                      <p className={cn('text-xs text-slate-800 leading-snug', isUnread(n) && 'font-semibold')}>
+                        {locale === 'am' ? n.am : n.en}
                       </p>
-                      <span className="text-[10px] text-slate-400 font-mono mt-1 block">
-                        {locale === 'am' ? n.timeAm : n.timeEn}
-                      </span>
+                      {n.at && (
+                        <span className="text-[10px] text-slate-400 mt-1 block">
+                          {formatEthiopianDate(n.at.slice(0, 10), locale)}
+                        </span>
+                      )}
                     </div>
 
-                    {!n.read && (
+                    {isUnread(n) && (
                       <span className="w-2 h-2 rounded-full bg-blue-600 flex-shrink-0 mt-1.5" />
                     )}
                   </Link>
@@ -272,15 +271,17 @@ export default function Header({
               )}
             </div>
 
-            <div className="p-2.5 border-t border-slate-100 bg-slate-50/50 text-center">
-              <Link
-                href="/dashboard/audit"
-                onClick={() => setNotifOpen(false)}
-                className="text-xs text-blue-600 hover:text-blue-800 font-semibold"
-              >
-                {t('View Full System Audit Trail →', 'ሁሉንም የስርዓት ኦዲት ታሪክ እይ →')}
-              </Link>
-            </div>
+            {can('AUDIT_VIEW_ALL') && (
+              <div className="p-2.5 border-t border-slate-100 bg-slate-50/50 text-center">
+                <Link
+                  href="/dashboard/audit"
+                  onClick={() => setNotifOpen(false)}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-semibold"
+                >
+                  {t('View Full System Audit Trail →', 'ሁሉንም የስርዓት ኦዲት ታሪክ እይ →')}
+                </Link>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -295,14 +296,14 @@ export default function Header({
           }}
         >
           <div className="avatar">
-            {user ? getInitials(user.person.full_name_en) : 'YT'}
+            {user ? getInitials(user.person.full_name_en) : '…'}
           </div>
           <div className="hidden sm:block text-left min-w-0">
             <div className="text-sm font-semibold text-slate-800 truncate max-w-[120px]">
-              {user?.person.full_name_en ?? 'Yohannes Tesfaye'}
+              {user?.person.full_name_en ?? ''}
             </div>
             <div className="text-xs text-slate-400 truncate max-w-[120px]">
-              {user?.systemUser.username ?? 'admin'}
+              {user?.systemUser.username ?? ''}
             </div>
           </div>
           <ChevronDown size={14} className="text-slate-400 flex-shrink-0" />
@@ -312,13 +313,13 @@ export default function Header({
           <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl border border-slate-200 shadow-xl z-50 py-1 overflow-hidden animate-in fade-in zoom-in-95">
             <div className="px-4 py-3 border-b border-slate-100">
               <div className="text-sm font-semibold text-slate-800">
-                {user?.person.full_name_en ?? 'Yohannes Tesfaye'}
+                {user?.person.full_name_en ?? ''}
               </div>
-              <div className="text-xs text-slate-400 mt-0.5">
-                {user?.person.full_name_am ?? 'ዮሐንስ ተስፋዬ'}
-              </div>
+              {user?.person.full_name_am && (
+                <div className="text-xs text-slate-400 mt-0.5">{user.person.full_name_am}</div>
+              )}
               <div className="text-xs text-slate-400 font-mono mt-0.5">
-                {user?.person.membership_code ?? 'MBR-2024-0005'}
+                {user?.person.membership_code ?? ''}
               </div>
             </div>
             <Link
@@ -329,14 +330,16 @@ export default function Header({
               <User size={15} className="text-slate-500" />
               {t('My Profile', 'የእኔ መገለጫ')}
             </Link>
-            <Link
-              href="/dashboard/admin/settings"
-              onClick={() => setUserMenuOpen(false)}
-              className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
-            >
-              <Settings size={15} className="text-slate-500" />
-              {t('Settings', 'ቅንብሮች')}
-            </Link>
+            {can('SYSTEM_CONFIGURE') && (
+              <Link
+                href="/dashboard/admin/settings"
+                onClick={() => setUserMenuOpen(false)}
+                className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                <Settings size={15} className="text-slate-500" />
+                {t('System settings', 'የስርዓት ቅንብሮች')}
+              </Link>
+            )}
             <div className="border-t border-slate-100 mt-1" />
             <button
               onClick={handleLogout}
