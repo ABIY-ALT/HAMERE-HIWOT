@@ -1,13 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Hamere Hiwot — Android app (Trusted Web Activity).
-  Opens https://hamere-hiwot.onrender.com full screen. The only permission
-  asked for is notifications; links, calls (tel:) and downloads go through
-  the system without extra permissions.
+  Opens https://hamere-hiwot.onrender.com full screen in Chrome (or, on phones
+  without a suitable browser, in the app's own web view). The only permission
+  the user is asked for is notifications; INTERNET is granted automatically.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Needed only by the built-in web view fallback; granted without asking -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="true"
@@ -47,6 +49,10 @@
             <meta-data
                 android:name="android.support.customtabs.trusted.FILE_PROVIDER_AUTHORITY"
                 android:value="@string/provider_authority" />
+            <!-- No Chrome (or a browser that can't host the app)? Open it in our own web view -->
+            <meta-data
+                android:name="android.support.customtabs.trusted.FALLBACK_STRATEGY"
+                android:value="webview" />
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -86,6 +92,11 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </service>
+
+        <activity
+            android:name="com.google.androidbrowserhelper.trusted.WebViewFallbackActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false" />
 
         <!-- Lets the website ask for notification permission on Android 13+ -->
         <activity

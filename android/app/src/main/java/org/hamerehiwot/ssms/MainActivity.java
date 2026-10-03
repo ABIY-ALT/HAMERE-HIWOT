@@ -25,6 +25,12 @@ public class MainActivity extends LauncherActivity {
         // Decide before super.onCreate(), which launches the website unless told to wait
         waitingForAnswer = savedInstanceState == null && shouldAskForNotifications();
         super.onCreate(savedInstanceState);
+        // The library may restart itself in a new task (e.g. opened from the installer);
+        // then the new copy asks instead of this closing one
+        if (isFinishing()) {
+            waitingForAnswer = false;
+            return;
+        }
         if (waitingForAnswer) {
             prefs().edit().putBoolean(ASKED, true).apply();
             requestPermissions(new String[] {Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATIONS);
