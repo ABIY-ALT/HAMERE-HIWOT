@@ -33,6 +33,7 @@ export function ColumnChart({
   fixedMax,
   label,
   emptyText = '—',
+  labelEvery = 1,
 }: {
   categories: string[];
   series: ChartSeries[];
@@ -41,6 +42,8 @@ export function ColumnChart({
   fixedMax?: number;
   label: string;
   emptyText?: string;
+  /** Show every Nth category under the axis (counted back from the latest) when space is tight; tooltips keep them all. */
+  labelEvery?: number;
 }) {
   const [active, setActive] = useState<number | null>(null);
   const dataMax = Math.max(0, ...series.flatMap((s) => s.values.map((v) => v ?? 0)));
@@ -129,11 +132,18 @@ export function ColumnChart({
 
       {/* X axis */}
       <div className="flex pl-16 text-[10px] text-slate-500">
-        {categories.map((cat) => (
-          <span key={cat} className="flex-1 text-center truncate px-0.5">
-            {cat}
-          </span>
-        ))}
+        {categories.map((cat, i) =>
+          labelEvery > 1 ? (
+            // Centred and allowed to spill into the unlabeled neighbours
+            <span key={cat} className="flex-1 min-w-0 flex justify-center">
+              {(categories.length - 1 - i) % labelEvery === 0 && <span className="whitespace-nowrap">{cat}</span>}
+            </span>
+          ) : (
+            <span key={cat} className="flex-1 text-center truncate px-0.5">
+              {cat}
+            </span>
+          )
+        )}
       </div>
     </figure>
   );

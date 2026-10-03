@@ -7,10 +7,8 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: {
-    template: '%s | ሐመረ ሕይወት ሰንበት ት/ቤት — SSMS',
-    default: 'ሐመረ ሕይወት ሰንበት ት/ቤት (Hamere Hiwot) — SSMS',
-  },
+  // One name on every page (browser tab, bookmarks, home-screen shortcut)
+  title: 'ሐመረ ሕይወት — Hamere Hiwot',
   description:
     'ሳሎ ደብረ ፀሐይ ቅዱስ ጊዮርጊስ ቤተክርስቲያን ሐመረ ሕይወት ሰንበት ትምህርት ቤት አስተዳደር መረጃ ስርዓት — Sallo Debre Tsehay Saint George Church Hamere Hiwot Sabbath School MIS',
   keywords: [
@@ -23,8 +21,6 @@ export const metadata: Metadata = {
     'ሰንበት ት/ቤት',
   ],
   icons: {
-    icon: '/logo.png',
-    shortcut: '/logo.png',
     apple: '/icons/apple-touch-icon.png',
   },
   appleWebApp: { capable: true, title: 'Hamere Hiwot', statusBarStyle: 'default' },

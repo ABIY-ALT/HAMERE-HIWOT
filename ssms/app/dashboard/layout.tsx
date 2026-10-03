@@ -3,20 +3,12 @@
 // Provides AuthContext + LangContext for the signed-in user (redirects to /login otherwise)
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { Metadata } from 'next';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { LangProvider } from '@/contexts/LangContext';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import NotificationPrompt from '@/components/pwa/NotificationPrompt';
 import { getCurrentUser } from '@/lib/auth/session';
 
-
-export const metadata: Metadata = {
-  title: {
-    template: '%s | SSMS Dashboard',
-    default: 'Dashboard | SSMS',
-  },
-};
 
 export default async function DashboardRootLayout({
   children,

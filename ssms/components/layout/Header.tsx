@@ -21,6 +21,7 @@ import { useLang } from '@/contexts/LangContext';
 import type { Locale } from '@/types';
 import { signOut } from '@/app/login/actions';
 import { loadNotifications, type Notice } from '@/app/dashboard/actions';
+import { DEMO_NOTICES } from '@/lib/notices';
 import { forgetThisDevice } from '@/components/pwa/NotificationPrompt';
 import { resetEducation } from '@/lib/education/client';
 import { resetFinance } from '@/lib/finance/client';
@@ -33,12 +34,6 @@ interface HeaderProps {
   onToggleMobileSidebar: () => void;
   breadcrumbs?: { label: string; href?: string }[];
 }
-
-const DEMO_NOTICES: Notice[] = [
-  { id: 'demo-1', version: '1', kind: 'alert', href: '/dashboard/finance/requests', at: null, en: '2 payment requests are waiting for your approval', am: '2 የክፍያ ጥያቄዎች የእርስዎን ማጽደቅ ይጠብቃሉ' },
-  { id: 'demo-2', version: '1', kind: 'info', href: '/dashboard/hr/attendance', at: null, en: "Take today's servant attendance", am: 'የዛሬውን የአገልጋዮች ተገኝነት ይያዙ' },
-  { id: 'demo-3', version: '1', kind: 'success', href: '/dashboard/finance/requests', at: null, en: 'Your request FR-2026-0003 was approved', am: 'ጥያቄዎ FR-2026-0003 ጸድቋል' },
-];
 
 // Which notices this device has seen, per user: { id: version }
 const SEEN_KEY = 'ssms_notices_seen';

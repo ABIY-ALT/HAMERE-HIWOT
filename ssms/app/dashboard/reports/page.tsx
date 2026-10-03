@@ -5,6 +5,7 @@ import { Download, Printer, Users, GraduationCap, Wallet, Landmark, AlertTriangl
 import { useLang } from '@/contexts/LangContext';
 import { AdminModeNotice } from '@/components/admin/AdminModeNotice';
 import { ColumnChart } from '@/components/reports/ColumnChart';
+import { compactETB, monthLabel, SERIES_BLUE, SERIES_ORANGE } from '@/lib/charts';
 import { loadReports } from './actions';
 import type { ReportData, ReportPeriod } from '@/lib/reports/types';
 import type { LoadMode } from '@/lib/admin/types';
@@ -12,16 +13,8 @@ import { budgetRemaining, categoryLabel, formatETB } from '@/lib/finance/types';
 import { boldCell, downloadXlsx, headerCell } from '@/lib/export/xlsx';
 import { formatEthiopianDate, todayIso } from '@/lib/utils/ethiopian-calendar';
 
-// Categorical slots 1–2 (validated: CVD ΔE 24.7, contrast ≥ 3:1 on white)
-const BLUE = '#2a78d6';
-const ORANGE = '#eb6834';
-
-const monthLabel = (key: string) => {
-  const d = new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, 1);
-  return `${d.toLocaleString('en', { month: 'short' })} ${key.slice(2, 4)}`;
-};
-const compactETB = (n: number) =>
-  n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${+(n / 1_000).toFixed(1)}K` : String(Math.round(n));
+const BLUE = SERIES_BLUE;
+const ORANGE = SERIES_ORANGE;
 
 export default function ReportsPage() {
   const { t, locale } = useLang();

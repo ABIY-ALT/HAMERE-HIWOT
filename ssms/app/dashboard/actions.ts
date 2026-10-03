@@ -1,34 +1,48 @@
 'use server';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Dashboard home — live counts and short lists for any signed-in user.
-// Sections the user may not see (audit, members) come back empty.
+// Dashboard home — permission-based. Each section is read only when the
+// signed-in user may see it; otherwise it comes back null and is not shown.
+// A section whose tables don't exist yet is also null.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Person } from '@/types';
+import type { Person, PermissionCode } from '@/types';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
 import type { Loaded } from '@/lib/admin/types';
 import { todayIso, weekdayOfIso } from '@/lib/utils/ethiopian-calendar';
 import { addDays } from '@/lib/hr/types';
+import { monthsBetween } from '@/lib/reports/types';
+import type { AssetStatus } from '@/lib/property/types';
+
+export type WeekRate = { week: string; rate: number | null };
 
 export interface DashboardData {
-  totalMembers: number;
-  newMembersThisYear: number;
-  activeStudents: number;
-  activeTeachers: number;
-  departments: number;
-  coordinations: number;
   currentAcademicYear: string | null;
-  pendingApprovals: number;
-  governanceBodies: { id: string; name_en: string; name_am: string; is_active: boolean }[];
-  recentAudit: { id: string; action: string; table_name: string; created_at: string }[];
-  recentMembers: Person[];
-  /** Year-to-date ledger totals; null if the user can't see finance or finance isn't set up. */
-  finance: { income: number; expenses: number } | null;
+  /** Grades waiting for approval this year (GRADE_VIEW / GRADE_APPROVE). */
+  gradesPending: number | null;
   /** Payment requests waiting for this user to approve. */
   financePending: number;
+  units: { departments: number; coordinations: number };
+  members: { total: number; newThisYear: number; byMonth: { month: string; count: number }[]; recent: Person[] } | null;
+  students: { active: number; attendanceByWeek: WeekRate[] } | null;
+  teachers: number | null;
+  servants: { serving: number; attendanceByWeek: WeekRate[] } | null;
+  choir: { members: number; next: { date: string; time: string; title: string; kind: string } | null } | null;
+  finance: {
+    income: number;
+    expenses: number;
+    byMonth: { month: string; income: number; expense: number }[];
+    pending: number;
+    pendingAmount: number;
+    toPay: number;
+    toPayAmount: number;
+  } | null;
+  assets: { total: number; byStatus: Partial<Record<AssetStatus, number>> } | null;
+  programs: { id: string; title_en: string; title_am: string | null; start_date: string; program_type: string }[] | null;
+  governanceBodies: { id: string; name_en: string; name_am: string; is_active: boolean }[] | null;
+  recentAudit: { id: string; action: string; table_name: string; created_at: string }[] | null;
 }
 
 /** Row count with equality filters and an optional created_at lower bound. */
@@ -46,103 +60,208 @@ async function count(
   return n ?? 0;
 }
 
+/** Runs a section; a missing table or other failure hides that section instead of the whole page. */
+async function section<T>(allowed: boolean, load: () => Promise<T>): Promise<T | null> {
+  if (!allowed) return null;
+  try {
+    return await load();
+  } catch (e) {
+    console.error('dashboard section failed:', errorMessage(e));
+    return null;
+  }
+}
+
+/** Sunday that starts the week of a date. */
+const weekOf = (iso: string) => addDays(iso, -(weekdayOfIso(iso) ?? 0));
+
+/** Attendance rate per week: present + late over present + late + absent. */
+function weeklyRates(weeks: string[], marks: { date: string; status: string }[]): WeekRate[] {
+  const tally = new Map(weeks.map((w) => [w, { came: 0, counted: 0 }]));
+  for (const m of marks) {
+    const t = tally.get(weekOf(m.date));
+    if (!t || m.status === 'EXCUSED') continue;
+    t.counted += 1;
+    if (m.status === 'PRESENT' || m.status === 'LATE') t.came += 1;
+  }
+  return weeks.map((week) => {
+    const t = tally.get(week)!;
+    return { week, rate: t.counted ? Math.round((t.came / t.counted) * 100) : null };
+  });
+}
+
 export async function loadDashboard(): Promise<Loaded<DashboardData>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
     const { me, db } = await authorize();
-    const can = (p: string) => me.permissions.includes(p as never);
-    const yearStart = `${new Date().getFullYear()}-01-01`;
+    const can = (...codes: PermissionCode[]) => codes.some((c) => me.permissions.includes(c));
+    const today = todayIso();
+    const yearStart = `${today.slice(0, 4)}-01-01`;
+    const months = monthsBetween(`${Number(today.slice(0, 4)) - 1}-${today.slice(5, 7)}-01`, today).slice(-12);
+    const weeks = Array.from({ length: 12 }, (_, i) => addDays(weekOf(today), -7 * (11 - i)));
 
     const year = (await db.from('academic_years').select('id, name').eq('is_current', true).maybeSingle().then(check)) as {
       id: string; name: string;
     } | null;
 
-    const [persons, students, newPersons, newStudents, departments, coordinations, governance] = await Promise.all([
-      count(db, 'persons'),
-      count(db, 'students'),
-      count(db, 'persons', {}, yearStart),
-      count(db, 'students', {}, yearStart),
+    const [departments, coordinations] = await Promise.all([
       count(db, 'organization_units', { unit_type: 'DEPARTMENT', is_active: true }),
       count(db, 'organization_units', { unit_type: 'COORDINATION', is_active: true }),
-      db.from('governance_bodies').select('id, name_en, name_am, is_active').order('name_en').then(check),
     ]);
 
-    let activeStudents = 0;
-    let activeTeachers = new Set<string>();
-    let pendingApprovals = 0;
-    if (year) {
-      const [enrolled, classRows, pending] = await Promise.all([
-        count(db, 'enrollments', { academic_year_id: year.id, status: 'ACTIVE' }),
-        db.from('classes').select('teacher_person_id').eq('academic_year_id', year.id).then(check),
-        can('GRADE_APPROVE') || can('GRADE_VIEW')
-          ? count(db, 'grades', { academic_year_id: year.id, status: 'PENDING' })
-          : Promise.resolve(0),
+    const [members, students, teachers, servants, choir, finance, financePending, assets, programs, governanceBodies, recentAudit, gradesPending] =
+      await Promise.all([
+        section(can('MEMBER_VIEW', 'AUDIT_VIEW_ALL'), async () => {
+          const [persons, studentRows, newPersons, newStudents, created, latest] = await Promise.all([
+            count(db, 'persons'),
+            selectAll<{ person_id: string }>((a, b) => db.from('students').select('person_id').order('id').range(a, b)),
+            count(db, 'persons', {}, yearStart),
+            count(db, 'students', {}, yearStart),
+            selectAll<{ id: string; created_at: string }>((a, b) =>
+              db.from('persons').select('id, created_at').gte('created_at', `${months[0]}-01`).order('id').range(a, b)
+            ),
+            db.from('persons').select('*').order('created_at', { ascending: false }).limit(25).then(check) as Promise<Person[]>,
+          ]);
+          const studentIds = new Set(studentRows.map((s) => s.person_id));
+          const perMonth = new Map(months.map((m) => [m, 0]));
+          for (const p of created) {
+            if (studentIds.has(p.id)) continue;
+            const key = p.created_at.slice(0, 7);
+            if (perMonth.has(key)) perMonth.set(key, perMonth.get(key)! + 1);
+          }
+          return {
+            total: persons - studentRows.length,
+            newThisYear: Math.max(0, newPersons - newStudents),
+            byMonth: months.map((month) => ({ month, count: perMonth.get(month) ?? 0 })),
+            recent: latest.filter((p) => !studentIds.has(p.id)).slice(0, 5),
+          };
+        }),
+        section(can('STUDENT_VIEW', 'ATTENDANCE_VIEW'), async () => {
+          const [active, sessions] = await Promise.all([
+            year ? count(db, 'enrollments', { academic_year_id: year.id, status: 'ACTIVE' }) : Promise.resolve(0),
+            selectAll<{ session_date: string; records: { status: string }[] }>((a, b) =>
+              db.from('attendance_sessions').select('session_date, records:attendance_records(status)').gte('session_date', weeks[0]).order('id').range(a, b)
+            ),
+          ]);
+          const marks = sessions.flatMap((s) => (s.records ?? []).map((r) => ({ date: s.session_date, status: r.status })));
+          return { active, attendanceByWeek: weeklyRates(weeks, marks) };
+        }),
+        section(can('STUDENT_VIEW', 'HR_VIEW'), async () => {
+          const ids = new Set<string>();
+          if (year) {
+            const rows = (await db.from('classes').select('teacher_person_id').eq('academic_year_id', year.id).then(check)) as { teacher_person_id: string | null }[];
+            for (const r of rows) if (r.teacher_person_id) ids.add(r.teacher_person_id);
+          }
+          // Teachers assigned under HR (migration 016); ignored if HR isn't set up yet
+          const { data: hr } = await db.from('service_assignments').select('person_id').eq('status', 'ACTIVE').eq('role_kind', 'TEACHER');
+          for (const r of (hr ?? []) as { person_id: string }[]) ids.add(r.person_id);
+          return ids.size;
+        }),
+        section(can('HR_VIEW', 'HR_MANAGE'), async () => {
+          const [serving, marks] = await Promise.all([
+            selectAll<{ person_id: string }>((a, b) => db.from('service_assignments').select('person_id').eq('status', 'ACTIVE').order('id').range(a, b)),
+            selectAll<{ service_date: string; status: string }>((a, b) =>
+              db.from('servant_attendance').select('service_date, status').gte('service_date', weeks[0]).order('id').range(a, b)
+            ),
+          ]);
+          return {
+            serving: new Set(serving.map((r) => r.person_id)).size,
+            attendanceByWeek: weeklyRates(weeks, marks.map((m) => ({ date: m.service_date, status: m.status }))),
+          };
+        }),
+        section(can('MEMBER_VIEW', 'CHOIR_MANAGE'), async () => {
+          const [members, next] = await Promise.all([
+            count(db, 'choir_members', { status: 'ACTIVE' }),
+            db.from('choir_sessions')
+              .select('session_date, start_time, title, kind')
+              .eq('status', 'PLANNED')
+              .gte('session_date', today)
+              .order('session_date')
+              .order('start_time')
+              .limit(1)
+              .maybeSingle()
+              .then(check) as Promise<{ session_date: string; start_time: string | null; title: string | null; kind: string } | null>,
+          ]);
+          return {
+            members,
+            next: next ? { date: next.session_date, time: (next.start_time ?? '').slice(0, 5), title: next.title ?? '', kind: next.kind } : null,
+          };
+        }),
+        section(can('FINANCE_VIEW'), async () => {
+          const since = `${months[0]}-01` < yearStart ? `${months[0]}-01` : yearStart;
+          const [txns, requests] = await Promise.all([
+            selectAll<{ txn_type: string; amount: number; txn_date: string }>((a, b) =>
+              db.from('finance_transactions').select('txn_type, amount, txn_date').gte('txn_date', since).order('id').range(a, b)
+            ),
+            db.from('finance_requests').select('status, amount').in('status', ['PENDING', 'APPROVED']).then(check) as Promise<{ status: string; amount: number }[]>,
+          ]);
+          const sum = (rows: { amount: number }[]) => rows.reduce((t, r) => t + Number(r.amount), 0);
+          const ytd = txns.filter((x) => x.txn_date >= yearStart);
+          const perMonth = new Map(months.map((m) => [m, { income: 0, expense: 0 }]));
+          for (const x of txns) {
+            const bucket = perMonth.get(x.txn_date.slice(0, 7));
+            if (!bucket) continue;
+            if (x.txn_type === 'INCOME') bucket.income += Number(x.amount);
+            else bucket.expense += Number(x.amount);
+          }
+          const pending = requests.filter((r) => r.status === 'PENDING');
+          const toPay = requests.filter((r) => r.status === 'APPROVED');
+          return {
+            income: sum(ytd.filter((x) => x.txn_type === 'INCOME')),
+            expenses: sum(ytd.filter((x) => x.txn_type === 'EXPENSE')),
+            byMonth: months.map((month) => ({ month, ...perMonth.get(month)! })),
+            pending: pending.length,
+            pendingAmount: sum(pending),
+            toPay: toPay.length,
+            toPayAmount: sum(toPay),
+          };
+        }),
+        section(can('FINANCE_APPROVE'), () => count(db, 'finance_requests', { status: 'PENDING' })),
+        section(can('ASSET_VIEW'), async () => {
+          const rows = await selectAll<{ status: AssetStatus }>((a, b) => db.from('assets').select('status').order('id').range(a, b));
+          const byStatus: Partial<Record<AssetStatus, number>> = {};
+          for (const r of rows) byStatus[r.status] = (byStatus[r.status] ?? 0) + 1;
+          return { total: rows.length, byStatus };
+        }),
+        section(can('PROGRAM_VIEW', 'PROGRAM_CREATE', 'PROGRAM_MANAGE'), async () =>
+          (await db.from('programs')
+            .select('id, title_en, title_am, start_date, program_type')
+            .neq('status', 'CANCELLED')
+            .gte('start_date', today)
+            .lte('start_date', addDays(today, 30))
+            .order('start_date')
+            .limit(5)
+            .then(check)) as NonNullable<DashboardData['programs']>
+        ),
+        section(can('GOVERNANCE_VIEW', 'GOVERNANCE_MANAGE', 'AUDIT_VIEW_ALL'), async () =>
+          (await db.from('governance_bodies').select('id, name_en, name_am, is_active').order('name_en').then(check)) as NonNullable<DashboardData['governanceBodies']>
+        ),
+        section(can('AUDIT_VIEW_ALL'), async () =>
+          (await db.from('system_audit_logs')
+            .select('id, action, table_name, created_at')
+            .order('created_at', { ascending: false })
+            .limit(5)
+            .then(check)) as NonNullable<DashboardData['recentAudit']>
+        ),
+        section(Boolean(year) && can('GRADE_VIEW', 'GRADE_APPROVE'), () => count(db, 'grades', { academic_year_id: year!.id, status: 'PENDING' })),
       ]);
-      activeStudents = enrolled;
-      activeTeachers = new Set(
-        ((classRows ?? []) as { teacher_person_id: string | null }[]).map((c) => c.teacher_person_id).filter((id): id is string => Boolean(id))
-      );
-      pendingApprovals = pending;
-    }
-    // Teachers assigned under HR (migration 016); ignored if HR isn't set up yet
-    const { data: hrTeachers } = await db.from('service_assignments').select('person_id').eq('status', 'ACTIVE').eq('role_kind', 'TEACHER');
-    for (const r of (hrTeachers ?? []) as { person_id: string }[]) activeTeachers.add(r.person_id);
-
-    // Latest members (persons that are not students)
-    let recentMembers: Person[] = [];
-    if (can('MEMBER_VIEW') || can('AUDIT_VIEW_ALL')) {
-      const latest = (await db.from('persons').select('*').order('created_at', { ascending: false }).limit(25).then(check)) as Person[];
-      const ids = latest.map((p) => p.id);
-      const studentRows = ids.length
-        ? ((await db.from('students').select('person_id').in('person_id', ids).then(check)) as { person_id: string }[])
-        : [];
-      const studentIds = new Set(studentRows.map((s) => s.person_id));
-      recentMembers = latest.filter((p) => !studentIds.has(p.id)).slice(0, 5);
-    }
-
-    const recentAudit = can('AUDIT_VIEW_ALL')
-      ? ((await db.from('system_audit_logs')
-          .select('id, action, table_name, created_at')
-          .order('created_at', { ascending: false })
-          .limit(5)
-          .then(check)) as DashboardData['recentAudit'])
-      : [];
-
-    let finance: DashboardData['finance'] = null;
-    let financePending = 0;
-    try {
-      if (can('FINANCE_VIEW')) {
-        const txns = await selectAll<{ txn_type: string; amount: number }>((a, b) =>
-          db.from('finance_transactions').select('txn_type, amount').gte('txn_date', yearStart).order('id').range(a, b)
-        );
-        finance = {
-          income: txns.filter((x) => x.txn_type === 'INCOME').reduce((s, x) => s + Number(x.amount), 0),
-          expenses: txns.filter((x) => x.txn_type === 'EXPENSE').reduce((s, x) => s + Number(x.amount), 0),
-        };
-      }
-      if (can('FINANCE_APPROVE')) {
-        financePending = await count(db, 'finance_requests', { status: 'PENDING' });
-      }
-    } catch {
-      // Finance tables not created yet (migration 008) — leave the section empty
-    }
 
     return {
       mode: 'live',
       data: {
-        totalMembers: persons - students,
-        newMembersThisYear: Math.max(0, newPersons - newStudents),
-        activeStudents,
-        activeTeachers: activeTeachers.size,
-        departments,
-        coordinations,
         currentAcademicYear: year?.name ?? null,
-        pendingApprovals,
-        governanceBodies: (governance ?? []) as DashboardData['governanceBodies'],
-        recentAudit,
-        recentMembers,
+        gradesPending,
+        financePending: financePending ?? 0,
+        units: { departments, coordinations },
+        members,
+        students,
+        teachers,
+        servants,
+        choir,
         finance,
-        financePending,
+        assets,
+        programs,
+        governanceBodies,
+        recentAudit,
       },
     };
   } catch (e) {
