@@ -17,6 +17,7 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
+        android:manageSpaceActivity="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity"
         android:theme="@style/AppTheme">
 
         <meta-data
@@ -92,6 +93,16 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </service>
+
+        <!-- Required by the library: opening the site adds a "Site settings" shortcut to this
+             screen, and Android's "Clear storage" button opens it -->
+        <activity
+            android:name="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity"
+            android:exported="false">
+            <meta-data
+                android:name="android.support.customtabs.trusted.MANAGE_SPACE_URL"
+                android:value="@string/launch_url" />
+        </activity>
 
         <activity
             android:name="com.google.androidbrowserhelper.trusted.WebViewFallbackActivity"
