@@ -10,6 +10,7 @@ import { headers } from 'next/headers';
 import { createClient } from '@supabase/supabase-js';
 import type { Person } from '@/types';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
+import { env } from '@/lib/env';
 import { createSessionClient } from '@/lib/supabase/server';
 import { authorize, check, errorMessage } from '@/lib/auth/authorize';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
@@ -139,7 +140,7 @@ export async function changeMyPassword(current: string, next: string): Promise<A
     if (!user?.email) throw new Error('Your session has expired. Please sign in again.');
 
     // Verify the current password on a throw-away client, so the browser session is untouched
-    const verifier = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+    const verifier = createClient(env.supabaseUrl()!, env.supabaseAnonKey()!, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
     const { error: wrong } = await verifier.auth.signInWithPassword({ email: user.email, password: current });

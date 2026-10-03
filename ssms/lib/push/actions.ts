@@ -5,13 +5,14 @@
 import { z } from 'zod';
 import { headers } from 'next/headers';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
+import { env } from '@/lib/env';
 import { authorize, errorMessage } from '@/lib/auth/authorize';
 import type { ActionResult } from '@/lib/admin/types';
 
 /** The public key browsers need to subscribe; null when push isn't set up. */
 export async function getPushPublicKey(): Promise<string | null> {
   if (!isSupabaseEnabled()) return null;
-  return process.env.VAPID_PUBLIC_KEY || null;
+  return env.vapidPublicKey() ?? null;
 }
 
 const SubscriptionSchema = z.object({

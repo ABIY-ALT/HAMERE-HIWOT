@@ -6,14 +6,15 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
+import { env } from '@/lib/env';
 
 export async function proxy(request: NextRequest) {
   if (!isSupabaseEnabled()) return NextResponse.next();
 
   let response = NextResponse.next({ request });
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    env.supabaseUrl()!,
+    env.supabaseAnonKey()!,
     {
       cookies: {
         getAll: () => request.cookies.getAll(),

@@ -9,6 +9,7 @@ import { after } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { PermissionCode } from '@/types';
 import { createAdminClient } from '@/lib/supabase/server';
+import { env } from '@/lib/env';
 
 export interface PushMessage {
   title: string;
@@ -20,16 +21,16 @@ export interface PushMessage {
 }
 
 export function pushConfigured(): boolean {
-  return Boolean(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
+  return Boolean(env.vapidPublicKey() && env.vapidPrivateKey());
 }
 
 let configured = false;
 function configure() {
   if (configured) return;
   webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT || 'https://hamere-hiwot.onrender.com',
-    process.env.VAPID_PUBLIC_KEY!,
-    process.env.VAPID_PRIVATE_KEY!
+    env.vapidSubject() || 'https://hamere-hiwot.onrender.com',
+    env.vapidPublicKey()!,
+    env.vapidPrivateKey()!
   );
   configured = true;
 }

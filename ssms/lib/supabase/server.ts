@@ -5,19 +5,15 @@
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { requireEnv } from '@/lib/env';
 
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing environment variable ${name}`);
-  return value;
-}
 
 /** Client bound to the visitor's session cookies. */
 export async function createSessionClient(): Promise<SupabaseClient> {
   const cookieStore = await cookies();
   return createServerClient(
-    requireEnv('NEXT_PUBLIC_SUPABASE_URL'),
-    requireEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
+    requireEnv('supabaseUrl', 'NEXT_PUBLIC_SUPABASE_URL'),
+    requireEnv('supabaseAnonKey', 'NEXT_PUBLIC_SUPABASE_ANON_KEY'),
     {
       cookies: {
         getAll: () => cookieStore.getAll(),
@@ -43,8 +39,8 @@ export async function createSessionClient(): Promise<SupabaseClient> {
  */
 export function createAdminClient(actorId?: string): SupabaseClient {
   return createClient(
-    requireEnv('NEXT_PUBLIC_SUPABASE_URL'),
-    requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
+    requireEnv('supabaseUrl', 'NEXT_PUBLIC_SUPABASE_URL'),
+    requireEnv('supabaseServiceKey', 'SUPABASE_SERVICE_ROLE_KEY'),
     {
       auth: { persistSession: false, autoRefreshToken: false },
       global: actorId ? { headers: { 'x-ssms-actor': actorId } } : undefined,
