@@ -33,6 +33,13 @@ export function GET() {
 
   const body = {
     mode: isSupabaseEnabled() ? 'live (connected to the database)' : 'DEMO (sample data, nothing is saved)',
+    // Which hosting service answered (matches the srv-… id in the Render dashboard address)
+    service: process.env.RENDER_SERVICE_ID ?? 'not on Render',
+    // Names only (never values) of settings that look related — catches typos in setting names
+    similarSettingNames: Object.keys(process.env)
+      .filter((k) => /SUPA|VAPID|MOCK|NEXT_PUBLIC|ANON|SERVICE_ROLE/i.test(k))
+      .map((k) => JSON.stringify(k))
+      .sort(),
     built: {
       NEXT_PUBLIC_SUPABASE_URL: inspect(process.env.NEXT_PUBLIC_SUPABASE_URL, supabaseUrl),
       NEXT_PUBLIC_SUPABASE_ANON_KEY: inspect(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, jwtOr('sb_publishable_')),
