@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "org.hamerehiwot.ssms",
+      "sha256_cert_fingerprints": [
+        "4B:63:61:73:28:85:6B:D1:54:7D:96:87:F0:48:17:3A:18:2A:4B:D0:E8:60:FA:98:16:16:F3:C2:7E:3E:DB:F0"
+      ]
+    }
+  }
+]

@@ -131,6 +131,11 @@ try {
       if (error) problem(`HR query (${name}) failed: ${error.message}`);
     }
   }
+  const { error: pushTable } = await db.from('push_subscriptions').select('id').limit(1);
+  if (pushTable) problem('Push table missing — run migration 017_push.sql');
+  else ok('Migration 017 (push notifications) applied');
+  if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) ok('Push notification keys are set (add the same three VAPID_ lines on Render)');
+  else problem('Push notification keys missing — run: npm run setup-push');
   const { error: auditFn } = await db.rpc('audit_actor');
   if (auditFn) problem('Automatic audit trail missing — run migration 011_audit_trail.sql');
   else {

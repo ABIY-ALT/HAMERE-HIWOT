@@ -11,6 +11,7 @@ import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { notifyLater } from '@/lib/push/send';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import {
   letterGrade,
@@ -622,6 +623,10 @@ export async function saveGrade(input: z.input<typeof GradeSchema>): Promise<Act
         .insert({ student_id: g.student_id, subject_id: g.subject_id, academic_year_id: year.id, term: g.term, ...scores })
         .then(check);
     }
+    notifyLater(
+      { permissions: ['GRADE_APPROVE'], except: me.systemUser.id },
+      { title: 'ውጤቶች ማጽደቅ ይጠብቃሉ · Grades to approve', body: 'New grades were entered and are waiting for your approval.', url: '/dashboard/education/grades', tag: 'grades-to-approve' }
+    );
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };

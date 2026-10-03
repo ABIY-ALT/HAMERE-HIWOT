@@ -17,6 +17,8 @@ import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize'
 import type { SessionUser } from '@/lib/auth/session';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import { computeBudget, loadYears } from '@/lib/finance/budget';
+import { notifyLater } from '@/lib/push/send';
+import { formatETB } from '@/lib/finance/types';
 import type {
   BudgetLine,
   BudgetYear,
@@ -181,6 +183,10 @@ export async function submitRequest(
       .select('request_no')
       .single()
       .then(check)) as { request_no: string };
+    notifyLater(
+      { permissions: ['FINANCE_APPROVE'], except: me.systemUser.id },
+      { title: 'አዲስ የክፍያ ጥያቄ · New payment request', body: `${row.request_no} — ${r.title} — ${formatETB(r.amount)}`, url: '/dashboard/finance/requests', tag: 'finance-to-approve' }
+    );
     return { ok: true, request_no: row.request_no };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
@@ -209,6 +215,10 @@ export async function resubmitRequest(id: string, input: RequestInput): Promise<
       .eq('id', id)
       .eq('status', 'RETURNED')
       .then(check);
+    notifyLater(
+      { permissions: ['FINANCE_APPROVE'], except: me.systemUser.id },
+      { title: 'የተስተካከለ ጥያቄ · Request resubmitted', body: `${r.title} — ${formatETB(r.amount)}`, url: '/dashboard/finance/requests', tag: 'finance-to-approve' }
+    );
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
@@ -241,8 +251,8 @@ export async function reviewRequest(
     if (decision !== 'APPROVED' && cleanNote.length < 3) {
       throw new Error('Write a note explaining why the request is rejected or returned');
     }
-    const row = (await db.from('finance_requests').select('status, requested_by').eq('id', id).single().then(check)) as {
-      status: RequestStatus; requested_by: string;
+    const row = (await db.from('finance_requests').select('status, requested_by, request_no, title, amount').eq('id', id).single().then(check)) as {
+      status: RequestStatus; requested_by: string; request_no: string; title: string; amount: number;
     };
     if (row.requested_by === me.systemUser.id) throw new Error('You cannot review your own request — another approver must do it');
     if (row.status !== 'PENDING') throw new Error('This request has already been reviewed');
@@ -254,6 +264,21 @@ export async function reviewRequest(
       .select('id')
       .then(check)) as { id: string }[];
     if (!updated.length) throw new Error('This request has already been reviewed');
+    const outcome = {
+      APPROVED: 'ጸድቋል · was approved',
+      REJECTED: 'አልጸደቀም · was not approved',
+      RETURNED: 'ለማስተካከያ ተመልሷል · was returned for changes',
+    }[decision];
+    notifyLater(
+      { users: [row.requested_by] },
+      { title: `${row.request_no} ${outcome}`, body: cleanNote ? `${row.title} — ${cleanNote}` : row.title, url: '/dashboard/finance/requests', tag: `request-${id}` }
+    );
+    if (decision === 'APPROVED') {
+      notifyLater(
+        { permissions: ['FINANCE_CREATE'], except: me.systemUser.id },
+        { title: 'ለክፍያ የጸደቀ · Approved, ready to pay', body: `${row.request_no} — ${row.title} — ${formatETB(Number(row.amount))}`, url: '/dashboard/finance/requests', tag: 'finance-to-pay' }
+      );
+    }
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
@@ -272,11 +297,11 @@ export async function markRequestPaid(id: string, input: z.input<typeof PaySchem
     const { me, db } = await authorize('FINANCE_CREATE');
     const p = PaySchema.parse(input);
     const req = (await db.from('finance_requests')
-      .select('id, request_no, title, category, amount, organization_unit_id, status')
+      .select('id, request_no, title, category, amount, organization_unit_id, status, requested_by')
       .eq('id', id)
       .single()
       .then(check)) as {
-      id: string; request_no: string; title: string; category: string; amount: number; organization_unit_id: string; status: RequestStatus;
+      id: string; request_no: string; title: string; category: string; amount: number; organization_unit_id: string; status: RequestStatus; requested_by: string;
     };
     if (req.status !== 'APPROVED') throw new Error('Only an approved request can be paid');
 
@@ -307,6 +332,10 @@ export async function markRequestPaid(id: string, input: z.input<typeof PaySchem
         .eq('id', id);
       throw new Error(error.message);
     }
+    notifyLater(
+      { users: [req.requested_by], except: me.systemUser.id },
+      { title: `${req.request_no} ተከፍሏል · has been paid`, body: `${req.title} — ${formatETB(Number(req.amount))}`, url: '/dashboard/finance/requests', tag: `request-${id}` }
+    );
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };

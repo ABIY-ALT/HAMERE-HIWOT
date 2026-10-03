@@ -21,6 +21,7 @@ import { useLang } from '@/contexts/LangContext';
 import type { Locale } from '@/types';
 import { signOut } from '@/app/login/actions';
 import { loadNotifications, type Notice } from '@/app/dashboard/actions';
+import { forgetThisDevice } from '@/components/pwa/NotificationPrompt';
 import { resetEducation } from '@/lib/education/client';
 import { resetFinance } from '@/lib/finance/client';
 import { resetProperty } from '@/lib/property/client';
@@ -120,6 +121,7 @@ export default function Header({
   };
 
   const handleLogout = async () => {
+    await forgetThisDevice();
     await signOut();
     resetEducation();
     resetFinance();

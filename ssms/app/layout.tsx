@@ -1,5 +1,10 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import PwaRegister from '@/components/pwa/PwaRegister';
+
+export const viewport: Viewport = {
+  themeColor: '#1e2770',
+};
 
 export const metadata: Metadata = {
   title: {
@@ -20,8 +25,9 @@ export const metadata: Metadata = {
   icons: {
     icon: '/logo.png',
     shortcut: '/logo.png',
-    apple: '/logo.png',
+    apple: '/icons/apple-touch-icon.png',
   },
+  appleWebApp: { capable: true, title: 'Hamere Hiwot', statusBarStyle: 'default' },
 };
 
 export default function RootLayout({
@@ -37,6 +43,7 @@ export default function RootLayout({
       </head>
       <body className="antialiased">
         {children}
+        <PwaRegister />
       </body>
     </html>
   );

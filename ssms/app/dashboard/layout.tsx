@@ -7,6 +7,7 @@ import type { Metadata } from 'next';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { LangProvider } from '@/contexts/LangContext';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import NotificationPrompt from '@/components/pwa/NotificationPrompt';
 import { getCurrentUser } from '@/lib/auth/session';
 
 
@@ -35,6 +36,7 @@ export default async function DashboardRootLayout({
         <DashboardLayout>
           {children}
         </DashboardLayout>
+        <NotificationPrompt />
       </AuthProvider>
     </LangProvider>
   );

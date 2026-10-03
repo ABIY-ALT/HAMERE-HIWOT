@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Hamere Hiwot</string>
+    <string name="launch_url" translatable="false">https://hamere-hiwot.onrender.com/dashboard</string>
+    <string name="provider_authority" translatable="false">org.hamerehiwot.ssms.fileprovider</string>
+    <string name="asset_statements" translatable="false">
+        [{ \"relation\": [\"delegate_permission/common.handle_all_urls\"],
+           \"target\": { \"namespace\": \"web\", \"site\": \"https://hamere-hiwot.onrender.com\" } }]
+    </string>
+</resources>
