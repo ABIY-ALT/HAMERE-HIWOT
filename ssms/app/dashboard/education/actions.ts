@@ -15,7 +15,12 @@ import { notifyLater } from '@/lib/push/send';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import {
   letterGrade,
+  MAX_PARTS,
+  parseScheme,
+  parseScores,
+  schemeTotal,
   type AcademicYear,
+  type AssessmentPart,
   type AttendanceSession,
   type AttendanceStatus,
   type EducationData,
@@ -111,6 +116,7 @@ export async function loadEducationData(): Promise<Loaded<EducationData>> {
       is_current: Boolean(y.is_current),
       status: y.status as AcademicYear['status'],
       students_enrolled: perYear.get(y.id) ?? 0,
+      scheme: parseScheme(y.assessment_scheme),
     }));
 
     const classes: SchoolClass[] = classRows.map((c) => ({
@@ -187,9 +193,10 @@ export async function loadEducationData(): Promise<Loaded<EducationData>> {
 
     let grades: GradeRow[] = [];
     if (can('GRADE_VIEW') && active) {
+      // * includes scores once migration 018 has run; before that the two old parts are used
       const gradeRows = await selectAll<Row>((a, b) =>
         db.from('grades')
-          .select('id, student_id, subject_id, term, continuous_score, final_score, total_score, status, approver:system_users!grades_approved_by_fkey(person:persons!system_users_person_id_fkey(full_name_en))')
+          .select('*, approver:system_users!grades_approved_by_fkey(person:persons!system_users_person_id_fkey(full_name_en))')
           .eq('academic_year_id', active.id)
           .order('id')
           .range(a, b)
@@ -209,8 +216,7 @@ export async function loadEducationData(): Promise<Loaded<EducationData>> {
           subject: sub?.name_en ?? '—',
           subject_am: sub?.name_am ?? '—',
           term: g.term as number,
-          continuous: Number(g.continuous_score),
-          final: Number(g.final_score),
+          scores: parseScores(g.scores, { continuous: g.continuous_score, final: g.final_score }),
           total,
           grade: letterGrade(total),
           status: (['APPROVED', 'REJECTED'].includes(g.status as string) ? g.status : 'PENDING') as GradeStatus,
@@ -259,6 +265,8 @@ export async function createAcademicYear(input: z.input<typeof YearSchema>): Pro
     const y = YearSchema.parse(input);
     const { count } = await db.from('academic_years').select('id', { count: 'exact', head: true }).eq('is_current', true);
     const first = (count ?? 0) === 0; // the first year becomes current automatically
+    // A new year starts with the current year's weights (no column before migration 018 → database default)
+    const { data: current } = await db.from('academic_years').select('assessment_scheme').eq('is_current', true).maybeSingle();
     const { error } = await db.from('academic_years').insert({
       name: y.name,
       name_am: y.name_am || y.name,
@@ -266,6 +274,7 @@ export async function createAcademicYear(input: z.input<typeof YearSchema>): Pro
       end_date: y.end_date,
       is_current: first,
       status: first ? 'ACTIVE' : 'PLANNED',
+      ...(current?.assessment_scheme ? { assessment_scheme: current.assessment_scheme } : {}),
     });
     if (error) throw duplicate(error, `Academic year ${y.name} already exists`);
     return { ok: true };
@@ -580,19 +589,36 @@ export async function saveAttendance(input: z.input<typeof AttendanceSchema>): P
 
 // ── Grades ───────────────────────────────────────────────────────────────────
 
+const MIGRATION_018 = 'Run database migration 018 first (configurable assessment weights)';
+
 const GradeSchema = z.object({
   student_id: z.string().min(1, 'Choose a student'),
   subject_id: z.string().min(1, 'Choose a subject'),
   term: z.coerce.number().int().min(1).max(4),
-  continuous: z.coerce.number().min(0).max(30, 'Continuous assessment is out of 30'),
-  final: z.coerce.number().min(0).max(70, 'Final exam is out of 70'),
+  /** Score per part of the year's scheme, by part key. */
+  scores: z.record(z.string(), z.coerce.number().min(0, 'Scores cannot be negative')),
 });
+
+/** Checks every part of the scheme was given and is within its marks. */
+function scoreParts(scheme: AssessmentPart[], given: Record<string, number>) {
+  return scheme.map((p) => {
+    const score = given[p.key];
+    if (score === undefined || Number.isNaN(score)) throw new Error(`Enter the score for ${p.name_en}`);
+    if (score > p.weight) throw new Error(`${p.name_en} is out of ${p.weight}`);
+    return { key: p.key, max: p.weight, score: Math.round(score * 100) / 100 };
+  });
+}
 
 export async function saveGrade(input: z.input<typeof GradeSchema>): Promise<ActionResult> {
   try {
     const { me, db } = await authorize('GRADE_CREATE', 'GRADE_UPDATE');
     const g = GradeSchema.parse(input);
-    const year = await currentYear(db);
+    const yearRow = await db.from('academic_years').select('id, assessment_scheme').eq('is_current', true).maybeSingle();
+    if (yearRow.error?.message.includes('assessment_scheme')) throw new Error(MIGRATION_018);
+    const year = check(yearRow) as { id: string; assessment_scheme: unknown } | null;
+    if (!year) throw new Error('Set a current academic year first (Education → Academic Years)');
+    const parts = scoreParts(parseScheme(year.assessment_scheme), g.scores);
+    const total = Math.round(parts.reduce((sum, p) => sum + p.score, 0) * 100) / 100;
 
     const existing = (await db.from('grades')
       .select('id')
@@ -604,29 +630,69 @@ export async function saveGrade(input: z.input<typeof GradeSchema>): Promise<Act
       .then(check)) as { id: string } | null;
 
     const scores = {
-      continuous_score: g.continuous,
-      final_score: g.final,
+      scores: parts,
+      total_score: total,
       status: 'PENDING',
       entered_by: me.systemUser.id,
       approved_by: null,
       approved_at: null,
     };
 
+    let saved: { error: { message: string } | null };
     if (existing) {
       if (!me.permissions.includes('GRADE_UPDATE')) {
         throw new Error('A grade already exists for this student, subject and term');
       }
-      await db.from('grades').update(scores).eq('id', existing.id).then(check);
+      saved = await db.from('grades').update(scores).eq('id', existing.id);
     } else {
       if (!me.permissions.includes('GRADE_CREATE')) throw new Error('You do not have permission to enter grades');
-      await db.from('grades')
-        .insert({ student_id: g.student_id, subject_id: g.subject_id, academic_year_id: year.id, term: g.term, ...scores })
-        .then(check);
+      saved = await db.from('grades')
+        .insert({ student_id: g.student_id, subject_id: g.subject_id, academic_year_id: year.id, term: g.term, ...scores });
+    }
+    if (saved.error) {
+      throw new Error(/scores|total_score/.test(saved.error.message) ? MIGRATION_018 : saved.error.message);
     }
     notifyLater(
       { permissions: ['GRADE_APPROVE'], except: me.systemUser.id },
       { title: 'ውጤቶች ማጽደቅ ይጠብቃሉ · Grades to approve', body: 'New grades were entered and are waiting for your approval.', url: '/dashboard/education/grades', tag: 'grades-to-approve' }
     );
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) };
+  }
+}
+
+// ── Assessment scheme (weights) ──────────────────────────────────────────────
+
+const SchemeSchema = z
+  .array(
+    z.object({
+      key: z.string().regex(/^[a-z][a-z0-9_]{0,40}$/, 'Invalid part key'),
+      name_en: z.string().trim().min(2, 'Name every part in English'),
+      name_am: z.string().trim(),
+      weight: z.coerce.number().positive('Every part needs marks above 0').max(100),
+      source: z.literal('attendance').optional(),
+    })
+  )
+  .min(1, 'Add at least one part')
+  .max(MAX_PARTS, `At most ${MAX_PARTS} parts`)
+  .refine((parts) => new Set(parts.map((p) => p.key)).size === parts.length, 'Two parts have the same key')
+  .refine((parts) => parts.filter((p) => p.source === 'attendance').length <= 1, 'Only one part can come from attendance')
+  .refine((parts) => schemeTotal(parts) === 100, 'The parts must add up to exactly 100');
+
+/** Set how grades are made up in an academic year. Grades already entered keep their scores. */
+export async function saveAssessmentScheme(yearId: string, input: z.input<typeof SchemeSchema>): Promise<ActionResult> {
+  try {
+    const { db } = await authorize('GRADE_APPROVE');
+    const parts = SchemeSchema.parse(input).map((p) => ({
+      key: p.key,
+      name_en: p.name_en,
+      name_am: p.name_am || p.name_en,
+      weight: Math.round(p.weight * 100) / 100,
+      ...(p.source ? { source: p.source } : {}),
+    }));
+    const { error } = await db.from('academic_years').update({ assessment_scheme: parts }).eq('id', yearId);
+    if (error) throw new Error(error.message.includes('assessment_scheme') ? MIGRATION_018 : error.message);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };

@@ -56,6 +56,25 @@ export async function usersWithPermission(db: SupabaseClient, ...codes: Permissi
   ];
 }
 
+/** Active system users assigned to any of the units who also hold the permission. */
+export async function usersInUnits(db: SupabaseClient, unitIds: string[], holding: PermissionCode): Promise<string[]> {
+  if (unitIds.length === 0) return [];
+  const allowed = new Set(await usersWithPermission(db, holding));
+  const { data: rows } = await db
+    .from('user_unit_assignments')
+    .select('system_user_id, expires_at')
+    .eq('is_active', true)
+    .in('organization_unit_id', unitIds);
+  const now = Date.now();
+  return [
+    ...new Set(
+      ((rows ?? []) as { system_user_id: string; expires_at: string | null }[])
+        .filter((r) => (!r.expires_at || Date.parse(r.expires_at) > now) && allowed.has(r.system_user_id))
+        .map((r) => r.system_user_id)
+    ),
+  ];
+}
+
 /** Sends to all devices of the given users; forgets devices the push service has dropped. */
 export async function pushToUsers(db: SupabaseClient, userIds: string[], message: PushMessage): Promise<void> {
   if (!pushConfigured() || userIds.length === 0) return;
@@ -79,15 +98,25 @@ export async function pushToUsers(db: SupabaseClient, userIds: string[], message
 
 /**
  * Notify after the response has been sent, so saving never waits on (or fails
- * because of) the push services. `to` lists user ids and/or permission codes.
+ * because of) the push services. `to` lists user ids, permission codes and/or
+ * units (their members holding a permission).
  */
-export function notifyLater(to: { users?: (string | null | undefined)[]; permissions?: PermissionCode[]; except?: string }, message: PushMessage): void {
+export function notifyLater(
+  to: {
+    users?: (string | null | undefined)[];
+    permissions?: PermissionCode[];
+    units?: { ids: string[]; holding: PermissionCode };
+    except?: string;
+  },
+  message: PushMessage
+): void {
   if (!pushConfigured()) return;
   after(async () => {
     try {
       const db = createAdminClient();
       const ids = new Set((to.users ?? []).filter((id): id is string => Boolean(id)));
       if (to.permissions?.length) for (const id of await usersWithPermission(db, ...to.permissions)) ids.add(id);
+      if (to.units) for (const id of await usersInUnits(db, to.units.ids, to.units.holding)) ids.add(id);
       if (to.except) ids.delete(to.except);
       await pushToUsers(db, [...ids], message);
     } catch (e) {

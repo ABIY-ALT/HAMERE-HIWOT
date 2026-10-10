@@ -131,6 +131,22 @@ try {
       if (error) problem(`HR query (${name}) failed: ${error.message}`);
     }
   }
+  const { error: weightsColumns } = await db.from('grades').select('scores').limit(1);
+  if (weightsColumns) problem('Assessment weights missing — run migration 018_assessment_weights.sql');
+  else ok('Migration 018 (assessment weights) applied');
+  const { error: tasksTable } = await db.from('tasks')
+    .select('id, unit:organization_units!tasks_unit_id_fkey(name_en), updates:task_updates(id)')
+    .limit(1);
+  if (tasksTable) problem(`Tasks tables missing or incomplete — run migration 019_tasks.sql (${tasksTable.message})`);
+  else ok('Migration 019 (tasks) applied');
+  const [{ error: seriesTable }, { error: filesTable }, { error: filesBucket }] = await Promise.all([
+    db.from('task_series').select('id, unit:organization_units!task_series_unit_id_fkey(name_en)').limit(1),
+    db.from('task_files').select('id, task:tasks!inner(unit_id)').limit(1),
+    db.storage.getBucket('task-files'),
+  ]);
+  if (seriesTable || filesTable) problem(`Repeating tasks / task files missing — run migration 020_task_repeat_and_files.sql (${(seriesTable ?? filesTable).message})`);
+  else if (filesBucket) problem(`Storage bucket "task-files" missing — re-run migration 020 (${filesBucket.message})`);
+  else ok('Migration 020 (repeating tasks and files) applied');
   const { error: pushTable } = await db.from('push_subscriptions').select('id').limit(1);
   if (pushTable) problem('Push table missing — run migration 017_push.sql');
   else ok('Migration 017 (push notifications) applied');

@@ -11,13 +11,15 @@ import {
 } from '@/lib/mock/modules';
 import { mergeStudents, parseStudents, readRawStudents } from '@/lib/students/store';
 import { parseSessions, readRawSessions } from '@/lib/attendance/store';
-import type {
-  AcademicYear,
-  EducationData,
-  GradeRow,
-  GradeStatus,
-  SchoolClass,
-  Subject,
+import {
+  DEFAULT_SCHEME,
+  parseScores,
+  type AcademicYear,
+  type EducationData,
+  type GradeRow,
+  type GradeStatus,
+  type SchoolClass,
+  type Subject,
 } from './types';
 
 function demoYears(): AcademicYear[] {
@@ -30,6 +32,7 @@ function demoYears(): AcademicYear[] {
     is_current: y.is_current,
     status: y.status as AcademicYear['status'],
     students_enrolled: y.students_enrolled,
+    scheme: DEFAULT_SCHEME,
   }));
 }
 
@@ -83,8 +86,7 @@ export function demoEducation(): EducationData {
       subject: g.subject,
       subject_am: subject?.name_am ?? g.subject,
       term: 1,
-      continuous: g.continuous,
-      final: g.final,
+      scores: parseScores(null, g),
       total: g.total,
       grade: g.grade,
       status: g.status as GradeStatus,

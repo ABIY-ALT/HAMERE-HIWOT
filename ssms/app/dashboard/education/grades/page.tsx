@@ -1,14 +1,24 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Plus, Search, AlertCircle, Check, X } from 'lucide-react';
+import { Plus, Search, AlertCircle, Check, X, SlidersHorizontal, CalendarCheck } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Modal } from '@/components/ui/Modal';
 import { AdminToast } from '@/components/admin/AdminModeNotice';
 import { EducationNotice } from '@/components/education/EducationNotice';
+import { AssessmentSchemeModal } from '@/components/education/AssessmentSchemeModal';
 import { reviewGrade, saveGrade, useEducation } from '@/lib/education/client';
-import { letterGrade, PASS_MARK, type GradeRow } from '@/lib/education/types';
+import {
+  activeScheme,
+  attendanceMarks,
+  describeScheme,
+  followsScheme,
+  letterGrade,
+  partScore,
+  PASS_MARK,
+  type GradeRow,
+} from '@/lib/education/types';
 
 type Toast = { kind: 'success' | 'error'; text: string } | null;
 
@@ -21,10 +31,14 @@ const STATUS_BADGE: Record<GradeRow['status'], string> = {
 export default function GradesPage() {
   const { t, locale } = useLang();
   const { can } = useAuth();
-  const { grades, students, subjects, classes, mode } = useEducation();
+  const edu = useEducation();
+  const { grades, students, subjects, classes, sessions, years, activeYearId, mode } = edu;
+  const scheme = activeScheme(edu);
+  const year = years.find((y) => y.id === activeYearId);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | GradeRow['status']>('ALL');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isSchemeOpen, setIsSchemeOpen] = useState(false);
   const [selectedGrade, setSelectedGrade] = useState<GradeRow | null>(null);
   const [toast, setToast] = useState<Toast>(null);
   const [busy, setBusy] = useState(false);
@@ -35,11 +49,19 @@ export default function GradesPage() {
   const [studentId, setStudentId] = useState('');
   const [subjectId, setSubjectId] = useState('');
   const [term, setTerm] = useState('1');
-  const [continuous, setContinuous] = useState('');
-  const [finalScore, setFinalScore] = useState('');
+  const [scoreInputs, setScoreInputs] = useState<Record<string, string>>({});
 
   const canEnter = can('GRADE_CREATE') || can('GRADE_UPDATE');
   const canApprove = can('GRADE_APPROVE');
+
+  const partName = (key: string) => {
+    const p = scheme.find((x) => x.key === key);
+    return p ? (locale === 'am' ? p.name_am : p.name_en) : key.replace(/_/g, ' ');
+  };
+  const attendancePart = scheme.find((p) => p.source === 'attendance');
+  const attendanceFor = (id: string) => (attendancePart && id ? attendanceMarks(sessions, id, attendancePart.weight) : null);
+  const suggestion = attendanceFor(studentId);
+  const staleCount = grades.filter((g) => !followsScheme(g, scheme)).length;
 
   const statusLabel = (s: GradeRow['status']) =>
     s === 'APPROVED' ? t('Approved', 'ጸድቋል') : s === 'REJECTED' ? t('Rejected', 'ተመልሷል') : t('Pending', 'በመጠባበቅ ላይ');
@@ -60,8 +82,24 @@ export default function GradesPage() {
     (g) => g.student_id === studentId && g.subject_id === subjectId && g.term === Number(term)
   );
 
-  const contVal = Math.min(30, Math.max(0, Number(continuous) || 0));
-  const finalVal = Math.min(70, Math.max(0, Number(finalScore) || 0));
+  const values = Object.fromEntries(
+    scheme.map((p) => [p.key, Math.min(p.weight, Math.max(0, Number(scoreInputs[p.key]) || 0))])
+  );
+  const formTotal = Math.round(scheme.reduce((sum, p) => sum + values[p.key], 0) * 100) / 100;
+
+  /** Empty inputs, with the attendance part filled from the student's roll calls. */
+  const freshInputs = (id: string): Record<string, string> => {
+    const a = attendanceFor(id);
+    return attendancePart && a ? { [attendancePart.key]: String(a.marks) } : {};
+  };
+
+  const chooseStudent = (id: string) => {
+    setStudentId(id);
+    if (attendancePart) {
+      const a = attendanceFor(id);
+      setScoreInputs((prev) => ({ ...prev, [attendancePart.key]: a ? String(a.marks) : '' }));
+    }
+  };
 
   const openEntry = (prefill?: GradeRow) => {
     setFormError('');
@@ -71,11 +109,14 @@ export default function GradesPage() {
       setStudentId(prefill.student_id);
       setSubjectId(prefill.subject_id);
       setTerm(String(prefill.term));
-      setContinuous(String(prefill.continuous));
-      setFinalScore(String(prefill.final));
+      // Parts entered under the same weights carry over; anything else is entered again
+      const kept = scheme.flatMap((p) => {
+        const s = partScore(prefill, p);
+        return s && s.max === p.weight ? [[p.key, String(s.score)]] : [];
+      });
+      setScoreInputs({ ...freshInputs(prefill.student_id), ...Object.fromEntries(kept) });
     } else {
-      setContinuous('');
-      setFinalScore('');
+      setScoreInputs(freshInputs(studentId));
     }
     setSelectedGrade(null);
     setIsAddModalOpen(true);
@@ -93,8 +134,7 @@ export default function GradesPage() {
       student_id: studentId,
       subject_id: subjectId,
       term: Number(term),
-      continuous: contVal,
-      final: finalVal,
+      scores: values,
     });
     setBusy(false);
     if (!res.ok) {
@@ -107,8 +147,7 @@ export default function GradesPage() {
       t(`Grade saved for ${student?.name_en ?? ''} — waiting for approval`, `ለ${student?.name_am ?? ''} ውጤት ተመዝግቧል — ማጽደቅ ይጠብቃል`)
     );
     setStudentId('');
-    setContinuous('');
-    setFinalScore('');
+    setScoreInputs({});
   };
 
   const handleReview = async (g: GradeRow, decision: 'APPROVED' | 'REJECTED') => {
@@ -151,25 +190,43 @@ export default function GradesPage() {
             {t('Examinations & Grading', 'ፈተናዎችና ውጤቶች')}
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            {t(
-              'Assessment records: continuous assessment (30%), final exam (70%), and letter grades',
-              'የትምህርት ምዘና: ተከታታይ ምዘና (30%)፣ የማጠቃለያ ፈተና (70%) እና አጠቃላይ ውጤት'
-            )}
+            {t('Marks out of 100', 'ከ100 ነጥብ')}: {describeScheme(scheme, locale)}
           </p>
         </div>
-        {canEnter && (
-          <button
-            onClick={() => openEntry()}
-            disabled={mode === 'loading' || mode === 'error' || students.length === 0 || subjects.length === 0}
-            className="btn btn-primary self-start sm:self-auto inline-flex items-center gap-2 disabled:opacity-50"
-          >
-            <Plus size={16} />
-            {t('Enter Student Grades', 'ውጤት አስገባ')}
-          </button>
-        )}
+        <div className="flex gap-2 self-start sm:self-auto">
+          {canApprove && (
+            <button
+              onClick={() => setIsSchemeOpen(true)}
+              disabled={!year || mode === 'loading' || mode === 'error'}
+              className="btn btn-secondary inline-flex items-center gap-2 disabled:opacity-50"
+            >
+              <SlidersHorizontal size={16} />
+              {t('Weights', 'የምዘና ክፍፍል')}
+            </button>
+          )}
+          {canEnter && (
+            <button
+              onClick={() => openEntry()}
+              disabled={mode === 'loading' || mode === 'error' || students.length === 0 || subjects.length === 0}
+              className="btn btn-primary inline-flex items-center gap-2 disabled:opacity-50"
+            >
+              <Plus size={16} />
+              {t('Enter Student Grades', 'ውጤት አስገባ')}
+            </button>
+          )}
+        </div>
       </div>
 
       <EducationNotice needs="year" />
+
+      {staleCount > 0 && (
+        <p className="p-3 rounded-xl border border-amber-200 bg-amber-50 text-sm text-amber-800">
+          {t(
+            `${staleCount} grade(s) were entered with earlier weights. They keep their totals; open one and choose “Edit scores” to enter it with the current weights.`,
+            `${staleCount} ውጤት(ዎች) በቀድሞው ክፍፍል ገብተዋል። ድምራቸው አይቀየርም፤ በአዲሱ ክፍፍል ለማስገባት ውጤቱን ከፍተው “ነጥብ አርትዕ” ይጫኑ።`
+          )}
+        </p>
+      )}
 
       {mode === 'live' && subjects.length === 0 && (
         <p className="p-3 rounded-xl border border-blue-200 bg-blue-50 text-sm text-blue-800">
@@ -237,8 +294,11 @@ export default function GradesPage() {
                 <th>{t('Class', 'ክፍል')}</th>
                 <th>{t('Subject', 'ትምህርት')}</th>
                 <th>{t('Term', 'ሩብ')}</th>
-                <th>{t('Continuous (30%)', 'ተከታታይ (30%)')}</th>
-                <th>{t('Final (70%)', 'የመጨረሻ (70%)')}</th>
+                {scheme.map((p) => (
+                  <th key={p.key}>
+                    {locale === 'am' ? p.name_am : p.name_en} ({p.weight})
+                  </th>
+                ))}
                 <th>{t('Total (100%)', 'ድምር (100%)')}</th>
                 <th>{t('Grade', 'ደረጃ')}</th>
                 <th>{t('Status', 'ሁኔታ')}</th>
@@ -255,8 +315,25 @@ export default function GradesPage() {
                   <td className="text-slate-600 text-xs">{g.class}</td>
                   <td className="text-slate-700 text-xs font-medium">{locale === 'am' ? g.subject_am : g.subject}</td>
                   <td className="text-xs text-slate-600">{g.term}</td>
-                  <td className="font-mono text-xs text-slate-700">{g.continuous}/30</td>
-                  <td className="font-mono text-xs text-slate-700">{g.final}/70</td>
+                  {scheme.map((p) => {
+                    const s = partScore(g, p);
+                    return (
+                      <td key={p.key} className="font-mono text-xs text-slate-700">
+                        {!s ? (
+                          <span className="text-slate-300">—</span>
+                        ) : s.max === p.weight ? (
+                          `${s.score}/${s.max}`
+                        ) : (
+                          <span
+                            className="text-amber-700"
+                            title={t(`Entered when this part carried ${s.max} marks`, `ይህ ምዘና ${s.max} ነጥብ በነበረበት ጊዜ የገባ`)}
+                          >
+                            {s.score}/{s.max}
+                          </span>
+                        )}
+                      </td>
+                    );
+                  })}
                   <td>
                     <span className="font-bold text-xs text-slate-900 font-mono">{g.total}%</span>
                   </td>
@@ -278,7 +355,7 @@ export default function GradesPage() {
               ))}
               {mode !== 'loading' && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="text-center text-sm text-slate-400 py-8">
+                  <td colSpan={8 + scheme.length} className="text-center text-sm text-slate-400 py-8">
                     {t('No grades recorded yet.', 'እስካሁን የተመዘገበ ውጤት የለም።')}
                   </td>
                 </tr>
@@ -293,7 +370,7 @@ export default function GradesPage() {
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
         title={t('Enter Student Examination Grade', 'የተማሪ ውጤት አስገባ')}
-        subtitle={t('Input continuous assessment and final examination scores', 'የተከታታይ ምዘና እና የመጨረሻ ፈተና ነጥብ ያስገቡ')}
+        subtitle={t('Enter the score of each part, out of its marks', 'የእያንዳንዱን ምዘና ነጥብ ያስገቡ')}
       >
         <form onSubmit={handleSave} className="space-y-4">
           {formError && (
@@ -325,7 +402,7 @@ export default function GradesPage() {
               <select
                 required
                 value={studentId}
-                onChange={(e) => setStudentId(e.target.value)}
+                onChange={(e) => chooseStudent(e.target.value)}
                 className="form-input text-sm"
               >
                 <option value="">{t('— Choose a student —', '— ተማሪ ይምረጡ —')}</option>
@@ -368,42 +445,40 @@ export default function GradesPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-4 pt-2">
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Continuous Assessment (Max 30%)', 'ተከታታይ ምዘና (30%)')} *
-              </label>
-              <input
-                type="number"
-                min="0"
-                max="30"
-                step="0.5"
-                required
-                value={continuous}
-                onChange={(e) => setContinuous(e.target.value)}
-                className="form-input text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {t('Final Exam (Max 70%)', 'የመጨረሻ ፈተና (70%)')} *
-              </label>
-              <input
-                type="number"
-                min="0"
-                max="70"
-                step="0.5"
-                required
-                value={finalScore}
-                onChange={(e) => setFinalScore(e.target.value)}
-                className="form-input text-sm"
-              />
-            </div>
+            {scheme.map((p) => (
+              <div key={p.key}>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  {locale === 'am' ? p.name_am : p.name_en} ({t(`out of ${p.weight}`, `ከ${p.weight}`)}) *
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max={p.weight}
+                  step="0.1"
+                  required
+                  value={scoreInputs[p.key] ?? ''}
+                  onChange={(e) => setScoreInputs((prev) => ({ ...prev, [p.key]: e.target.value }))}
+                  className="form-input text-sm"
+                />
+                {p.source === 'attendance' && studentId && (
+                  <p className="text-[11px] text-slate-500 mt-1 flex items-start gap-1">
+                    <CalendarCheck size={12} className="mt-px shrink-0 text-emerald-600" />
+                    {suggestion
+                      ? t(
+                          `From roll calls: attended ${suggestion.attended} of ${suggestion.counted} → ${suggestion.marks}/${p.weight}`,
+                          `ከክትትል መዝገብ: ከ${suggestion.counted} ${suggestion.attended} ተገኝቷል → ${suggestion.marks}/${p.weight}`
+                        )
+                      : t('No roll calls recorded for this student yet — enter it by hand.', 'ለዚህ ተማሪ ክትትል ገና አልተመዘገበም — በእጅ ያስገቡ።')}
+                  </p>
+                )}
+              </div>
+            ))}
           </div>
 
           <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl flex items-center justify-between text-xs text-blue-900">
             <span>{t('Calculated Total Score', 'የተሰላ አጠቃላይ ውጤት')}:</span>
             <span className="font-bold text-sm font-mono">
-              {contVal + finalVal}% ({t('Grade', 'ደረጃ')}: {letterGrade(contVal + finalVal)})
+              {formTotal}% ({t('Grade', 'ደረጃ')}: {letterGrade(formTotal)})
             </span>
           </div>
 
@@ -452,15 +527,22 @@ export default function GradesPage() {
               <span className={STATUS_BADGE[selectedGrade.status]}>{statusLabel(selectedGrade.status)}</span>
             </div>
 
+            {!followsScheme(selectedGrade, scheme) && (
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                {t(
+                  'Entered with earlier weights. Choose “Edit scores” to enter it with the current weights.',
+                  'በቀድሞው ክፍፍል የገባ ነው። በአሁኑ ክፍፍል ለማስገባት “ነጥብ አርትዕ” ይጫኑ።'
+                )}
+              </p>
+            )}
+
             <div className="divide-y divide-slate-100 border-y border-slate-100 text-xs">
-              <div className="py-2.5 flex justify-between">
-                <span className="text-slate-500">{t('Continuous Assessment', 'ተከታታይ ምዘና')} (30%):</span>
-                <span className="font-semibold text-slate-900 font-mono">{selectedGrade.continuous} / 30</span>
-              </div>
-              <div className="py-2.5 flex justify-between">
-                <span className="text-slate-500">{t('Final Examination', 'የመጨረሻ ፈተና')} (70%):</span>
-                <span className="font-semibold text-slate-900 font-mono">{selectedGrade.final} / 70</span>
-              </div>
+              {selectedGrade.scores.map((s) => (
+                <div key={s.key} className="py-2.5 flex justify-between">
+                  <span className="text-slate-500">{partName(s.key)} ({s.max}):</span>
+                  <span className="font-semibold text-slate-900 font-mono">{s.score} / {s.max}</span>
+                </div>
+              ))}
               <div className="py-2.5 flex justify-between">
                 <span className="text-slate-500">{t('Academic Standing', 'የትምህርት ደረጃ')}:</span>
                 <span className={`font-semibold ${selectedGrade.total >= PASS_MARK ? 'text-emerald-600' : 'text-red-600'}`}>
@@ -509,6 +591,18 @@ export default function GradesPage() {
             </div>
           </div>
         </Modal>
+      )}
+
+      {isSchemeOpen && year && (
+        <AssessmentSchemeModal
+          scheme={scheme}
+          yearName={year.name}
+          onClose={() => setIsSchemeOpen(false)}
+          onSaved={(text) => {
+            setIsSchemeOpen(false);
+            showToast('success', text);
+          }}
+        />
       )}
     </div>
   );

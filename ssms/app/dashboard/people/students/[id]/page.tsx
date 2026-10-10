@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { AdminToast } from '@/components/admin/AdminModeNotice';
 import { EditStudentModal } from '@/components/education/EditStudentModal';
 import { useEducation } from '@/lib/education/client';
+import { activeScheme, partScore } from '@/lib/education/types';
 import { useStudents } from '@/lib/students/useStudents';
 import { attendanceRate, totalsOf, type AttendanceStatus } from '@/lib/attendance/store';
 import { useSavedSessions } from '@/lib/attendance/useSavedSessions';
@@ -29,7 +30,9 @@ export default function StudentProfilePage() {
   const params = useParams<{ id: string }>();
   const savedSessions = useSavedSessions();
   const students = useStudents();
-  const { grades: allGrades, mode } = useEducation();
+  const edu = useEducation();
+  const { grades: allGrades, mode } = edu;
+  const scheme = activeScheme(edu);
   const { can } = useAuth();
   const [editing, setEditing] = useState(false);
   const [toast, setToast] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
@@ -235,8 +238,11 @@ export default function StudentProfilePage() {
                   <thead>
                     <tr>
                       <th>{t('Subject', 'ትምህርት')}</th>
-                      <th>{t('Continuous', 'ቀጣይ')}</th>
-                      <th>{t('Final', 'የመጨረሻ')}</th>
+                      {scheme.map((p) => (
+                        <th key={p.key}>
+                          {locale === 'am' ? p.name_am : p.name_en} ({p.weight})
+                        </th>
+                      ))}
                       <th>{t('Total', 'ድምር')}</th>
                       <th>{t('Grade', 'ደረጃ')}</th>
                       <th>{t('Status', 'ሁኔታ')}</th>
@@ -246,8 +252,10 @@ export default function StudentProfilePage() {
                     {grades.map((g) => (
                       <tr key={g.id}>
                         <td className="font-medium text-slate-900">{g.subject}</td>
-                        <td>{g.continuous}</td>
-                        <td>{g.final}</td>
+                        {scheme.map((p) => {
+                          const s = partScore(g, p);
+                          return <td key={p.key}>{!s ? '—' : s.max === p.weight ? s.score : `${s.score}/${s.max}`}</td>;
+                        })}
                         <td className="font-semibold">{g.total}</td>
                         <td className="font-bold text-blue-600">{g.grade}</td>
                         <td>

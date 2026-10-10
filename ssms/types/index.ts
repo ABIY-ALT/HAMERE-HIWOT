@@ -94,7 +94,10 @@ export type PermissionCode =
   | 'CHOIR_MANAGE'
   // HR
   | 'HR_VIEW'
-  | 'HR_MANAGE';
+  | 'HR_MANAGE'
+  // Tasks (Executive Committee → departments)
+  | 'TASK_ASSIGN'
+  | 'TASK_REPORT';
 
 // ── Organization ──────────────────────────────────────────────────────────────
 

@@ -675,6 +675,9 @@ export const MOCK_PERMISSIONS: Permission[] = [
   // HR
   { id: 'perm-hr1', code: 'HR_VIEW', name_en: 'View HR Records', name_am: 'የሰው ሀብት መዝገቦችን ይመልከቱ', description_en: null, category: 'HR', is_active: true },
   { id: 'perm-hr2', code: 'HR_MANAGE', name_en: 'Manage HR Records', name_am: 'የሰው ሀብት መዝገቦችን ያስተዳድሩ', description_en: null, category: 'HR', is_active: true },
+  // Tasks
+  { id: 'perm-tk1', code: 'TASK_ASSIGN', name_en: 'Give Tasks to Departments', name_am: 'ለክፍሎች ተግባር መስጠት', description_en: null, category: 'GOVERNANCE', is_active: true },
+  { id: 'perm-tk2', code: 'TASK_REPORT', name_en: 'Report on Department Tasks', name_am: 'በክፍሉ ተግባራት ላይ ሪፖርት ማቅረብ', description_en: null, category: 'GOVERNANCE', is_active: true },
 ];
 
 // ── Role Permissions ──────────────────────────────────────────────────────────
@@ -704,7 +707,7 @@ const AUDIT_PERMS: RolePermission[] = [
 const DEPT_HEAD_PERMS: RolePermission[] = [
   'perm-s01', 'perm-s02', 'perm-s03', 'perm-a01', 'perm-a02', 'perm-a03',
   'perm-g01', 'perm-g02', 'perm-g03', 'perm-g04', 'perm-m01',
-  'perm-r01', 'perm-hr1', 'perm-pr1', 'perm-f04',
+  'perm-r01', 'perm-hr1', 'perm-pr1', 'perm-f04', 'perm-tk2',
 ].map((pid, i) => ({ id: `rp-006-${i}`, role_id: 'role-006', permission_id: pid, granted_at: '2024-01-01T00:00:00Z' }));
 
 // Teacher

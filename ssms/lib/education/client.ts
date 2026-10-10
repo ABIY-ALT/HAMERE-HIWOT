@@ -18,6 +18,7 @@ import {
   enrollStudents as enrollAction,
   loadEducationData,
   reviewGrade as reviewGradeAction,
+  saveAssessmentScheme as saveSchemeAction,
   saveAttendance as saveAttendanceAction,
   saveGrade as saveGradeAction,
   setCurrentAcademicYear as setCurrentYearAction,
@@ -28,8 +29,11 @@ import { saveSession, subscribeSessions } from '@/lib/attendance/store';
 import type { ActionResult } from '@/lib/admin/types';
 import { demoEducation } from './demo';
 import {
+  activeScheme,
   EMPTY_EDUCATION,
   letterGrade,
+  scoresTotal,
+  type AssessmentPart,
   type AttendanceStatus,
   type EducationData,
   type GradeRow,
@@ -137,6 +141,7 @@ export async function createAcademicYear(input: {
         is_current: false,
         status: 'PLANNED',
         students_enrolled: 0,
+        scheme: activeScheme(state),
       },
       ...state.years,
     ],
@@ -315,14 +320,18 @@ export async function saveGrade(input: {
   student_id: string;
   subject_id: string;
   term: number;
-  continuous: number;
-  final: number;
+  /** Score per part of the active year's scheme, by part key. */
+  scores: Record<string, number>;
 }): Promise<ActionResult> {
   if (state.mode === 'live') return afterLive(await saveGradeAction(input));
 
+  const scheme = activeScheme(state);
+  const wrong = scheme.find((p) => !(input.scores[p.key] >= 0 && input.scores[p.key] <= p.weight));
+  if (wrong) return { ok: false, error: `${wrong.name_en} is out of ${wrong.weight}` };
+  const scores = scheme.map((p) => ({ key: p.key, max: p.weight, score: input.scores[p.key] }));
   const student = state.students.find((s) => s.id === input.student_id);
   const subject = state.subjects.find((s) => s.id === input.subject_id);
-  const total = input.continuous + input.final;
+  const total = scoresTotal(scores);
   const row: GradeRow = {
     id: `grd-${Date.now()}`,
     student_id: input.student_id,
@@ -334,8 +343,7 @@ export async function saveGrade(input: {
     subject: subject?.name_en ?? '—',
     subject_am: subject?.name_am ?? '—',
     term: input.term,
-    continuous: input.continuous,
-    final: input.final,
+    scores,
     total,
     grade: letterGrade(total),
     status: 'PENDING',
@@ -345,6 +353,15 @@ export async function saveGrade(input: {
     (g) => !(g.student_id === input.student_id && g.subject_id === input.subject_id && g.term === input.term)
   );
   patchDemo({ grades: [row, ...others] });
+  return { ok: true };
+}
+
+/** Set the weights of the active academic year. */
+export async function saveAssessmentScheme(scheme: AssessmentPart[]): Promise<ActionResult> {
+  const yearId = state.activeYearId;
+  if (!yearId) return { ok: false, error: 'Set a current academic year first (Education → Academic Years)' };
+  if (state.mode === 'live') return afterLive(await saveSchemeAction(yearId, scheme));
+  patchDemo({ years: state.years.map((y) => (y.id === yearId ? { ...y, scheme } : y)) });
   return { ok: true };
 }
 

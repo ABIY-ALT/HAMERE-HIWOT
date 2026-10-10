@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Building2,
   Vote,
+  ClipboardList,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -83,6 +84,13 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
           { labelEn: 'Departments', labelAm: 'ክፍሎች', href: '/dashboard/organization/departments', permissions: ['GOVERNANCE_VIEW'] },
           { labelEn: 'Org Structure', labelAm: 'ድርጅታዊ መዋቅር', href: '/dashboard/organization/structure', permissions: ['GOVERNANCE_VIEW'] },
         ],
+      },
+      {
+        labelEn: 'Tasks & Follow-up',
+        labelAm: 'ተግባራትና ክትትል',
+        href: '/dashboard/tasks',
+        icon: ClipboardList,
+        permissions: ['TASK_ASSIGN', 'TASK_REPORT', 'AUDIT_VIEW_ALL'],
       },
     ],
   },

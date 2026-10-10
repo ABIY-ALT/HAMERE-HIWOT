@@ -15,6 +15,10 @@ import { todayIso, weekdayOfIso } from '@/lib/utils/ethiopian-calendar';
 import { addDays } from '@/lib/hr/types';
 import { monthsBetween } from '@/lib/reports/types';
 import type { AssetStatus } from '@/lib/property/types';
+import { isOverdue, OPEN_STATUSES, WORK_STATUSES, type TaskStatus } from '@/lib/tasks/types';
+import { issueRepeatingTasks } from '@/lib/tasks/recurring';
+
+const isUuid = (id: string) => /^[0-9a-f-]{36}$/i.test(id);
 
 export type WeekRate = { week: string; rate: number | null };
 
@@ -43,6 +47,27 @@ export interface DashboardData {
   programs: { id: string; title_en: string; title_am: string | null; start_date: string; program_type: string }[] | null;
   governanceBodies: { id: string; name_en: string; name_am: string; is_active: boolean }[] | null;
   recentAudit: { id: string; action: string; table_name: string; created_at: string }[] | null;
+  /** Task follow-up (TASK_REPORT: own departments; TASK_ASSIGN / AUDIT_VIEW_ALL: all). */
+  tasks: {
+    /** Open tasks of the departments this person belongs to. */
+    mine: TaskBrief[];
+    /** Final reports waiting for review (TASK_ASSIGN). */
+    toReview: TaskBrief[];
+    /** Past the due date, all departments (TASK_ASSIGN / AUDIT_VIEW_ALL). */
+    overdue: TaskBrief[];
+    counts: { waiting: number; overdue: number; review: number };
+  } | null;
+}
+
+export interface TaskBrief {
+  id: string;
+  task_no: string;
+  title: string;
+  unit: string;
+  unit_am: string;
+  due_date: string | null;
+  status: TaskStatus;
+  progress: number;
 }
 
 /** Row count with equality filters and an optional created_at lower bound. */
@@ -108,7 +133,7 @@ export async function loadDashboard(): Promise<Loaded<DashboardData>> {
       count(db, 'organization_units', { unit_type: 'COORDINATION', is_active: true }),
     ]);
 
-    const [members, students, teachers, servants, choir, finance, financePending, assets, programs, governanceBodies, recentAudit, gradesPending] =
+    const [members, students, teachers, servants, choir, finance, financePending, assets, programs, governanceBodies, recentAudit, gradesPending, tasks] =
       await Promise.all([
         section(can('MEMBER_VIEW', 'AUDIT_VIEW_ALL'), async () => {
           const [persons, studentRows, newPersons, newStudents, created, latest] = await Promise.all([
@@ -243,6 +268,36 @@ export async function loadDashboard(): Promise<Loaded<DashboardData>> {
             .then(check)) as NonNullable<DashboardData['recentAudit']>
         ),
         section(Boolean(year) && can('GRADE_VIEW', 'GRADE_APPROVE'), () => count(db, 'grades', { academic_year_id: year!.id, status: 'PENDING' })),
+        section(can('TASK_ASSIGN', 'TASK_REPORT', 'AUDIT_VIEW_ALL'), async () => {
+          const seeAll = can('TASK_ASSIGN', 'AUDIT_VIEW_ALL');
+          const myUnits = me.organizationIds.filter(isUuid);
+          if (!seeAll && myUnits.length === 0) return null;
+          type TaskRow = {
+            id: string; task_no: string; title: string; unit_id: string; due_date: string | null; status: TaskStatus; progress: number;
+            updated_at: string; unit: { name_en: string; name_am: string | null } | null;
+          };
+          const rows = (await selectAll<Record<string, unknown>>((a, b) => {
+            let q = db.from('tasks')
+              .select('id, task_no, title, unit_id, due_date, status, progress, updated_at, unit:organization_units!tasks_unit_id_fkey(name_en, name_am)')
+              .in('status', OPEN_STATUSES)
+              .order('id');
+            if (!seeAll) q = q.in('unit_id', myUnits);
+            return q.range(a, b);
+          })) as unknown as TaskRow[];
+          const brief = (r: TaskRow): TaskBrief => ({
+            id: r.id, task_no: r.task_no, title: r.title, unit: r.unit?.name_en ?? '—', unit_am: r.unit?.name_am || r.unit?.name_en || '—',
+            due_date: r.due_date, status: r.status, progress: Number(r.progress) || 0,
+          });
+          const byDue = (x: TaskRow, y: TaskRow) => (x.due_date ?? '9999').localeCompare(y.due_date ?? '9999');
+          const overdue = rows.filter((r) => isOverdue(r, today));
+          const submitted = rows.filter((r) => r.status === 'SUBMITTED');
+          return {
+            mine: can('TASK_REPORT') ? rows.filter((r) => myUnits.includes(r.unit_id) && WORK_STATUSES.includes(r.status)).sort(byDue).slice(0, 5).map(brief) : [],
+            toReview: can('TASK_ASSIGN') ? submitted.sort((x, y) => y.updated_at.localeCompare(x.updated_at)).slice(0, 5).map(brief) : [],
+            overdue: seeAll ? overdue.sort(byDue).slice(0, 5).map(brief) : [],
+            counts: { waiting: rows.filter((r) => WORK_STATUSES.includes(r.status)).length, overdue: overdue.length, review: submitted.length },
+          };
+        }),
       ]);
 
     return {
@@ -262,6 +317,7 @@ export async function loadDashboard(): Promise<Loaded<DashboardData>> {
         programs,
         governanceBodies,
         recentAudit,
+        tasks,
       },
     };
   } catch (e) {
@@ -314,6 +370,9 @@ export async function loadNotifications(): Promise<Loaded<Notice[]>> {
 
     const sources: Source[] = [];
 
+    // The bell loads on every page, so it is where repeating tasks are given on time
+    await issueRepeatingTasks(db).catch((e) => console.error('repeating tasks:', errorMessage(e)));
+
     if (can('FINANCE_APPROVE')) {
       sources.push(() =>
         counted('finance_requests', (q) => q.eq('status', 'PENDING'), 'created_at', (n) => ({
@@ -360,6 +419,32 @@ export async function loadNotifications(): Promise<Loaded<Notice[]>> {
           id: 'grades-to-approve', kind: 'alert', href: '/dashboard/education/grades',
           en: `${n} ${plural(n, 'grade is', 'grades are')} waiting for approval`,
           am: `${n} ውጤት(ዎች) ማጽደቅ ይጠብቃሉ`,
+        }))
+      );
+    }
+    const myUnits = me.organizationIds.filter(isUuid);
+    if (can('TASK_REPORT') && myUnits.length) {
+      sources.push(() =>
+        counted('tasks', (q) => q.in('status', ['ASSIGNED', 'RETURNED']).in('unit_id', myUnits), 'updated_at', (n) => ({
+          id: 'tasks-to-do', kind: 'alert', href: '/dashboard/tasks',
+          en: `${n} new or returned ${plural(n, 'task is', 'tasks are')} waiting for your department`,
+          am: `${n} አዲስ ወይም የተመለሰ ተግባር(ዎች) ክፍልዎን ይጠብቃሉ`,
+        }))
+      );
+      sources.push(() =>
+        counted('tasks', (q) => q.in('status', ['ASSIGNED', 'IN_PROGRESS', 'RETURNED']).in('unit_id', myUnits).lt('due_date', today), 'due_date', (n) => ({
+          id: 'tasks-overdue', kind: 'alert', href: '/dashboard/tasks',
+          en: `${n} of your department's ${plural(n, 'task is', 'tasks are')} past the due date`,
+          am: `${n} የክፍልዎ ተግባር(ዎች) የማጠናቀቂያ ጊዜ አልፏል`,
+        }))
+      );
+    }
+    if (can('TASK_ASSIGN')) {
+      sources.push(() =>
+        counted('tasks', (q) => q.eq('status', 'SUBMITTED'), 'updated_at', (n) => ({
+          id: 'task-reports', kind: 'alert', href: '/dashboard/tasks',
+          en: `${n} task ${plural(n, 'report is', 'reports are')} waiting for your review`,
+          am: `${n} የተግባር ሪፖርት(ዎች) ግምገማዎን ይጠብቃሉ`,
         }))
       );
     }

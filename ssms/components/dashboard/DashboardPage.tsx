@@ -15,6 +15,7 @@ import {
   Calendar,
   CheckCircle,
   CheckCircle2,
+  ClipboardList,
   GraduationCap,
   HeartHandshake,
   Music,
@@ -28,7 +29,8 @@ import { cn, formatDate } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLang } from '@/contexts/LangContext';
 import { MOCK_AUDIT_LOGS, MOCK_GOVERNANCE_BODIES, MOCK_PERSONS } from '@/lib/mock/data';
-import { loadDashboard, loadNotifications, type DashboardData, type Notice, type WeekRate } from '@/app/dashboard/actions';
+import { loadDashboard, loadNotifications, type DashboardData, type Notice, type TaskBrief, type WeekRate } from '@/app/dashboard/actions';
+import { isOverdue, STATUS as TASK_STATUS } from '@/lib/tasks/types';
 import { DEMO_NOTICES } from '@/lib/notices';
 import { formatETB } from '@/lib/finance/types';
 import { AUDIT_AREAS } from '@/lib/audit/types';
@@ -80,6 +82,18 @@ function demoDashboard(): DashboardData {
     ],
     governanceBodies: MOCK_GOVERNANCE_BODIES.map((b) => ({ id: b.id, name_en: b.name_en, name_am: b.name_am, is_active: b.is_active })),
     recentAudit: MOCK_AUDIT_LOGS.map((l) => ({ id: l.id, action: l.action, table_name: l.table_name, created_at: l.created_at })),
+    tasks: {
+      mine: [
+        { id: 'task-1', task_no: 'TSK-2026-0001', title: 'Prepare the first-term exam timetable and submit it', unit: 'Education & Training Department', unit_am: 'ትምህርትና ስልጠና ክፍል', due_date: addDays(today, 5), status: 'IN_PROGRESS', progress: 60 },
+      ],
+      toReview: [
+        { id: 'task-3', task_no: 'TSK-2026-0003', title: 'Organize the parents’ day programme', unit: 'Programs & Assemblies Department', unit_am: 'ፕሮግራምና ስብሰባ ክፍል', due_date: addDays(today, -1), status: 'SUBMITTED', progress: 100 },
+      ],
+      overdue: [
+        { id: 'task-2', task_no: 'TSK-2026-0002', title: 'Prepare the choir for the Meskel celebration', unit: 'Hymnody, Choir & Sacred Arts Department', unit_am: 'ዜማ፣ ዘማሪ እና ቅዱስ ጥበብ ክፍል', due_date: addDays(today, -2), status: 'ASSIGNED', progress: 0 },
+      ],
+      counts: { waiting: 2, overdue: 1, review: 1 },
+    },
   };
 }
 
@@ -251,6 +265,8 @@ export default function DashboardPage() {
           </ul>
         )}
       </Panel>
+
+      {d?.tasks && <TasksPanel tasks={d.tasks} />}
 
       {/* Key numbers — only what this person may see */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -476,6 +492,74 @@ export default function DashboardPage() {
 
       {mode === 'loading' && <p className="text-sm text-slate-400">{t('Loading…', 'በመጫን ላይ…')}</p>}
     </div>
+  );
+}
+
+function TasksPanel({ tasks }: { tasks: NonNullable<DashboardData['tasks']> }) {
+  const { t, locale } = useLang();
+  const today = todayIso();
+  const groups: [string, TaskBrief[]][] = [
+    [t('Your department’s tasks', 'የክፍልዎ ተግባራት'), tasks.mine],
+    [t('Reports to review', 'ግምገማ የሚጠብቁ ሪፖርቶች'), tasks.toReview],
+    [t('Past the due date', 'ጊዜያቸው ያለፈ'), tasks.overdue],
+  ];
+  const shown = groups.filter(([, list]) => list.length > 0);
+  const tiles: [string, number, string][] = [
+    [t('Waiting on departments', 'በክፍሎች የሚጠበቁ'), tasks.counts.waiting, 'text-slate-800'],
+    [t('Past the due date', 'ጊዜያቸው ያለፈ'), tasks.counts.overdue, tasks.counts.overdue ? 'text-red-600' : 'text-slate-800'],
+    [t('Reports to review', 'ግምገማ የሚጠብቁ'), tasks.counts.review, tasks.counts.review ? 'text-amber-600' : 'text-slate-800'],
+  ];
+
+  return (
+    <Panel title={t('Tasks & follow-up', 'ተግባራትና ክትትል')} action={<MoreLink href="/dashboard/tasks">{t('All tasks →', 'ሁሉም ተግባራት →')}</MoreLink>}>
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        {tiles.map(([label, value, tone]) => (
+          <Link key={label} href="/dashboard/tasks" className="p-3 rounded-lg bg-slate-50 hover:bg-slate-100">
+            <div className={cn('text-xl font-bold tabular-nums', tone)}>{value}</div>
+            <div className="text-[11px] text-slate-500 leading-tight">{label}</div>
+          </Link>
+        ))}
+      </div>
+      {shown.length === 0 ? (
+        <p className="text-sm text-slate-500 flex items-center gap-2">
+          <CheckCircle2 size={16} className="text-emerald-600" />
+          {t('No open tasks need you right now.', 'አሁን የሚጠብቅዎት ክፍት ተግባር የለም።')}
+        </p>
+      ) : (
+        <div className={cn('grid grid-cols-1 gap-5', shown.length > 1 && 'lg:grid-cols-2', shown.length > 2 && 'xl:grid-cols-3')}>
+          {shown.map(([label, list]) => (
+            <div key={label}>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1.5">{label}</h3>
+              <ul className="divide-y divide-slate-100">
+                {list.map((task) => {
+                  const late = isOverdue(task, today);
+                  return (
+                    <li key={task.id}>
+                      <Link href={`/dashboard/tasks?open=${task.id}`} className="flex items-start gap-3 py-2 -mx-2 px-2 rounded-lg hover:bg-slate-50">
+                        <ClipboardList size={16} className="text-slate-400 mt-0.5 shrink-0" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-medium text-slate-800 truncate">{task.title}</span>
+                          <span className="block text-[11px] text-slate-500 truncate">
+                            {locale === 'am' ? task.unit_am : task.unit}
+                            {task.due_date && (
+                              <span className={late ? 'text-red-600 font-semibold' : ''}>
+                                {' · '}
+                                {formatEthiopianDate(task.due_date, locale)}
+                              </span>
+                            )}
+                          </span>
+                        </span>
+                        <span className={cn(TASK_STATUS[task.status].cls, 'shrink-0')}>{t(...TASK_STATUS[task.status].label)}</span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </Panel>
   );
 }
 

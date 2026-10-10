@@ -36,7 +36,11 @@ for (const dir of [path.resolve(process.cwd(), ".."), SECRETS]) {
 }
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  experimental: {
+    // Task files go through a server action: up to 5 MB each (lib/tasks/types.ts
+    // MAX_FILE_BYTES) plus room for the form encoding.
+    serverActions: { bodySizeLimit: "6mb" },
+  },
 };
 
 export default nextConfig;
