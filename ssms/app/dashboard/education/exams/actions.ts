@@ -228,7 +228,7 @@ export async function loadExam(id: string): Promise<Loaded<ExamDetail>> {
     }
     const [attemptRows, enrolled, year] = await Promise.all([
       db.from('exam_attempts')
-        .select('*, student:students(reg_no, person:persons(full_name_en, full_name_am))')
+        .select('*, student:students(reg_no, person:persons!students_person_id_fkey(full_name_en, full_name_am))')
         .eq('exam_id', id)
         .then(check) as Promise<Record<string, unknown>[]>,
       db.from('enrollments')

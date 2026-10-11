@@ -101,10 +101,15 @@ async function findAttempt(ticket: string) {
   const code = normalizeTicket(ticket);
   if (!/^[A-Z0-9]{8}$/.test(code)) return null;
   const db = createAdminClient();
-  const { data } = await db.from('exam_attempts')
-    .select('*, student:students(person:persons(full_name_en, full_name_am)), exam:exams(*, class:classes(name_en, name_am), subject:subjects(name_en, name_am))')
+  const { data, error } = await db.from('exam_attempts')
+    .select('*, student:students(person:persons!students_person_id_fkey(full_name_en, full_name_am)), exam:exams(*, class:classes(name_en, name_am), subject:subjects(name_en, name_am))')
     .eq('ticket', code)
     .maybeSingle();
+  // A failing query is "could not reach the system", never "code not found"
+  if (error) {
+    console.error('exam ticket lookup failed:', error.message);
+    throw new Error(error.message);
+  }
   if (!data) return null;
   const row = data as Row;
   const exam = row.exam as Row;
