@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import { headers } from 'next/headers';
+import { isStudentLogin } from '@/lib/auth/student-login';
 import { createClient } from '@supabase/supabase-js';
 import type { Person } from '@/types';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
@@ -132,9 +133,14 @@ export async function updateMyContact(input: ContactInput): Promise<ActionResult
 export async function changeMyPassword(current: string, next: string): Promise<ActionResult> {
   if (!isSupabaseEnabled()) return { ok: false, error: 'Demo mode — passwords cannot be changed.' };
   try {
-    if (next.length < 8) throw new Error('The new password must be at least 8 characters');
-    if (next === current) throw new Error('Choose a password different from the current one');
     const { me, db } = await authorize();
+    // Students sign in with a 6-digit PIN; staff passwords need at least 8 characters
+    if (isStudentLogin(me.systemUser.username)) {
+      if (!/^\d{6}$/.test(next)) throw new Error('The new PIN must be exactly 6 digits');
+    } else if (next.length < 8) {
+      throw new Error('The new password must be at least 8 characters');
+    }
+    if (next === current) throw new Error('Choose a password different from the current one');
     const session = await createSessionClient();
     const { data: { user } } = await session.auth.getUser();
     if (!user?.email) throw new Error('Your session has expired. Please sign in again.');

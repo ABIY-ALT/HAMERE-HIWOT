@@ -14,6 +14,9 @@ export const EXAM_STATUS_BADGE: Record<ExamStatus, string> = {
   CLOSED: 'badge badge-info',
 };
 
+/** Where /exam keeps the ticket of the exam in progress (also set by the student portal’s Start button). */
+export const EXAM_TICKET_KEY = 'ssms-exam-ticket';
+
 export const MAX_OPTIONS = 6;
 export const MAX_QUESTIONS = 100;
 /** Answers saved this long after the time is up still count (slow phones, poor network). */

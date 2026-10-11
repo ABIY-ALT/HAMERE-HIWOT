@@ -22,6 +22,9 @@ import {
   Building2,
   Vote,
   ClipboardList,
+  Award,
+  CalendarCheck,
+  UserCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -54,6 +57,17 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
         icon: LayoutDashboard,
         permissions: [],
       },
+    ],
+  },
+  {
+    // Students (STUDENT role): only their own exams, results, attendance and profile
+    sectionEn: 'My school',
+    sectionAm: 'የእኔ ትምህርት ቤት',
+    items: [
+      { labelEn: 'My exams', labelAm: 'የእኔ ፈተናዎች', href: '/dashboard/my/exams', icon: ClipboardList, permissions: ['STUDENT_PORTAL'] },
+      { labelEn: 'My results', labelAm: 'የእኔ ውጤት', href: '/dashboard/my/results', icon: Award, permissions: ['STUDENT_PORTAL'] },
+      { labelEn: 'My attendance', labelAm: 'የእኔ ክትትል', href: '/dashboard/my/attendance', icon: CalendarCheck, permissions: ['STUDENT_PORTAL'] },
+      { labelEn: 'My profile', labelAm: 'የእኔ መገለጫ', href: '/dashboard/my/profile', icon: UserCircle, permissions: ['STUDENT_PORTAL'] },
     ],
   },
   {
@@ -106,6 +120,7 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
         children: [
           { labelEn: 'Members', labelAm: 'አባላት', href: '/dashboard/people/members', permissions: ['MEMBER_VIEW'] },
           { labelEn: 'Students', labelAm: 'ተማሪዎች', href: '/dashboard/people/students', permissions: ['STUDENT_VIEW'] },
+          { labelEn: 'Student Logins', labelAm: 'የተማሪ መግቢያዎች', href: '/dashboard/people/students/logins', permissions: ['STUDENT_CREATE', 'USER_MANAGE'] },
           { labelEn: 'Teachers', labelAm: 'አስተማሪዎች', href: '/dashboard/people/teachers', permissions: ['HR_VIEW'] },
           { labelEn: 'Choir Members', labelAm: 'ዘማሪዎች', href: '/dashboard/people/choir', permissions: ['MEMBER_VIEW', 'CHOIR_MANAGE'] },
         ],

@@ -2,8 +2,9 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { UserPlus, Search, Download, Upload, AlertCircle } from 'lucide-react';
+import { UserPlus, Search, Download, Upload, AlertCircle, KeyRound } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { Modal } from '@/components/ui/Modal';
 import { AdminToast } from '@/components/admin/AdminModeNotice';
 import { EducationNotice } from '@/components/education/EducationNotice';
@@ -16,6 +17,7 @@ type Toast = { kind: 'success' | 'error'; text: string } | null;
 
 export default function StudentsPage() {
   const { t, locale } = useLang();
+  const { canAny } = useAuth();
   const { students, classes: classList } = useEducation();
   const [search, setSearch] = useState('');
   const [classFilter, setClassFilter] = useState('ALL');
@@ -132,6 +134,12 @@ export default function StudentsPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+          {canAny(['STUDENT_CREATE', 'USER_MANAGE']) && (
+            <Link href="/dashboard/people/students/logins" className="btn btn-secondary inline-flex items-center gap-2">
+              <KeyRound size={16} />
+              {t('Student logins', 'የተማሪ መግቢያዎች')}
+            </Link>
+          )}
           <Link
             href="/dashboard/people/students/import"
             className="btn btn-secondary inline-flex items-center gap-2"

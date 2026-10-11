@@ -37,7 +37,7 @@ export default function LoginForm() {
     } else if (result.error === 'SERVER') {
       setError(t('Could not sign in right now. Please try again.', 'አሁን መግባት አልተቻለም። እባክዎ እንደገና ይሞክሩ።'));
     } else {
-      setError(t('Invalid phone number or password', 'ስልክ ቁጥር ወይም የይለፍ ቃል ትክክል አይደለም'));
+      setError(t('Wrong phone / registration number or password', 'ስልክ / የምዝገባ ቁጥር ወይም የይለፍ ቃል ትክክል አይደለም'));
     }
     setLoading(false);
   };
@@ -85,7 +85,7 @@ export default function LoginForm() {
         <div className="text-center mb-6">
           <h2 className="text-3xl font-bold text-slate-900 mb-2">{t('Login', 'ግባ')}</h2>
           <p className="text-slate-500">
-            {t('Enter your phone number and password.', 'ስልክ ቁጥርዎን እና የይለፍ ቃልዎን ያስገቡ።')}
+            {t('Staff: phone number and password. Students: registration number and PIN.', 'ሠራተኞች፦ ስልክ ቁጥርና የይለፍ ቃል። ተማሪዎች፦ የምዝገባ ቁጥርና ሚስጥር ቁጥር።')}
           </p>
         </div>
 
@@ -98,21 +98,23 @@ export default function LoginForm() {
 
         <form onSubmit={handleLogin} className="space-y-5">
           <div className="form-group">
-            <label className="form-label" htmlFor="username">{t('Phone Number', 'ስልክ ቁጥር')}</label>
+            <label className="form-label" htmlFor="username">{t('Phone or registration number', 'ስልክ ወይም የምዝገባ ቁጥር')}</label>
             <input
               id="username"
-              type="tel"
-              placeholder="09..."
+              type="text"
+              placeholder="09…  /  REG-2026-0001"
               className="form-input"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              autoComplete="tel"
+              autoComplete="username"
+              autoCapitalize="characters"
+              spellCheck={false}
               required
             />
           </div>
           <div className="form-group">
             <div className="flex items-center justify-between">
-              <label className="form-label" htmlFor="password">{t('Password', 'የይለፍ ቃል')}</label>
+              <label className="form-label" htmlFor="password">{t('Password / PIN', 'የይለፍ ቃል / ሚስጥር ቁጥር')}</label>
               <a href="#" className="text-sm font-medium text-slate-800 hover:underline">
                 {t('Forgot password?', 'የይለፍ ቃል ረስተዋል?')}
               </a>

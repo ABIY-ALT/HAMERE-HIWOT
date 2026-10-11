@@ -4,10 +4,9 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { AlertTriangle, CheckCircle2, Clock, Cloud, CloudOff, EyeOff, KeyRound, Languages, Loader2, Send, TimerReset } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
-import { formatTicket, normalizeTicket, type StudentQuestion } from '@/lib/exams/types';
+import { EXAM_TICKET_KEY as TICKET_KEY, formatTicket, normalizeTicket, type StudentQuestion } from '@/lib/exams/types';
 import { examClock, openTicket, reportBack, reportLeft, saveAnswers, startExam, submitExam, type TicketInfo, type TicketResult } from './actions';
 
-const TICKET_KEY = 'ssms-exam-ticket';
 const LETTERS = 'ABCDEF';
 
 type Exam = { questions: StudentQuestion[]; deadline: number };
