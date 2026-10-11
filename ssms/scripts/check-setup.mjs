@@ -147,6 +147,18 @@ try {
   if (seriesTable || filesTable) problem(`Repeating tasks / task files missing — run migration 020_task_repeat_and_files.sql (${(seriesTable ?? filesTable).message})`);
   else if (filesBucket) problem(`Storage bucket "task-files" missing — re-run migration 020 (${filesBucket.message})`);
   else ok('Migration 020 (repeating tasks and files) applied');
+  const [{ error: memberForm }, { error: photoBucket }] = await Promise.all([
+    db.from('persons').select('id, membership_type, preferred_departments, assigned_unit_id').limit(1),
+    db.storage.getBucket('member-photos'),
+  ]);
+  if (memberForm) problem(`Member registration form fields missing — run migration 021_member_registration_form.sql (${memberForm.message})`);
+  else if (photoBucket) problem(`Storage bucket "member-photos" missing — re-run migration 021 (${photoBucket.message})`);
+  else ok('Migration 021 (member registration form) applied');
+  const { error: examTables } = await db.from('exams')
+    .select('id, questions:exam_questions(id), attempts:exam_attempts(id)')
+    .limit(1);
+  if (examTables) problem(`Online exam tables missing — run migration 022_online_exams.sql (${examTables.message})`);
+  else ok('Migration 022 (online exams) applied');
   const { error: pushTable } = await db.from('push_subscriptions').select('id').limit(1);
   if (pushTable) problem('Push table missing — run migration 017_push.sql');
   else ok('Migration 017 (push notifications) applied');

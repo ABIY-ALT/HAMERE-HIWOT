@@ -14,6 +14,7 @@ import {
   attendanceMarks,
   describeScheme,
   followsScheme,
+  isIncomplete,
   letterGrade,
   partScore,
   PASS_MARK,
@@ -61,7 +62,10 @@ export default function GradesPage() {
   const attendancePart = scheme.find((p) => p.source === 'attendance');
   const attendanceFor = (id: string) => (attendancePart && id ? attendanceMarks(sessions, id, attendancePart.weight) : null);
   const suggestion = attendanceFor(studentId);
-  const staleCount = grades.filter((g) => !followsScheme(g, scheme)).length;
+  const staleCount = grades.filter((g) => !followsScheme(g, scheme) && !isIncomplete(g, scheme)).length;
+  const incompleteCount = grades.filter((g) => isIncomplete(g, scheme)).length;
+  const missingNames = (g: GradeRow) =>
+    scheme.filter((p) => !partScore(g, p)).map((p) => (locale === 'am' ? p.name_am : p.name_en)).join(', ');
 
   const statusLabel = (s: GradeRow['status']) =>
     s === 'APPROVED' ? t('Approved', 'ጸድቋል') : s === 'REJECTED' ? t('Rejected', 'ተመልሷል') : t('Pending', 'በመጠባበቅ ላይ');
@@ -224,6 +228,15 @@ export default function GradesPage() {
           {t(
             `${staleCount} grade(s) were entered with earlier weights. They keep their totals; open one and choose “Edit scores” to enter it with the current weights.`,
             `${staleCount} ውጤት(ዎች) በቀድሞው ክፍፍል ገብተዋል። ድምራቸው አይቀየርም፤ በአዲሱ ክፍፍል ለማስገባት ውጤቱን ከፍተው “ነጥብ አርትዕ” ይጫኑ።`
+          )}
+        </p>
+      )}
+
+      {incompleteCount > 0 && (
+        <p className="p-3 rounded-xl border border-blue-200 bg-blue-50 text-sm text-blue-800">
+          {t(
+            `${incompleteCount} grade(s) still miss some parts (for example, only an online exam result has been added). Open one and choose “Edit scores” to complete it before approval.`,
+            `${incompleteCount} ውጤት(ዎች) ገና ያልተሟሉ ምዘናዎች አሏቸው (ለምሳሌ የኦንላይን ፈተና ውጤት ብቻ የገባ)። ከማጽደቅዎ በፊት ውጤቱን ከፍተው “ነጥብ አርትዕ” በመጫን ያሟሉ።`
           )}
         </p>
       )}
@@ -527,7 +540,14 @@ export default function GradesPage() {
               <span className={STATUS_BADGE[selectedGrade.status]}>{statusLabel(selectedGrade.status)}</span>
             </div>
 
-            {!followsScheme(selectedGrade, scheme) && (
+            {isIncomplete(selectedGrade, scheme) ? (
+              <p className="text-xs text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                {t(
+                  `Not complete yet — still missing: ${missingNames(selectedGrade)}. Choose “Edit scores” to complete it.`,
+                  `ገና አልተሟላም — የሚቀሩት፦ ${missingNames(selectedGrade)}። ለማሟላት “ነጥብ አርትዕ” ይጫኑ።`
+                )}
+              </p>
+            ) : !followsScheme(selectedGrade, scheme) && (
               <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                 {t(
                   'Entered with earlier weights. Choose “Edit scores” to enter it with the current weights.',

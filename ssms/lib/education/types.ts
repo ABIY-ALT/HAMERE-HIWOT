@@ -193,6 +193,18 @@ export function followsScheme(grade: Pick<GradeRow, 'scores'>, scheme: Assessmen
   );
 }
 
+/**
+ * True when the grade follows the current weights but some parts have no score
+ * yet — e.g. only an online exam's result has been sent. Such a grade is
+ * completed with "Edit scores" before it can be approved.
+ */
+export function isIncomplete(grade: Pick<GradeRow, 'scores'>, scheme: AssessmentPart[]): boolean {
+  return (
+    grade.scores.length < scheme.length &&
+    grade.scores.every((s) => scheme.some((p) => p.key === s.key && p.weight === s.max))
+  );
+}
+
 /** The scheme of the active academic year. */
 export function activeScheme(data: Pick<EducationData, 'years' | 'activeYearId'>): AssessmentPart[] {
   return data.years.find((y) => y.id === data.activeYearId)?.scheme ?? DEFAULT_SCHEME;

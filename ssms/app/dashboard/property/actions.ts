@@ -54,9 +54,9 @@ export async function loadProperty(): Promise<Loaded<PropertyData>> {
       selectAll<Row>((a, b) =>
         db.from('asset_maintenance').select('*').order('reported_on', { ascending: false }).order('id').range(a, b)
       ),
-      db.from('organization_units').select('id, name_en, name_am').eq('is_active', true).order('sort_order').then(check) as Promise<PropertyData['units']>,
-      selectAll<{ id: string; full_name_en: string }>((a, b) =>
-        db.from('persons').select('id, full_name_en').eq('status', 'ACTIVE').order('full_name_en').order('id').range(a, b)
+      db.from('organization_units').select('id, code, name_en, name_am').eq('is_active', true).order('sort_order').then(check) as Promise<PropertyData['units']>,
+      selectAll<{ id: string; full_name_en: string; full_name_am: string | null }>((a, b) =>
+        db.from('persons').select('id, full_name_en, full_name_am').eq('status', 'ACTIVE').order('full_name_en').order('id').range(a, b)
       ),
       selectAll<{ person_id: string }>((a, b) => db.from('students').select('person_id').order('id').range(a, b)),
     ]);
@@ -119,7 +119,7 @@ export async function loadProperty(): Promise<Loaded<PropertyData>> {
         movements,
         maintenance,
         units,
-        people: persons.filter((p) => !studentPersons.has(p.id)).map((p) => ({ id: p.id, name: p.full_name_en })),
+        people: persons.filter((p) => !studentPersons.has(p.id)).map((p) => ({ id: p.id, name: p.full_name_en, name_am: p.full_name_am ?? '' })),
       },
     };
   } catch (e) {
@@ -192,6 +192,81 @@ export async function saveAsset(id: string | null, input: AssetInput): Promise<A
         recorded_by: me.systemUser.id,
       }).then(check);
     }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) };
+  }
+}
+
+// ── Import from the Excel template ───────────────────────────────────────────
+
+const ImportRowSchema = z.object({
+  tag: z.string().trim().toUpperCase().max(40),
+  name: z.string().trim().min(2, 'Enter the item name').max(300),
+  category: z.string().trim().min(1, 'Choose a category'),
+  unit_id: z.string().min(1, 'Choose the department'),
+  custodian_id: z.string(),
+  condition: z.enum(CONDITIONS),
+  lost: z.boolean(),
+  location: z.string().trim().max(300),
+  acquired_on: optionalDate,
+  acquisition_type: z.enum(['PURCHASE', 'DONATION', 'OTHER']),
+  value: z.number().min(0).max(1_000_000_000),
+  notes: z.string().trim().max(4000),
+});
+
+export type AssetImportInput = z.input<typeof ImportRowSchema>;
+
+/** Register the rows of a filled-in asset template (parsed and mapped in lib/import/assets). */
+export async function importAssets(input: AssetImportInput[]): Promise<ActionResult> {
+  try {
+    const { me, db } = await authorize('ASSET_CREATE');
+    const rows = z.array(ImportRowSchema).min(1, 'Nothing to import').max(500, 'Import at most 500 assets at a time').parse(input);
+
+    const tags = rows.map((r) => r.tag).filter(Boolean);
+    const repeated = tags.filter((tag, i) => tags.indexOf(tag) !== i);
+    if (repeated.length) throw new Error(`The file uses these codes twice: ${[...new Set(repeated)].join(', ')}`);
+    if (tags.length) {
+      const taken = (await db.from('assets').select('tag').in('tag', tags).then(check)) as { tag: string }[];
+      if (taken.length) throw new Error(`Already in the register: ${taken.map((r) => r.tag).join(', ')}`);
+    }
+
+    const created = (await db.from('assets')
+      .insert(
+        rows.map((r) => ({
+          ...(r.tag ? { tag: r.tag } : {}),
+          name_en: r.name,
+          name_am: r.name,
+          category: r.category,
+          condition: r.condition,
+          status: r.lost ? 'LOST' : 'IN_USE',
+          organization_unit_id: r.unit_id,
+          custodian_person_id: r.custodian_id || null,
+          location: r.location || null,
+          acquired_on: r.acquired_on || null,
+          acquisition_type: r.acquisition_type,
+          value: r.value,
+          notes: r.notes || null,
+          last_verified_on: today(),
+          verified_by: me.systemUser.id,
+          created_by: me.systemUser.id,
+        })),
+        // rows without a code get the default AST- tag
+        { defaultToNull: false }
+      )
+      .select('id, organization_unit_id, custodian_person_id')
+      .then(check)) as { id: string; organization_unit_id: string | null; custodian_person_id: string | null }[];
+
+    await db.from('asset_movements').insert(
+      created.map((a) => ({
+        asset_id: a.id,
+        to_unit_id: a.organization_unit_id,
+        to_person_id: a.custodian_person_id,
+        moved_on: today(),
+        reason: 'Registered (Excel import)',
+        recorded_by: me.systemUser.id,
+      }))
+    ).then(check);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };

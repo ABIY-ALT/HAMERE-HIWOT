@@ -162,6 +162,29 @@ export interface Person {
   notes: string | null;
   created_at: string;
   updated_at: string;
+  // Member registration form (migration 021)
+  registration_term?: string | null;
+  registered_on?: string | null;
+  membership_type?: 'REGULAR' | 'SPECIAL' | 'HONORARY' | null;
+  father_name?: string | null;
+  mother_name?: string | null;
+  marital_status?: 'MARRIED' | 'SINGLE' | null;
+  education_level?: string | null;
+  profession?: string | null;
+  workplace?: string | null;
+  woreda?: string | null;
+  house_no?: string | null;
+  served_elsewhere?: boolean | null;
+  previous_school?: string | null;
+  previous_role?: string | null;
+  preferred_departments?: string[];
+  preferred_department_other?: string | null;
+  emergency_contact_relation?: string | null;
+  declaration_signed?: boolean;
+  assigned_unit_id?: string | null;
+  registered_by_name?: string | null;
+  approved_by_name?: string | null;
+  approved_on?: string | null;
 }
 
 // ── System User ───────────────────────────────────────────────────────────────

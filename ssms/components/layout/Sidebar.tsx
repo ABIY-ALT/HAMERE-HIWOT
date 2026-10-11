@@ -127,6 +127,7 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
           { labelEn: 'Subjects', labelAm: 'ትምህርቶች', href: '/dashboard/education/subjects', permissions: ['STUDENT_VIEW'] },
           { labelEn: 'Attendance', labelAm: 'ክትትል', href: '/dashboard/education/attendance', permissions: ['ATTENDANCE_VIEW'] },
           { labelEn: 'Exams & Grades', labelAm: 'ፈተናና ውጤቶች', href: '/dashboard/education/grades', permissions: ['GRADE_VIEW'] },
+          { labelEn: 'Online Exams', labelAm: 'የኦንላይን ፈተና', href: '/dashboard/education/exams', permissions: ['GRADE_VIEW'] },
           { labelEn: 'Results', labelAm: 'ውጤቶች', href: '/dashboard/education/results', permissions: ['GRADE_VIEW'] },
         ],
       },

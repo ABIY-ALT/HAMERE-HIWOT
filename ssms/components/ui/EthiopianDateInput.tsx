@@ -21,24 +21,31 @@ interface Props {
   id?: string;
   /** Show a soft hint when the chosen day is not a Sunday. */
   hintIfNotSunday?: boolean;
+  /** How many years back the year list goes (default 10; e.g. 100 for a birth date). */
+  yearsBack?: number;
+  /** Allow no date: each list gets a "—" choice, and value "" means not given. */
+  optional?: boolean;
 }
 
 /**
  * Date picker that works in the Ethiopian calendar but speaks Gregorian ISO
  * to the rest of the app, so storage and sorting are unaffected.
  */
-export function EthiopianDateInput({ value, onChange, id, hintIfNotSunday = false }: Props) {
+export function EthiopianDateInput({ value, onChange, id, hintIfNotSunday = false, yearsBack = 10, optional = false }: Props) {
   const { t, locale } = useLang();
 
   const current = isoToEthiopian(value) ?? isoToEthiopian(todayIso())!;
   const thisYear = isoToEthiopian(todayIso())!.year;
   const years: number[] = [];
-  for (let y = thisYear + 1; y >= thisYear - 10; y--) years.push(y);
+  for (let y = thisYear + 1; y >= thisYear - yearsBack; y--) years.push(y);
+  const empty = optional && !value;
+  const blank = optional && <option value="">—</option>;
   if (!years.includes(current.year)) years.push(current.year);
 
   const days = Array.from({ length: daysInEthiopianMonth(current.year, current.month) }, (_, i) => i + 1);
 
   const update = (next: Partial<{ year: number; month: number; day: number }>) => {
+    if (Object.values(next).some((v) => !v)) return onChange('');
     const year = next.year ?? current.year;
     const month = next.month ?? current.month;
     // Clamp the day when switching to a shorter month (e.g. into Pagume)
@@ -54,39 +61,44 @@ export function EthiopianDateInput({ value, onChange, id, hintIfNotSunday = fals
       <div className="grid grid-cols-[4.5rem_1fr_5.5rem] gap-2" id={id}>
         <select
           aria-label={t('Day', 'ቀን')}
-          value={current.day}
+          value={empty ? '' : current.day}
           onChange={(e) => update({ day: Number(e.target.value) })}
           className="form-input text-sm"
         >
+          {blank}
           {days.map((d) => (
             <option key={d} value={d}>{d}</option>
           ))}
         </select>
         <select
           aria-label={t('Month', 'ወር')}
-          value={current.month}
+          value={empty ? '' : current.month}
           onChange={(e) => update({ month: Number(e.target.value) })}
           className="form-input text-sm"
         >
+          {blank}
           {Array.from({ length: 13 }, (_, i) => i + 1).map((m) => (
             <option key={m} value={m}>{ethiopianMonthName(m, locale)}</option>
           ))}
         </select>
         <select
           aria-label={t('Year', 'ዓመተ ምሕረት')}
-          value={current.year}
+          value={empty ? '' : current.year}
           onChange={(e) => update({ year: Number(e.target.value) })}
           className="form-input text-sm"
         >
+          {blank}
           {years.sort((a, b) => b - a).map((y) => (
             <option key={y} value={y}>{y}</option>
           ))}
         </select>
       </div>
-      <p className="text-[11px] text-slate-500 mt-1">
-        {weekday !== null && `${weekdayName(weekday, locale)} · `}
-        {formatEthiopianDate(value, locale)} {t('E.C.', 'ዓ.ም')} = {value}
-      </p>
+      {!empty && (
+        <p className="text-[11px] text-slate-500 mt-1">
+          {weekday !== null && `${weekdayName(weekday, locale)} · `}
+          {formatEthiopianDate(value, locale)} {t('E.C.', 'ዓ.ም')} = {value}
+        </p>
+      )}
       {hintIfNotSunday && value && !isSunday(value) && (
         <p className="text-[11px] text-amber-600 mt-0.5">
           {t('This date is not a Sunday.', 'ይህ ቀን እሑድ አይደለም።')}

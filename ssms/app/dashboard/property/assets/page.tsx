@@ -1,11 +1,13 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Download, PackagePlus, Search } from 'lucide-react';
+import { Download, PackagePlus, Search, Upload } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
 import { useAssetDialogs } from '@/components/property/useAssetDialogs';
+import { AssetImportDialog, downloadAssetTemplate } from '@/components/property/AssetImportDialog';
+import { templateDepartmentsForUnit } from '@/lib/import/assets';
 import { useProperty } from '@/lib/property/client';
 import {
   ASSET_CATEGORIES,
@@ -28,11 +30,13 @@ export default function AssetsPage() {
   const [category, setCategory] = useState('ALL');
   const [status, setStatus] = useState<'HELD' | 'ALL' | AssetStatus>('HELD');
   const [unit, setUnit] = useState('ALL');
+  const [importing, setImporting] = useState(false);
   const [toast, setToast] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
-  const dialogs = useAssetDialogs((text) => {
-    setToast({ kind: 'success', text });
+  const notify = (text: string, kind: 'success' | 'error' = 'success') => {
+    setToast({ kind, text });
     setTimeout(() => setToast(null), 3500);
-  });
+  };
+  const dialogs = useAssetDialogs(notify);
   const pair = (p: [string, string]) => t(p[0], p[1]);
 
   const held = prop.assets.filter(isHeld);
@@ -50,6 +54,17 @@ export default function AssetsPage() {
         a.location.toLowerCase().includes(needle)
     );
   const unitNames = [...new Set(prop.assets.map((a) => a.unit).filter(Boolean))].sort();
+  // A department chosen in the filter gets its own pre-filled template(s)
+  const templateDepts = templateDepartmentsForUnit(prop.units.find((u) => u.name_en === unit)?.code);
+
+  const downloadTemplate = async (dept?: (typeof templateDepts)[number]) => {
+    try {
+      const got = await downloadAssetTemplate(dept);
+      if (dept && got === 'blank') notify(t(`There is no pre-filled form for ${dept.name} yet — the blank template was downloaded.`, `ለ${dept.name} የተዘጋጀ ቅጽ ገና የለም — ባዶው ቅጽ ወርዷል።`));
+    } catch {
+      notify(t('Could not download the template. Check your connection.', 'ቅጹን ማውረድ አልተቻለም። ግንኙነትዎን ያረጋግጡ።'), 'error');
+    }
+  };
 
   const exportExcel = async () => {
     const header = [
@@ -74,9 +89,25 @@ export default function AssetsPage() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">{t('Asset Register', 'የንብረት መዝገብ')}</h1>
           <p className="text-sm text-slate-500 mt-1">{t('Everything the Sunday school owns — who holds it, where it is and its condition', 'የሰንበት ት/ቤቱ ንብረቶች በሙሉ — ማን እንደያዛቸው፣ የት እንዳሉና ሁኔታቸው')}</p>
         </div>
-        <div className="flex gap-2 self-start sm:self-auto">
-          <button onClick={exportExcel} disabled={rows.length === 0} className="btn btn-secondary text-xs inline-flex items-center gap-1.5 disabled:opacity-50">
-            <Download size={14} /> {t('Export Excel', 'ወደ ኤክሴል')}
+        <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+          {templateDepts.length === 0 ? (
+            <button onClick={() => downloadTemplate()} title={t('The blank form departments fill in and send back', 'ክፍሎች ሞልተው የሚመልሱት ባዶ ቅጽ')} className="btn btn-secondary text-xs inline-flex items-center gap-1.5">
+              <Download size={14} /> {t('Download template', 'ባዶ ቅጽ አውርድ')}
+            </button>
+          ) : (
+            templateDepts.map((d) => (
+              <button key={d.code} onClick={() => downloadTemplate(d)} className="btn btn-secondary text-xs inline-flex items-center gap-1.5">
+                <Download size={14} /> {t(`Download template for ${d.name}`, `የ${d.name} ቅጽ አውርድ`)}
+              </button>
+            ))
+          )}
+          {can('ASSET_CREATE') && (
+            <button onClick={() => setImporting(true)} disabled={prop.mode === 'loading' || prop.mode === 'error'} className="btn btn-secondary text-xs inline-flex items-center gap-1.5 disabled:opacity-50">
+              <Upload size={14} /> {t('Import Excel', 'ከኤክሴል አስገባ')}
+            </button>
+          )}
+          <button onClick={exportExcel} disabled={rows.length === 0} title={t('Download the assets listed below', 'ከታች የተዘረዘሩትን ንብረቶች አውርድ')} className="btn btn-secondary text-xs inline-flex items-center gap-1.5 disabled:opacity-50">
+            <Download size={14} /> {t('Export current assets', 'ያሉትን ንብረቶች ወደ ኤክሴል ላክ')}
           </button>
           {can('ASSET_CREATE') && (
             <button onClick={dialogs.openNew} disabled={prop.mode === 'loading' || prop.mode === 'error'} className="btn btn-primary text-xs inline-flex items-center gap-1.5 disabled:opacity-50">
@@ -154,6 +185,16 @@ export default function AssetsPage() {
         </div>
       </div>
       {dialogs.node}
+      {importing && (
+        <AssetImportDialog
+          departments={templateDepts}
+          onClose={() => setImporting(false)}
+          onDone={(text) => {
+            setImporting(false);
+            notify(text);
+          }}
+        />
+      )}
     </div>
   );
 }

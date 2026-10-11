@@ -59,8 +59,8 @@ export interface PropertyData {
   assets: Asset[];
   movements: AssetMovement[];
   maintenance: MaintenanceJob[];
-  units: { id: string; name_en: string; name_am: string }[];
-  people: { id: string; name: string }[];
+  units: { id: string; code: string; name_en: string; name_am: string }[];
+  people: { id: string; name: string; name_am: string }[];
 }
 
 export const EMPTY_PROPERTY: PropertyData = { assets: [], movements: [], maintenance: [], units: [], people: [] };

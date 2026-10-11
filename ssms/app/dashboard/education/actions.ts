@@ -14,6 +14,7 @@ import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize'
 import { notifyLater } from '@/lib/push/send';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import {
+  isIncomplete,
   letterGrade,
   MAX_PARTS,
   parseScheme,
@@ -703,6 +704,17 @@ export async function reviewGrade(gradeId: string, decision: 'APPROVED' | 'REJEC
   try {
     const { me, db } = await authorize('GRADE_APPROVE');
     if (decision !== 'APPROVED' && decision !== 'REJECTED') throw new Error('Invalid decision');
+    if (decision === 'APPROVED') {
+      // A grade with only some parts (e.g. just an online exam) is completed first
+      const grade = (await db.from('grades')
+        .select('scores, year:academic_years(assessment_scheme)')
+        .eq('id', gradeId)
+        .single()
+        .then(check)) as unknown as { scores: unknown; year: { assessment_scheme: unknown } | null };
+      if (isIncomplete({ scores: parseScores(grade.scores) }, parseScheme(grade.year?.assessment_scheme))) {
+        throw new Error('This grade is missing some parts — choose “Edit scores” to complete it before approving');
+      }
+    }
     await db.from('grades')
       .update({ status: decision, approved_by: me.systemUser.id, approved_at: new Date().toISOString() })
       .eq('id', gradeId)
