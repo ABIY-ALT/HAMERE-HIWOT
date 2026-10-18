@@ -53,6 +53,7 @@ export type PermissionCode =
   | 'STUDENT_UPDATE'
   | 'STUDENT_DELETE'
   | 'STUDENT_PORTAL' // a student's own exams, results and attendance (migration 023)
+  | 'PARENT_PORTAL' // a parent's own children's results, attendance and exams (migration 025)
   // Attendance
   | 'ATTENDANCE_VIEW'
   | 'ATTENDANCE_RECORD'

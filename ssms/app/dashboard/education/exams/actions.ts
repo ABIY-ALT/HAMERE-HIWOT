@@ -15,6 +15,7 @@ import { authorize, check, errorMessage } from '@/lib/auth/authorize';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import { parseScheme, parseScores } from '@/lib/education/types';
 import { notifyLater } from '@/lib/push/send';
+import { escapeHtml, siteUrl, telegramLater, telegramToPersons } from '@/lib/telegram/bot';
 import {
   GRACE_SECONDS,
   MAX_OPTIONS,
@@ -448,6 +449,19 @@ export async function openExam(id: string): Promise<ActionResult> {
         })
         .eq('id', id)
         .then(check);
+      // Telegram: the first time it opens, tell the students who connected
+      if (exam.status === 'DRAFT') {
+        telegramLater(async (bg) => {
+          const { data } = await bg.from('exam_attempts').select('student:students(person_id)').eq('exam_id', id);
+          const people = ((data ?? []) as unknown as { student: { person_id: string } | null }[]).map((r) => r.student?.person_id).filter((p): p is string => Boolean(p));
+          const text =
+            `🖊️ <b>${escapeHtml(exam.title)}</b>\n` +
+            escapeHtml(`የ${exam.subject_name_am} የኦንላይን ፈተና ተከፍቷል — ${exam.duration_minutes} ደቂቃ።\n`) +
+            escapeHtml(`The ${exam.subject_name} online exam is open — ${exam.duration_minutes} minutes.\n`) +
+            `${siteUrl()}/exam`;
+          await telegramToPersons(bg, people, text);
+        });
+      }
     }
     return { ok: true };
   } catch (e) {

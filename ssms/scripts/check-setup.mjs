@@ -159,6 +159,22 @@ try {
     .limit(1);
   if (examTables) problem(`Online exam tables missing — run migration 022_online_exams.sql (${examTables.message})`);
   else ok('Migration 022 (online exams) applied');
+  const [{ data: studentRole }, { data: parentRole }, { error: telegramTable }, { error: duesTable }] = await Promise.all([
+    db.from('roles').select('id').eq('code', 'STUDENT').maybeSingle(),
+    db.from('roles').select('id').eq('code', 'PARENT').maybeSingle(),
+    db.from('telegram_links').select('id').limit(1),
+    db.from('member_dues').select('id').limit(1),
+  ]);
+  if (!studentRole) problem('Student portal role missing — run migration 023_student_portal.sql');
+  else ok('Migration 023 (student portal) applied');
+  if (telegramTable) problem(`Telegram tables missing — run migration 024_telegram.sql (${telegramTable.message})`);
+  else ok('Migration 024 (Telegram) applied');
+  if (!parentRole) problem('Parent portal role missing — run migration 025_parent_portal.sql');
+  else ok('Migration 025 (parent portal) applied');
+  if (duesTable) problem(`Member dues tables missing — run migration 026_member_dues.sql (${duesTable.message})`);
+  else ok('Migration 026 (member dues) applied');
+  if (process.env.TELEGRAM_BOT_TOKEN) ok('Telegram bot token is set (add the same TELEGRAM_BOT_TOKEN on Render)');
+  else problem('Telegram bot token missing — optional; see Administration → Telegram bot');
   const { error: pushTable } = await db.from('push_subscriptions').select('id').limit(1);
   if (pushTable) problem('Push table missing — run migration 017_push.sql');
   else ok('Migration 017 (push notifications) applied');

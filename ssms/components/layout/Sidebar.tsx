@@ -25,6 +25,7 @@ import {
   Award,
   CalendarCheck,
   UserCircle,
+  Baby,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -68,6 +69,15 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
       { labelEn: 'My results', labelAm: 'የእኔ ውጤት', href: '/dashboard/my/results', icon: Award, permissions: ['STUDENT_PORTAL'] },
       { labelEn: 'My attendance', labelAm: 'የእኔ ክትትል', href: '/dashboard/my/attendance', icon: CalendarCheck, permissions: ['STUDENT_PORTAL'] },
       { labelEn: 'My profile', labelAm: 'የእኔ መገለጫ', href: '/dashboard/my/profile', icon: UserCircle, permissions: ['STUDENT_PORTAL'] },
+    ],
+  },
+  {
+    // Parents (PARENT role): only their own children
+    sectionEn: 'My family',
+    sectionAm: 'ቤተሰቤ',
+    items: [
+      { labelEn: 'My children', labelAm: 'ልጆቼ', href: '/dashboard/family', icon: Baby, permissions: ['PARENT_PORTAL'] },
+      { labelEn: 'My profile', labelAm: 'የእኔ መገለጫ', href: '/dashboard/family/profile', icon: UserCircle, permissions: ['PARENT_PORTAL'] },
     ],
   },
   {
@@ -121,6 +131,7 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
           { labelEn: 'Members', labelAm: 'አባላት', href: '/dashboard/people/members', permissions: ['MEMBER_VIEW'] },
           { labelEn: 'Students', labelAm: 'ተማሪዎች', href: '/dashboard/people/students', permissions: ['STUDENT_VIEW'] },
           { labelEn: 'Student Logins', labelAm: 'የተማሪ መግቢያዎች', href: '/dashboard/people/students/logins', permissions: ['STUDENT_CREATE', 'USER_MANAGE'] },
+          { labelEn: 'Parent Logins', labelAm: 'የወላጅ መግቢያዎች', href: '/dashboard/people/students/parents', permissions: ['STUDENT_CREATE', 'USER_MANAGE'] },
           { labelEn: 'Teachers', labelAm: 'አስተማሪዎች', href: '/dashboard/people/teachers', permissions: ['HR_VIEW'] },
           { labelEn: 'Choir Members', labelAm: 'ዘማሪዎች', href: '/dashboard/people/choir', permissions: ['MEMBER_VIEW', 'CHOIR_MANAGE'] },
         ],
@@ -144,6 +155,7 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
           { labelEn: 'Exams & Grades', labelAm: 'ፈተናና ውጤቶች', href: '/dashboard/education/grades', permissions: ['GRADE_VIEW'] },
           { labelEn: 'Online Exams', labelAm: 'የኦንላይን ፈተና', href: '/dashboard/education/exams', permissions: ['GRADE_VIEW'] },
           { labelEn: 'Results', labelAm: 'ውጤቶች', href: '/dashboard/education/results', permissions: ['GRADE_VIEW'] },
+          { labelEn: 'Year-end Promotion', labelAm: 'የዓመት መጨረሻ ዝውውር', href: '/dashboard/education/promotion', permissions: ['STUDENT_UPDATE'] },
         ],
       },
       {
@@ -198,6 +210,7 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
             permissions: ['FINANCE_VIEW', 'FINANCE_REQUEST', 'FINANCE_APPROVE', 'FINANCE_CREATE'],
           },
           { labelEn: 'Income', labelAm: 'ገቢ', href: '/dashboard/finance/income', permissions: ['FINANCE_VIEW'] },
+          { labelEn: 'Member Dues', labelAm: 'ወርሃዊ መዋጮ', href: '/dashboard/finance/dues', permissions: ['FINANCE_VIEW'] },
           { labelEn: 'Expenses', labelAm: 'ወጪ', href: '/dashboard/finance/expenses', permissions: ['FINANCE_VIEW'] },
           { labelEn: 'Budget', labelAm: 'በጀት', href: '/dashboard/finance/budget', permissions: ['FINANCE_VIEW'] },
           { labelEn: 'Donations', labelAm: 'ስጦታዎች', href: '/dashboard/finance/donations', permissions: ['FINANCE_VIEW'] },
@@ -252,6 +265,7 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
           { labelEn: 'Roles', labelAm: 'ሚናዎች', href: '/dashboard/admin/roles', permissions: ['ROLE_MANAGE'] },
           { labelEn: 'Permissions', labelAm: 'ፈቃዶች', href: '/dashboard/admin/permissions', permissions: ['ROLE_MANAGE'] },
           { labelEn: 'System Settings', labelAm: 'የስርዓት ቅንብሮች', href: '/dashboard/admin/settings', permissions: ['SYSTEM_CONFIGURE'] },
+          { labelEn: 'Telegram Bot', labelAm: 'የቴሌግራም ቦት', href: '/dashboard/admin/telegram', permissions: ['SYSTEM_CONFIGURE', 'MEMBER_UPDATE', 'STUDENT_UPDATE'] },
         ],
       },
     ],

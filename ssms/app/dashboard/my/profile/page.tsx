@@ -6,6 +6,7 @@ import { useLang } from '@/contexts/LangContext';
 import { formatEthiopianDate } from '@/lib/utils/ethiopian-calendar';
 import { PortalNotice, useMyPortal } from '@/components/student/portal';
 import { changeMyPassword } from '@/app/dashboard/profile/actions';
+import { TelegramConnect } from '@/components/telegram/TelegramConnect';
 
 /** The student's details, and changing their PIN. */
 export default function MyProfilePage() {
@@ -55,6 +56,8 @@ export default function MyProfilePage() {
         </dl>
         <p className="text-[11px] text-slate-400 mt-3">{t('Something wrong? Tell the school office.', 'የተሳሳተ ነገር ካለ ለትምህርት ቤቱ ጽ/ቤት ይንገሩ።')}</p>
       </div>
+
+      <TelegramConnect what={t('Get your results, absences and exam news on Telegram.', 'ውጤቶችዎን፣ የመቅረት መልእክቶችንና የፈተና ዜናዎችን በቴሌግራም ያግኙ።')} />
 
       <form onSubmit={change} className="card p-5 space-y-4">
         <h2 className="font-bold text-slate-800 text-sm inline-flex items-center gap-2">

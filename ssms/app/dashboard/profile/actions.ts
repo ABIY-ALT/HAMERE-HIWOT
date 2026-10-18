@@ -134,8 +134,9 @@ export async function changeMyPassword(current: string, next: string): Promise<A
   if (!isSupabaseEnabled()) return { ok: false, error: 'Demo mode — passwords cannot be changed.' };
   try {
     const { me, db } = await authorize();
-    // Students sign in with a 6-digit PIN; staff passwords need at least 8 characters
-    if (isStudentLogin(me.systemUser.username)) {
+    // Students and parents sign in with a 6-digit PIN; staff passwords need at least 8 characters
+    const portalOnly = me.permissions.length > 0 && me.permissions.every((p) => p === 'STUDENT_PORTAL' || p === 'PARENT_PORTAL');
+    if (portalOnly || isStudentLogin(me.systemUser.username)) {
       if (!/^\d{6}$/.test(next)) throw new Error('The new PIN must be exactly 6 digits');
     } else if (next.length < 8) {
       throw new Error('The new password must be at least 8 characters');

@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { AlertCircle, Briefcase, Church, Edit3, Key, Landmark, Lock, Music, Save, Shield, User } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { TelegramConnect } from '@/components/telegram/TelegramConnect';
 import { useLang } from '@/contexts/LangContext';
 import { getInitials } from '@/lib/utils';
 import { Modal } from '@/components/ui/Modal';
@@ -216,6 +217,9 @@ export default function ProfilePage() {
             </div>
             <Row label={t('Last sign-in', 'የመጨረሻ መግቢያ')} value={profile?.lastLogin ? formatEthiopianDate(profile.lastLogin.slice(0, 10), locale) : null} />
           </Card>
+          <TelegramConnect
+            what={t('Get your notifications (approvals, tasks, requests) on Telegram as well.', 'ማሳወቂያዎችዎን (ማጽደቂያ፣ ተግባራት፣ ጥያቄዎች) በቴሌግራምም ያግኙ።')}
+          />
         </div>
       )}
 

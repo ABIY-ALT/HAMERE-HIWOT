@@ -12,6 +12,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
 import { notifyLater } from '@/lib/push/send';
+import { escapeHtml, siteUrl, studentAndGuardians, telegramLater, telegramToPersons } from '@/lib/telegram/bot';
+import { formatEthiopianDate } from '@/lib/utils/ethiopian-calendar';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import {
   isIncomplete,
@@ -569,6 +571,14 @@ export async function saveAttendance(input: z.input<typeof AttendanceSchema>): P
       sessionId = row.id;
     }
 
+    const before = existing
+      ? new Map(
+          ((await db.from('attendance_records').select('student_id, status').eq('session_id', sessionId).then(check)) as { student_id: string; status: string }[]).map(
+            (r) => [r.student_id, r.status]
+          )
+        )
+      : new Map<string, string>();
+
     await db.from('attendance_records')
       .upsert(
         studentIds.map((id) => ({ session_id: sessionId, student_id: id, status: a.records[id] })),
@@ -582,9 +592,35 @@ export async function saveAttendance(input: z.input<typeof AttendanceSchema>): P
       .not('student_id', 'in', `(${studentIds.join(',')})`)
       .then(check);
 
+    // Telegram: tell the student and their parents about a new absence (recent roll calls only, not back-filled ones)
+    const absent = studentIds.filter((id) => a.records[id] === 'ABSENT' && before.get(id) !== 'ABSENT');
+    if (absent.length && Date.now() - Date.parse(a.date) < 3 * 86_400_000) {
+      telegramLater((bg) => sendAbsenceAlerts(bg, absent, a.class_id, a.date));
+    }
+
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
+  }
+}
+
+/** "<name> was absent from <class> on <date>" to each student and their linked parents. */
+async function sendAbsenceAlerts(db: SupabaseClient, studentIds: string[], classId: string, date: string) {
+  const [recipients, { data: cls }, { data: students }] = await Promise.all([
+    studentAndGuardians(db, studentIds),
+    db.from('classes').select('name_en, name_am').eq('id', classId).maybeSingle(),
+    db.from('students').select('id, person:persons!students_person_id_fkey(full_name_en, full_name_am, gender)').in('id', studentIds),
+  ]);
+  const c = cls as { name_en: string; name_am: string | null } | null;
+  for (const s of (students ?? []) as unknown as { id: string; person: { full_name_en: string; full_name_am: string | null; gender: string } | null }[]) {
+    const p = s.person;
+    if (!p) continue;
+    const female = p.gender === 'FEMALE';
+    const text =
+      `📋 <b>የመቅረት ማሳወቂያ · Absence</b>\n` +
+      escapeHtml(`${p.full_name_am || p.full_name_en} ${formatEthiopianDate(date, 'am')} ከ${c?.name_am || c?.name_en || ''} ክፍል ${female ? 'ቀርታለች' : 'ቀርቷል'}።\n`) +
+      escapeHtml(`${p.full_name_en} was absent from ${c?.name_en ?? 'class'} on ${formatEthiopianDate(date, 'en')}.`);
+    await telegramToPersons(db, recipients.get(s.id) ?? [], text);
   }
 }
 
@@ -719,8 +755,32 @@ export async function reviewGrade(gradeId: string, decision: 'APPROVED' | 'REJEC
       .update({ status: decision, approved_by: me.systemUser.id, approved_at: new Date().toISOString() })
       .eq('id', gradeId)
       .then(check);
+    // Telegram: the new result to the student and their parents
+    if (decision === 'APPROVED') telegramLater((bg) => sendResultMessage(bg, gradeId));
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
   }
+}
+
+/** "New result: <subject> (term N) — 85/100 (A)" to the student and their linked parents. */
+async function sendResultMessage(db: SupabaseClient, gradeId: string) {
+  const { data } = await db.from('grades')
+    .select('student_id, term, total_score, subject:subjects(name_en, name_am), student:students(person:persons!students_person_id_fkey(full_name_en, full_name_am))')
+    .eq('id', gradeId)
+    .maybeSingle();
+  const g = data as unknown as {
+    student_id: string; term: number; total_score: number;
+    subject: { name_en: string; name_am: string | null } | null;
+    student: { person: { full_name_en: string; full_name_am: string | null } | null } | null;
+  } | null;
+  if (!g) return;
+  const total = Number(g.total_score);
+  const person = g.student?.person;
+  const text =
+    `📝 <b>አዲስ ውጤት · New result</b>\n` +
+    escapeHtml(`${person?.full_name_am || person?.full_name_en || ''} — ${g.subject?.name_am || g.subject?.name_en || ''} (${g.term}ኛ ሩብ): ${total}/100 (${letterGrade(total)})\n`) +
+    escapeHtml(`${person?.full_name_en ?? ''} — ${g.subject?.name_en ?? ''} (term ${g.term}): ${total}/100 (${letterGrade(total)})\n`) +
+    siteUrl();
+  await telegramToPersons(db, (await studentAndGuardians(db, [g.student_id])).get(g.student_id) ?? [], text);
 }

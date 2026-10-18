@@ -22,6 +22,10 @@ export const env = {
   vapidPublicKey: () => cleanEnv(process.env.VAPID_PUBLIC_KEY),
   vapidPrivateKey: () => cleanEnv(process.env.VAPID_PRIVATE_KEY),
   vapidSubject: () => cleanEnv(process.env.VAPID_SUBJECT),
+  /** From @BotFather; without it no Telegram messages are sent */
+  telegramBotToken: () => cleanEnv(process.env.TELEGRAM_BOT_TOKEN),
+  /** The site's public address, for links in Telegram messages */
+  siteUrl: () => cleanEnv(process.env.SITE_URL),
 };
 
 /** Like the getters above, but throws a clear error when the setting is missing. */

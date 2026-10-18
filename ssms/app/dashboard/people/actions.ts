@@ -38,8 +38,10 @@ export async function loadMembers(): Promise<Loaded<MembersData>> {
       selectAll<{ person_id: string }>((a, b) => db.from('students').select('person_id').order('id').range(a, b)),
       db.from('organization_units').select('id, name_en, name_am').eq('is_active', true).order('sort_order').then(check) as Promise<MemberUnit[]>,
     ]);
-    const studentPersons = new Set(students.map((s) => s.person_id));
-    return { mode: 'live', data: { members: persons.filter((p) => !studentPersons.has(p.id)), units } };
+    // Parents' records made only for their login are not members (migration 025; none before it)
+    const { data: guardianOnly } = await db.from('persons').select('id').eq('is_guardian_only', true);
+    const skip = new Set([...students.map((s) => s.person_id), ...((guardianOnly ?? []) as { id: string }[]).map((g) => g.id)]);
+    return { mode: 'live', data: { members: persons.filter((p) => !skip.has(p.id)), units } };
   } catch (e) {
     return { mode: 'error', error: missingMigration(errorMessage(e)) };
   }

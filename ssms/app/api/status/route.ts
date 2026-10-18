@@ -37,7 +37,7 @@ export function GET() {
     service: process.env.RENDER_SERVICE_ID ?? 'not on Render',
     // Names only (never values) of settings that look related — catches typos in setting names
     similarSettingNames: Object.keys(process.env)
-      .filter((k) => /SUPA|VAPID|MOCK|NEXT_PUBLIC|ANON|SERVICE_ROLE/i.test(k))
+      .filter((k) => /SUPA|VAPID|MOCK|NEXT_PUBLIC|ANON|SERVICE_ROLE|TELEGRAM|SITE_URL/i.test(k))
       .map((k) => JSON.stringify(k))
       .sort(),
     built: {

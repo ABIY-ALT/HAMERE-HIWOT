@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { UserPlus, Search, Download, Upload, AlertCircle, KeyRound } from 'lucide-react';
+import { UserPlus, Search, Download, Upload, AlertCircle, KeyRound, Users } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Modal } from '@/components/ui/Modal';
@@ -138,6 +138,12 @@ export default function StudentsPage() {
             <Link href="/dashboard/people/students/logins" className="btn btn-secondary inline-flex items-center gap-2">
               <KeyRound size={16} />
               {t('Student logins', 'የተማሪ መግቢያዎች')}
+            </Link>
+          )}
+          {canAny(['STUDENT_CREATE', 'USER_MANAGE']) && (
+            <Link href="/dashboard/people/students/parents" className="btn btn-secondary inline-flex items-center gap-2">
+              <Users size={16} />
+              {t('Parent logins', 'የወላጅ መግቢያዎች')}
             </Link>
           )}
           <Link
