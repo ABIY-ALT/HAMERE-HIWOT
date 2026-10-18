@@ -8,6 +8,7 @@
 import { z } from 'zod';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { nonMemberIds } from '@/lib/members/membership';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import type { Donation, DonationStatus, DonationType, DonorOption } from '@/lib/finance/donations';
 
@@ -20,7 +21,7 @@ export async function loadDonations(): Promise<Loaded<{ donations: Donation[]; d
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
     const { db } = await authorize('FINANCE_VIEW');
-    const [rows, persons, students] = await Promise.all([
+    const [rows, persons, notMembers] = await Promise.all([
       selectAll<Row>((a, b) =>
         db.from('donations')
           .select('*, recorder:system_users!donations_recorded_by_fkey(person:persons!system_users_person_id_fkey(full_name_en))')
@@ -31,10 +32,10 @@ export async function loadDonations(): Promise<Loaded<{ donations: Donation[]; d
       selectAll<{ id: string; full_name_en: string; phone_primary: string | null }>((a, b) =>
         db.from('persons').select('id, full_name_en, phone_primary').eq('status', 'ACTIVE').order('full_name_en').order('id').range(a, b)
       ),
-      selectAll<{ person_id: string }>((a, b) => db.from('students').select('person_id').order('id').range(a, b)),
+      // Students who are also members stay; student-only and parents' login records do not
+      nonMemberIds(db),
     ]);
-    const studentPersons = new Set(students.map((s) => s.person_id));
-
+    
     const donations: Donation[] = rows.map((d) => ({
       id: d.id,
       receipt_no: d.receipt_no as string,
@@ -58,7 +59,7 @@ export async function loadDonations(): Promise<Loaded<{ donations: Donation[]; d
       data: {
         donations,
         donors: persons
-          .filter((p) => !studentPersons.has(p.id))
+          .filter((p) => !notMembers.has(p.id))
           .map((p) => ({ id: p.id, name: p.full_name_en, phone: p.phone_primary ?? '' })),
       },
     };

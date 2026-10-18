@@ -176,6 +176,10 @@ try {
   const { error: phoneLinks } = await db.from('telegram_links').select('relation').limit(1);
   if (phoneLinks) problem(`Telegram sign-in by phone missing — run migration 027_telegram_phone.sql (${phoneLinks.message})`);
   else ok('Migration 027 (Telegram sign-in by phone) applied');
+  const { error: claimsTable } = await db.from('dues_claims').select('id').limit(1);
+  const { error: sessionsTable } = await db.from('telegram_sessions').select('chat_id').limit(1);
+  if (claimsTable || sessionsTable) problem(`Dues reported in Telegram missing — run migration 028_dues_claims.sql (${(claimsTable ?? sessionsTable).message})`);
+  else ok('Migration 028 (dues reported in Telegram) applied');
   if (process.env.TELEGRAM_BOT_TOKEN) ok('Telegram bot token is set (add the same TELEGRAM_BOT_TOKEN on Render)');
   else problem('Telegram bot token missing — optional; see Administration → Telegram bot');
   const { error: pushTable } = await db.from('push_subscriptions').select('id').limit(1);

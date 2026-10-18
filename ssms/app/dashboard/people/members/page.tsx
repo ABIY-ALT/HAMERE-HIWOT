@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
-import { UserPlus, Search, Phone, MapPin, Church, Calendar, User, Mail, Pencil, AlertCircle, Camera, Briefcase, Users, ClipboardCheck, Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { UserPlus, Search, Phone, MapPin, Church, Calendar, User, Mail, Pencil, AlertCircle, Camera, Briefcase, Users, ClipboardCheck, Check, ChevronLeft, ChevronRight, GraduationCap } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { MOCK_ORG_UNITS, MOCK_PERSONS } from '@/lib/mock/data';
@@ -23,7 +23,18 @@ import {
   ageFrom,
   choiceLabel,
 } from '@/lib/members/form';
-import { createMember, loadMembers, updateMember, uploadMemberPhoto, type MemberInput, type MemberUnit } from '../actions';
+import {
+  createMember,
+  enrollMemberAsStudent,
+  loadMembers,
+  updateMember,
+  uploadMemberPhoto,
+  type MemberClass,
+  type MemberInput,
+  type MemberStudent,
+  type MemberUnit,
+  type StudentPerson,
+} from '../actions';
 
 type Toast = { kind: 'success' | 'error'; text: string } | null;
 
@@ -149,6 +160,12 @@ export default function MembersPage() {
   const [busy, setBusy] = useState(false);
   const [selectedMember, setSelectedMember] = useState<Person | null>(null);
   const [toast, setToast] = useState<Toast>(null);
+  // Members who are also students
+  const [studentOf, setStudentOf] = useState<Record<string, MemberStudent>>({});
+  const [classes, setClasses] = useState<MemberClass[]>([]);
+  const [studentsOnly, setStudentsOnly] = useState<StudentPerson[]>([]);
+  /** "Already a student?": registering this student's own record as a member */
+  const [fromStudent, setFromStudent] = useState<string | null>(null);
 
   const live = mode === 'live';
   const editing = editingId ? members.find((m) => m.id === editingId) : undefined;
@@ -178,6 +195,9 @@ export default function MembersPage() {
     } else if (res.mode === 'live') {
       setMembers(res.data.members);
       setUnits(res.data.units);
+      setStudentOf(res.data.student_of);
+      setClasses(res.data.classes);
+      setStudentsOnly(res.data.students_only);
     } else setLoadError(res.error);
     setMode(res.mode);
   }, []);
@@ -234,6 +254,7 @@ export default function MembersPage() {
 
   const openCreate = () => {
     setEditingId(null);
+    setFromStudent(null);
     setForm({ ...EMPTY_FORM, registered_on: todayIso() });
     setPhoto(null);
     setFormError('');
@@ -252,6 +273,13 @@ export default function MembersPage() {
     // Every step of an existing member can be opened, and saved from any step
     setReached(LAST_STEP);
     setFormOpen(true);
+  };
+
+  /** Start the form from a student's own record: their details are filled in, and saving makes that same person a member. */
+  const chooseStudent = (personId: string) => {
+    const p = studentsOnly.find((s) => s.id === personId);
+    setFromStudent(p ? p.id : null);
+    setForm(p ? { ...toForm(p), registered_on: todayIso(), membership_type: 'REGULAR', status: 'ACTIVE' } : { ...EMPTY_FORM, registered_on: todayIso() });
   };
 
   const toggleDepartment = (code: string) =>
@@ -286,7 +314,7 @@ export default function MembersPage() {
           return setFormError(res.error);
         }
       } else {
-        const res = await createMember(fields);
+        const res = await createMember(fields, fromStudent ?? undefined);
         if (!res.ok) {
           setBusy(false);
           return setFormError(res.error);
@@ -340,7 +368,9 @@ export default function MembersPage() {
       'success',
       editingId
         ? t('Member updated', 'የአባሉ መረጃ ተቀይሯል')
-        : t(`New member ${displayName} registered`, `አዲስ አባል ${displayName} ተመዝግቧል`)
+        : fromStudent
+          ? t(`${displayName} is now a member as well as a student`, `${displayName} ከተማሪነት በተጨማሪ አባል ሆኗል/ለች`)
+          : t(`New member ${displayName} registered`, `አዲስ አባል ${displayName} ተመዝግቧል`)
     );
   };
 
@@ -350,6 +380,7 @@ export default function MembersPage() {
     const matchesSearch =
       names.includes(needle) ||
       p.membership_code.toLowerCase().includes(needle) ||
+      (studentOf[p.id]?.reg_no ?? '').toLowerCase().includes(needle) ||
       (p.phone_primary ?? '').includes(search) ||
       (p.baptismal_name ?? '').toLowerCase().includes(needle);
     return (
@@ -476,7 +507,14 @@ export default function MembersPage() {
               {filtered.map((m) => (
                 <tr key={m.id}>
                   <td className="font-mono text-xs font-semibold text-blue-600">{m.membership_code}</td>
-                  <td className="font-medium text-slate-900">{nameOf(m)}</td>
+                  <td className="font-medium text-slate-900">
+                    {nameOf(m)}
+                    {studentOf[m.id] && (
+                      <span className="ml-2 inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 align-middle" title={t('Also a student', 'ተማሪም ነው')}>
+                        <GraduationCap size={11} /> {studentOf[m.id].reg_no}
+                      </span>
+                    )}
+                  </td>
                   <td className="text-slate-600">{m.baptismal_name || '—'}</td>
                   <td>
                     <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-700">
@@ -556,6 +594,27 @@ export default function MembersPage() {
           {/* Step 1 — form header: term, ID, date, photo, membership type */}
           {step === 0 && (
             <>
+              {!editingId && studentsOnly.length > 0 && (
+                <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 px-3 py-2.5 space-y-1.5">
+                  <label className="text-xs font-semibold text-indigo-900 flex items-center gap-1.5">
+                    <GraduationCap size={14} /> {t('Already registered as a student? (optional)', 'ቀድሞ በተማሪነት ተመዝግቧል/ለች? (ካለ)')}
+                  </label>
+                  <select value={fromStudent ?? ''} onChange={(e) => chooseStudent(e.target.value)} className="form-input text-sm">
+                    <option value="">{t('— No, a new person —', '— አይ፣ አዲስ ሰው ነው —')}</option>
+                    {studentsOnly.map((s) => (
+                      <option key={s.id} value={s.id}>{nameOf(s)} · {s.reg_no}</option>
+                    ))}
+                  </select>
+                  {fromStudent && (
+                    <p className="text-[11px] text-indigo-800">
+                      {t(
+                        'Their details are filled in. Saving makes the same person a member too — results, attendance and logins stay with them.',
+                        'መረጃቸው ተሞልቷል። ሲያስቀምጡ ያው ሰው አባልም ይሆናል — ውጤት፣ ክትትልና መግቢያ አብረውት ይቆያሉ።'
+                      )}
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="flex flex-col-reverse sm:flex-row gap-4">
                 <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Field label={t('Registration term (E.C.)', 'የምዝገባ ዘመን (ዓ.ም.)')}>
@@ -883,6 +942,33 @@ export default function MembersPage() {
               />
             </ProfileGroup>
 
+            {(studentOf[selectedMember.id] || (live && can('STUDENT_CREATE'))) && (
+              <ProfileGroup title={t('Student', 'ተማሪነት')}>
+                {studentOf[selectedMember.id] ? (
+                  <>
+                    <ProfileRow icon={<GraduationCap size={15} />} label={t('Registration No.', 'የምዝገባ ቁጥር')} value={studentOf[selectedMember.id].reg_no} mono />
+                    <ProfileRow
+                      icon={<GraduationCap size={15} />}
+                      label={t('Class', 'ክፍል')}
+                      value={[locale === 'am' ? studentOf[selectedMember.id].class_am : studentOf[selectedMember.id].class_en, studentOf[selectedMember.id].status !== 'ACTIVE' ? studentOf[selectedMember.id].status : ''].filter(Boolean).join(' · ')}
+                    />
+                  </>
+                ) : (
+                  <EnrollAsStudent
+                    key={selectedMember.id}
+                    classes={classes}
+                    onEnroll={async (classId, date) => {
+                      const res = await enrollMemberAsStudent(selectedMember.id, classId, date);
+                      if (!res.ok) return res.error;
+                      showToast('success', t(`Enrolled — registration number ${res.reg_no}`, `ተመዝግቧል — የምዝገባ ቁጥር ${res.reg_no}`));
+                      apply(await loadMembers());
+                      return null;
+                    }}
+                  />
+                )}
+              </ProfileGroup>
+            )}
+
             <ProfileGroup title={t('Registration & office use', 'ምዝገባ እና የጽ/ቤት አገልግሎት')}>
               <ProfileRow icon={<Calendar size={15} />} label={t('Registration', 'ምዝገባ')} value={[selectedMember.registration_term && `${selectedMember.registration_term} ${t('E.C.', 'ዓ.ም')}`, ethDate(selectedMember.registered_on ?? selectedMember.created_at.slice(0, 10))].filter(Boolean).join(' · ')} />
               <ProfileRow icon={<ClipboardCheck size={15} />} label={t('Declaration signed', 'ቃል ኪዳን ፈርሟል')} value={selectedMember.declaration_signed ? t('Yes', 'አዎ') : t('No', 'አልፈረመም')} />
@@ -911,6 +997,67 @@ export default function MembersPage() {
           </div>
         </Modal>
       )}
+    </div>
+  );
+}
+
+/** "Enroll in a class": a member who also attends classes becomes a student (same person, new registration number). */
+function EnrollAsStudent({ classes, onEnroll }: { classes: MemberClass[]; onEnroll: (classId: string, date: string) => Promise<string | null> }) {
+  const { t, locale } = useLang();
+  const [open, setOpen] = useState(false);
+  const [classId, setClassId] = useState('');
+  const [date, setDate] = useState(todayIso());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  if (!open) {
+    return (
+      <div className="py-2.5 flex items-center justify-between gap-3">
+        <span className="text-slate-500 text-xs">{t('Not a student. Attends classes too?', 'ተማሪ አይደለም። ትምህርትም ይከታተላል?')}</span>
+        <button type="button" onClick={() => setOpen(true)} className="btn btn-secondary text-xs inline-flex items-center gap-1.5">
+          <GraduationCap size={13} /> {t('Enroll in a class', 'በክፍል መዝግብ')}
+        </button>
+      </div>
+    );
+  }
+  const save = async () => {
+    setBusy(true);
+    setError('');
+    const problem = await onEnroll(classId, date);
+    setBusy(false);
+    if (problem) setError(problem);
+  };
+  return (
+    <div className="py-3 space-y-3">
+      {error && <p className="p-2 rounded bg-red-50 border border-red-200 text-xs text-red-700">{error}</p>}
+      {classes.length === 0 ? (
+        <p className="text-xs text-amber-700">{t('No classes this year yet — add them under Education first.', 'በዚህ ዓመት ገና ክፍል የለም — መጀመሪያ በትምህርት ክፍል ይጨምሩ።')}</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-semibold text-slate-700 block mb-1">{t('Class', 'ክፍል')} *</label>
+            <select value={classId} onChange={(e) => setClassId(e.target.value)} className="form-input text-sm">
+              <option value="">{t('— Choose —', '— ይምረጡ —')}</option>
+              {classes.map((c) => (
+                <option key={c.id} value={c.id}>{locale === 'am' ? c.name_am || c.name_en : c.name_en}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-700 block mb-1">{t('Enrollment date', 'የተመዘገበበት ቀን')}</label>
+            <EthiopianDateInput value={date} onChange={setDate} />
+          </div>
+        </div>
+      )}
+      <p className="text-[11px] text-slate-500">
+        {t('The same person gets a registration number: they stay a member (dues, departments) and also get results and attendance.', 'ያው ሰው የምዝገባ ቁጥር ያገኛል፤ አባል ሆኖ ይቀጥላል (መዋጮ፣ ክፍሎች) እና ውጤትና ክትትልም ይኖረዋል።')}
+      </p>
+      <div className="flex justify-end gap-2">
+        <button type="button" disabled={busy} onClick={() => setOpen(false)} className="btn btn-secondary text-xs">{t('Cancel', 'ሰርዝ')}</button>
+        <button type="button" disabled={busy || !classId} onClick={save} className="btn btn-primary text-xs disabled:opacity-50">
+          {busy ? t('Saving…', 'በማስቀመጥ ላይ…') : t('Enroll', 'መዝግብ')}
+        </button>
+      </div>
     </div>
   );
 }

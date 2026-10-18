@@ -7,15 +7,20 @@
 //   FINANCE_VIEW     see
 //   FINANCE_CREATE   record payments, set the monthly amount, Telegram reminders
 //   FINANCE_APPROVE  cancel a receipt (removes its months and its income entry)
+// Members can also report a payment in the Telegram bot ("💳 I paid",
+// migration 028); it waits under "Payment reports" until someone with
+// FINANCE_CREATE approves it (recorded like any payment) or rejects it.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { z } from 'zod';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
-import { ETHIOPIAN_MONTHS_AM, ETHIOPIAN_MONTHS_EN, todayIso } from '@/lib/utils/ethiopian-calendar';
+import { ETHIOPIAN_MONTHS_AM, ETHIOPIAN_MONTHS_EN } from '@/lib/utils/ethiopian-calendar';
 import { DUES_MONTHS, currentEthiopianYear, monthsDue, unpaidMonths } from '@/lib/finance/dues';
-import { escapeHtml, siteUrl, telegramConfigured, telegramToPersons } from '@/lib/telegram/bot';
+import { escapeHtml, sendTelegram, siteUrl, telegramConfigured, telegramToPersons } from '@/lib/telegram/bot';
+import { recordPayment, type DuesReceipt } from '@/lib/finance/dues-record';
+import { nonMemberIds } from '@/lib/members/membership';
 
 type Row = Record<string, unknown>;
 
@@ -33,6 +38,28 @@ export interface DuesMember {
   phone: string;
   /** month (1–12) → payment */
   paid: Record<number, DuesPayment>;
+  /** Months reported in the bot, waiting for approval */
+  pending: number[];
+}
+
+/** A payment a member reported in the Telegram bot, waiting for approval. */
+export interface DuesClaim {
+  id: string;
+  person_id: string;
+  name_en: string;
+  name_am: string;
+  code: string;
+  year: number;
+  months: number[];
+  /** The total the member says they paid */
+  amount: number;
+  /** Monthly amount × months for that year, when a monthly amount is set */
+  expected: number | null;
+  method: 'CASH' | 'BANK' | 'TELEBIRR' | 'OTHER';
+  reference: string;
+  has_proof: boolean;
+  paid_on: string;
+  created_at: string;
 }
 
 export interface DuesData {
@@ -42,28 +69,26 @@ export interface DuesData {
   due_months: number;
   rate: number | null;
   members: DuesMember[];
+  /** Payment reports from the bot, all years, oldest first */
+  claims: DuesClaim[];
+  /** false until migration 028 is applied */
+  claims_ready: boolean;
   can_record: boolean;
   can_cancel: boolean;
 }
 
-export interface DuesReceipt {
-  receipt_no: string;
-  name_en: string;
-  name_am: string;
-  code: string;
-  year: number;
-  months: number[];
-  amount_per_month: number;
-  total: number;
-  paid_on: string;
-}
+export type { DuesReceipt } from '@/lib/finance/dues-record';
 
 const MIGRATION_026 = 'Run database migrations 025 and 026 (parent portal, member dues) first';
-const missing = (m: string) => (/member_dues|dues_rates|next_dues_receipt|is_guardian_only/.test(m) ? MIGRATION_026 : m);
+const MIGRATION_028 = 'Run database migration 028 (dues reported in Telegram) first';
+const missing = (m: string) =>
+  /dues_claims|telegram_sessions/.test(m) ? MIGRATION_028 : /member_dues|dues_rates|next_dues_receipt|is_guardian_only/.test(m) ? MIGRATION_026 : m;
 
-/** Who pays dues: active members — not students, not parent-only records, not honorary members. */
+const METHOD_EN: Record<string, string> = { CASH: 'cash', BANK: 'bank', TELEBIRR: 'Telebirr', OTHER: 'other' };
+
+/** Who pays dues: active members (students too when they are also members), not parent-only records, not honorary members. */
 async function duesMembers(db: Awaited<ReturnType<typeof authorize>>['db']) {
-  const [persons, students] = await Promise.all([
+  const [persons, notMembers] = await Promise.all([
     selectAll<Row>((a, b) =>
       db.from('persons')
         .select('id, full_name_en, full_name_am, membership_code, phone_primary, membership_type, is_guardian_only')
@@ -72,10 +97,9 @@ async function duesMembers(db: Awaited<ReturnType<typeof authorize>>['db']) {
         .order('id')
         .range(a, b)
     ),
-    selectAll<Row>((a, b) => db.from('students').select('person_id').order('id').range(a, b)),
+    nonMemberIds(db),
   ]);
-  const studentPersons = new Set(students.map((s) => s.person_id as string));
-  return persons.filter((p) => !studentPersons.has(p.id as string) && !p.is_guardian_only && p.membership_type !== 'HONORARY');
+  return persons.filter((p) => !notMembers.has(p.id as string) && !p.is_guardian_only && p.membership_type !== 'HONORARY');
 }
 
 export async function loadDues(year?: number): Promise<Loaded<DuesData>> {
@@ -84,10 +108,15 @@ export async function loadDues(year?: number): Promise<Loaded<DuesData>> {
     const { me, db } = await authorize('FINANCE_VIEW', 'AUDIT_VIEW_ALL');
     const current = currentEthiopianYear();
     const y = year && year > 1900 && year < 2200 ? Math.trunc(year) : current;
-    const [members, rateRow, paid] = await Promise.all([
+    const [members, rateRow, paid, claimRes] = await Promise.all([
       duesMembers(db),
       db.from('dues_rates').select('monthly_amount').eq('year', y).maybeSingle(),
       selectAll<Row>((a, b) => db.from('member_dues').select('person_id, month, amount, paid_on, receipt_no').eq('year', y).order('id').range(a, b)),
+      db.from('dues_claims')
+        .select('id, person_id, year, months, amount, method, reference, proof_file_id, paid_on, created_at')
+        .eq('status', 'PENDING')
+        .order('created_at')
+        .limit(500),
     ]);
     if (rateRow.error) throw new Error(missing(rateRow.error.message));
     const byPerson = new Map<string, Record<number, DuesPayment>>();
@@ -96,6 +125,42 @@ export async function loadDues(year?: number): Promise<Loaded<DuesData>> {
       map[Number(p.month)] = { amount: Number(p.amount), paid_on: p.paid_on as string, receipt_no: p.receipt_no as string };
       byPerson.set(p.person_id as string, map);
     }
+
+    // Payment reports from the bot (none before migration 028)
+    const claimRows = claimRes.error ? [] : ((claimRes.data ?? []) as Row[]);
+    const names = new Map(members.map((m) => [m.id as string, m]));
+    const others = [...new Set(claimRows.map((c) => c.person_id as string))].filter((id) => !names.has(id));
+    const claimYears = [...new Set(claimRows.map((c) => Number(c.year)))];
+    const [otherPeople, rates] = await Promise.all([
+      others.length ? db.from('persons').select('id, full_name_en, full_name_am, membership_code').in('id', others) : Promise.resolve({ data: [] }),
+      claimYears.length ? db.from('dues_rates').select('year, monthly_amount').in('year', claimYears) : Promise.resolve({ data: [] }),
+    ]);
+    for (const p of (otherPeople.data ?? []) as Row[]) names.set(p.id as string, p);
+    const rateOf = new Map(((rates.data ?? []) as Row[]).map((r) => [Number(r.year), Number(r.monthly_amount)]));
+    const claims: DuesClaim[] = claimRows.map((c) => {
+      const p = names.get(c.person_id as string);
+      const months = (c.months as number[]).map(Number).sort((a, b) => a - b);
+      const rate = rateOf.get(Number(c.year));
+      return {
+        id: c.id as string,
+        person_id: c.person_id as string,
+        name_en: (p?.full_name_en as string) ?? '—',
+        name_am: (p?.full_name_am as string) || ((p?.full_name_en as string) ?? '—'),
+        code: (p?.membership_code as string) ?? '',
+        year: Number(c.year),
+        months,
+        amount: Number(c.amount),
+        expected: rate === undefined ? null : rate * months.length,
+        method: c.method as DuesClaim['method'],
+        reference: (c.reference as string) ?? '',
+        has_proof: Boolean(c.proof_file_id),
+        paid_on: c.paid_on as string,
+        created_at: c.created_at as string,
+      };
+    });
+    const pendingBy = new Map<string, number[]>();
+    for (const c of claims) if (c.year === y) pendingBy.set(c.person_id, [...(pendingBy.get(c.person_id) ?? []), ...c.months]);
+
     return {
       mode: 'live',
       data: {
@@ -110,7 +175,10 @@ export async function loadDues(year?: number): Promise<Loaded<DuesData>> {
           code: (m.membership_code as string) ?? '',
           phone: (m.phone_primary as string) ?? '',
           paid: byPerson.get(m.id as string) ?? {},
+          pending: pendingBy.get(m.id as string) ?? [],
         })),
+        claims,
+        claims_ready: !claimRes.error,
         can_record: me.permissions.includes('FINANCE_CREATE'),
         can_cancel: me.permissions.includes('FINANCE_APPROVE'),
       },
@@ -145,74 +213,112 @@ const PaymentSchema = z.object({
 export async function recordDuesPayment(input: z.input<typeof PaymentSchema>): Promise<{ ok: true; receipt: DuesReceipt } | { ok: false; error: string }> {
   try {
     const { me, db } = await authorize('FINANCE_CREATE');
-    const p = PaymentSchema.parse(input);
-    const months = [...new Set(p.months)].sort((a, b) => a - b);
-    if (p.paid_on > todayIso()) throw new Error('The payment date cannot be in the future');
-    const person = (await db.from('persons').select('full_name_en, full_name_am, membership_code').eq('id', p.person_id).single().then(check)) as {
-      full_name_en: string; full_name_am: string | null; membership_code: string;
-    };
-    const { data: already, error: paidError } = await db.from('member_dues').select('month').eq('person_id', p.person_id).eq('year', p.year).in('month', months);
-    if (paidError) throw new Error(missing(paidError.message));
-    if ((already ?? []).length) {
-      throw new Error(`Already paid: ${((already ?? []) as { month: number }[]).map((r) => ETHIOPIAN_MONTHS_EN[r.month - 1]).join(', ')}`);
-    }
-
-    const { data: receiptNo, error: seqError } = await db.rpc('next_dues_receipt', { p_year: p.year });
-    if (seqError || !receiptNo) throw new Error(missing(seqError?.message ?? 'Could not number the receipt'));
-    const total = Math.round(p.amount_per_month * months.length * 100) / 100;
-    const monthNames = months.map((m) => ETHIOPIAN_MONTHS_EN[m - 1]).join(', ');
-
-    let transactionId: string | null = null;
-    if (total > 0) {
-      const txn = (await db.from('finance_transactions')
-        .insert({
-          txn_type: 'INCOME',
-          category: 'Member Contributions',
-          amount: total,
-          txn_date: p.paid_on,
-          description: `Monthly dues ${p.year} E.C.: ${monthNames}`,
-          party: person.full_name_en,
-          receipt_no: receiptNo as string,
-          recorded_by: me.systemUser.id,
-        })
-        .select('id')
-        .single()
-        .then(check)) as { id: string };
-      transactionId = txn.id;
-    }
-    const { error } = await db.from('member_dues').insert(
-      months.map((m) => ({
-        person_id: p.person_id,
-        year: p.year,
-        month: m,
-        amount: p.amount_per_month,
-        paid_on: p.paid_on,
-        receipt_no: receiptNo as string,
-        transaction_id: transactionId,
-        recorded_by: me.systemUser.id,
-      }))
-    );
-    if (error) {
-      // Keep the ledger and the dues in step
-      if (transactionId) await db.from('finance_transactions').delete().eq('id', transactionId);
-      throw new Error(/duplicate|unique/i.test(error.message) ? 'One of these months was just paid by someone else — reload the page' : error.message);
-    }
-    return {
-      ok: true,
-      receipt: {
-        receipt_no: receiptNo as string,
-        name_en: person.full_name_en,
-        name_am: person.full_name_am || person.full_name_en,
-        code: person.membership_code,
-        year: p.year,
-        months,
-        amount_per_month: p.amount_per_month,
-        total,
-        paid_on: p.paid_on,
-      },
-    };
+    return { ok: true, receipt: await recordPayment(db, me.systemUser.id, PaymentSchema.parse(input)) };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
+  }
+}
+
+interface ClaimRow {
+  person_id: string;
+  year: number;
+  months: number[];
+  amount: number;
+  method: string;
+  reference: string | null;
+  paid_on: string;
+  chat_id: number | null;
+}
+
+/** Tell the member in the bot — in the chat they reported from, else their own linked chats. Never fails the action. */
+async function tellMember(db: Awaited<ReturnType<typeof authorize>>['db'], claim: ClaimRow, html: string) {
+  if (!telegramConfigured()) return;
+  try {
+    if (claim.chat_id) await sendTelegram(Number(claim.chat_id), html);
+    else await telegramToPersons(db, [claim.person_id], html, 'SELF');
+  } catch (e) {
+    console.error('dues claim: telegram notice failed', e);
+  }
+}
+
+const monthsAm = (claim: ClaimRow) => `${claim.months.map((m) => ETHIOPIAN_MONTHS_AM[Number(m) - 1]).join('፣ ')} ${claim.year} ዓ.ም`;
+
+/**
+ * Approve a payment reported in the bot: it is recorded like Record payment
+ * (receipt number, the months, an income entry) and the member is told.
+ * `amountPerMonth` — what Finance confirms; by default the reported total ÷ months.
+ */
+export async function approveDuesClaim(claimId: string, amountPerMonth?: number): Promise<{ ok: true; receipt: DuesReceipt } | { ok: false; error: string }> {
+  try {
+    const { me, db } = await authorize('FINANCE_CREATE');
+    const id = z.string().min(1).parse(claimId);
+    const perMonth = amountPerMonth === undefined ? undefined : z.coerce.number().min(0, 'The amount cannot be negative').max(1_000_000).parse(amountPerMonth);
+    // Take the report first, so two people approving at once cannot record it twice
+    const { data: taken, error } = await db.from('dues_claims')
+      .update({ status: 'APPROVED', reviewed_by: me.systemUser.id, reviewed_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('status', 'PENDING')
+      .select('person_id, year, months, amount, method, reference, paid_on, chat_id');
+    if (error) throw new Error(missing(error.message));
+    const claim = ((taken ?? []) as ClaimRow[])[0];
+    if (!claim) throw new Error('This report was already approved or rejected — reload the page');
+
+    const months = claim.months.map(Number);
+    let receipt: DuesReceipt;
+    try {
+      receipt = await recordPayment(db, me.systemUser.id, {
+        person_id: claim.person_id,
+        year: Number(claim.year),
+        months,
+        amount_per_month: perMonth ?? Math.round((Number(claim.amount) / months.length) * 100) / 100,
+        paid_on: claim.paid_on,
+        note: `reported on Telegram, ${METHOD_EN[claim.method] ?? claim.method}${claim.reference ? ` ${claim.reference}` : ''}`,
+      });
+    } catch (e) {
+      // Back to the list, so it can be fixed and approved again, or rejected
+      await db.from('dues_claims').update({ status: 'PENDING', reviewed_by: null, reviewed_at: null }).eq('id', id);
+      throw e;
+    }
+    await db.from('dues_claims').update({ receipt_no: receipt.receipt_no }).eq('id', id);
+
+    await tellMember(
+      db,
+      claim,
+      `✅ <b>ክፍያዎ ጸድቋል · Payment approved</b>\n` +
+        escapeHtml(`👤 ${receipt.name_am}\n📅 ${monthsAm(claim)}\n💰 ${receipt.total.toLocaleString('en-US')} ብር · birr\n🧾 ደረሰኝ · Receipt: ${receipt.receipt_no}\n`) +
+        escapeHtml('እናመሰግናለን! · Thank you!')
+    );
+    return { ok: true, receipt };
+  } catch (e) {
+    return { ok: false, error: missing(errorMessage(e)) };
+  }
+}
+
+/** Reject a payment reported in the bot (e.g. the money never arrived); the member is told why. */
+export async function rejectDuesClaim(claimId: string, reason: string): Promise<ActionResult> {
+  try {
+    const { me, db } = await authorize('FINANCE_CREATE');
+    const id = z.string().min(1).parse(claimId);
+    const note = z.string().trim().min(3, 'Write the reason, so the member knows what to do').max(300).parse(reason);
+    const { data: taken, error } = await db.from('dues_claims')
+      .update({ status: 'REJECTED', review_note: note, reviewed_by: me.systemUser.id, reviewed_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('status', 'PENDING')
+      .select('person_id, year, months, amount, method, reference, paid_on, chat_id');
+    if (error) throw new Error(missing(error.message));
+    const claim = ((taken ?? []) as ClaimRow[])[0];
+    if (!claim) throw new Error('This report was already approved or rejected — reload the page');
+
+    await tellMember(
+      db,
+      claim,
+      `❌ <b>የክፍያ ሪፖርትዎ አልጸደቀም · Payment report not approved</b>\n` +
+        escapeHtml(`📅 ${monthsAm(claim)} — ${Number(claim.amount).toLocaleString('en-US')} ብር · birr\n📝 ምክንያት · Reason: ${note}\n`) +
+        escapeHtml('ጥያቄ ካለዎት የፋይናንስ ክፍሉን ያነጋግሩ። · If you have questions, please contact the finance office.')
+    );
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: missing(errorMessage(e)) };
   }
 }
 

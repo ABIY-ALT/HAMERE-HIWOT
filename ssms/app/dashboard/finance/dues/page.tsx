@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
-import { Check, ChevronLeft, ChevronRight, Plus, Printer, Search, Send } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Hourglass, ImageIcon, Plus, Printer, Search, Send } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { Modal } from '@/components/ui/Modal';
 import { EthiopianDateInput } from '@/components/ui/EthiopianDateInput';
@@ -12,17 +12,26 @@ import { formatETB } from '@/lib/finance/types';
 import { DUES_MONTHS, unpaidMonths } from '@/lib/finance/dues';
 import { ETHIOPIAN_MONTHS_AM, ETHIOPIAN_MONTHS_EN, formatEthiopianDate, todayIso } from '@/lib/utils/ethiopian-calendar';
 import {
+  approveDuesClaim,
   cancelDuesReceipt,
   loadDues,
   recordDuesPayment,
+  rejectDuesClaim,
   sendDuesReminders,
   setDuesRate,
+  type DuesClaim,
   type DuesData,
   type DuesMember,
   type DuesReceipt,
 } from './actions';
 
 const MONTHS = Array.from({ length: DUES_MONTHS }, (_, i) => i + 1);
+const METHOD: Record<DuesClaim['method'], [string, string]> = {
+  CASH: ['Cash', 'ጥሬ ገንዘብ'],
+  BANK: ['Bank', 'ባንክ'],
+  TELEBIRR: ['Telebirr', 'ቴሌብር'],
+  OTHER: ['Other', 'ሌላ'],
+};
 
 /** Monthly member dues: who paid which month, payments with receipts, and reminders. */
 export default function DuesPage() {
@@ -36,6 +45,7 @@ export default function DuesPage() {
   const [paying, setPaying] = useState<DuesMember | 'NEW' | null>(null);
   const [receipt, setReceipt] = useState<DuesReceipt | null>(null);
   const [viewing, setViewing] = useState<{ member: DuesMember; receipt_no: string } | null>(null);
+  const [reviewing, setReviewing] = useState<DuesClaim | null>(null);
   const [remindBehind, setRemindBehind] = useState(2);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
@@ -175,6 +185,73 @@ export default function DuesPage() {
             <Stat label={t('Still owed', 'ያልተከፈለ')} value={data.rate === null ? '—' : formatETB(totals.owed)} />
           </div>
 
+          {data.claims.length > 0 && (
+            <div className="card overflow-hidden border-amber-200">
+              <div className="p-4 border-b border-amber-100 bg-amber-50/60">
+                <h2 className="font-semibold text-slate-900 inline-flex items-center gap-2">
+                  <Hourglass size={16} className="text-amber-600" />
+                  {t(`Payment reports (${data.claims.length} waiting)`, `የክፍያ ሪፖርቶች (${data.claims.length} ይጠብቃሉ)`)}
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {t(
+                    'Members said in the Telegram bot that they paid. Check the money arrived, then approve (it is recorded with a receipt) or reject.',
+                    'አባላት በቴሌግራም ቦት እንደከፈሉ አሳውቀዋል። ገንዘቡ መግባቱን አረጋግጠው ያጽድቁ (በደረሰኝ ይመዘገባል) ወይም ውድቅ ያድርጉ።'
+                  )}
+                </p>
+              </div>
+              <div className="table-container rounded-none border-0">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>{t('Member', 'አባል')}</th>
+                      <th>{t('Months', 'ወራት')}</th>
+                      <th>{t('Amount', 'መጠን')}</th>
+                      <th>{t('How', 'በምን')}</th>
+                      <th>{t('Reported', 'የተላከበት')}</th>
+                      {data.can_record && <th />}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.claims.map((c) => (
+                      <tr key={c.id}>
+                        <td>
+                          <div className="font-medium text-slate-900">{name(c)}</div>
+                          <div className="text-[11px] font-mono text-slate-400">{c.code}</div>
+                        </td>
+                        <td className="text-sm">
+                          {c.months.map(monthName).join(', ')} <span className="text-xs text-slate-500">{c.year}</span>
+                        </td>
+                        <td className="text-sm">
+                          {formatETB(c.amount)}
+                          {c.expected !== null && c.expected !== c.amount && (
+                            <div className="text-[11px] text-amber-700">{t(`expected ${formatETB(c.expected)}`, `የሚጠበቀው ${formatETB(c.expected)}`)}</div>
+                          )}
+                        </td>
+                        <td className="text-sm">
+                          {t(...METHOD[c.method])}
+                          {c.reference && <div className="text-[11px] font-mono text-slate-500 break-all">{c.reference}</div>}
+                          {c.has_proof && (
+                            <a href={`/dashboard/finance/dues/proof/${c.id}`} target="_blank" rel="noreferrer" className="text-[11px] text-blue-600 hover:underline inline-flex items-center gap-1">
+                              <ImageIcon size={11} /> {t('Receipt photo', 'የደረሰኝ ፎቶ')}
+                            </a>
+                          )}
+                        </td>
+                        <td className="text-xs text-slate-500 whitespace-nowrap">{formatEthiopianDate(c.created_at.slice(0, 10), locale)}</td>
+                        {data.can_record && (
+                          <td className="text-right">
+                            <button onClick={() => setReviewing(c)} className="btn btn-secondary text-xs whitespace-nowrap">
+                              {t('Review', 'ይመልከቱ')}
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           <div className="card overflow-hidden">
             <div className="p-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
               <div className="relative flex-1 min-w-[12rem] max-w-sm">
@@ -232,6 +309,13 @@ export default function DuesPage() {
                               >
                                 <Check size={13} />
                               </button>
+                            ) : m.pending.includes(month) ? (
+                              <span
+                                title={t('Reported in Telegram — waiting for approval', 'በቴሌግራም ተልኳል — ማጽደቅ ይጠብቃል')}
+                                className="w-6 h-6 rounded-md bg-amber-100 text-amber-700 inline-flex items-center justify-center"
+                              >
+                                <Hourglass size={12} />
+                              </span>
                             ) : (
                               <span className={`inline-block w-6 h-6 rounded-md ${due ? 'bg-red-50 border border-red-200' : 'bg-slate-50 border border-slate-100'}`} />
                             )}
@@ -296,8 +380,129 @@ export default function DuesPage() {
         </Modal>
       )}
 
+      {reviewing && (
+        <ClaimDialog
+          claim={reviewing}
+          onClose={() => setReviewing(null)}
+          onApproved={(r) => {
+            setReviewing(null);
+            setReceipt(r);
+            reload();
+          }}
+          onRejected={() => {
+            setReviewing(null);
+            notify('success', t('Rejected — the member was told on Telegram', 'ውድቅ ተደርጓል — ለአባሉ በቴሌግራም ተነግሯል'));
+            reload();
+          }}
+        />
+      )}
+
       {receipt && <ReceiptSheet receipt={receipt} onClose={() => setReceipt(null)} />}
     </div>
+  );
+}
+
+/** Approve or reject a payment a member reported in the bot. */
+function ClaimDialog({ claim, onClose, onApproved, onRejected }: { claim: DuesClaim; onClose: () => void; onApproved: (r: DuesReceipt) => void; onRejected: () => void }) {
+  const { t, locale } = useLang();
+  const [perMonth, setPerMonth] = useState(String(Math.round((claim.amount / claim.months.length) * 100) / 100));
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const monthName = (m: number) => (locale === 'am' ? ETHIOPIAN_MONTHS_AM[m - 1] : ETHIOPIAN_MONTHS_EN[m - 1]);
+  const total = (Number(perMonth) || 0) * claim.months.length;
+  const proof = `/dashboard/finance/dues/proof/${claim.id}`;
+
+  const approve = async () => {
+    setBusy(true);
+    setError('');
+    const res = await approveDuesClaim(claim.id, Number(perMonth));
+    setBusy(false);
+    if (!res.ok) return setError(res.error);
+    onApproved(res.receipt);
+  };
+  const reject = async () => {
+    setBusy(true);
+    setError('');
+    const res = await rejectDuesClaim(claim.id, reason);
+    setBusy(false);
+    if (!res.ok) return setError(res.error);
+    onRejected();
+  };
+
+  return (
+    <Modal isOpen onClose={onClose} title={t('Payment report', 'የክፍያ ሪፖርት')} subtitle={locale === 'am' ? claim.name_am : claim.name_en} maxWidth="lg">
+      <div className="space-y-4">
+        {error && <p className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{error}</p>}
+        <dl className="text-sm space-y-1.5">
+          <Line label={t('Member', 'አባል')} value={`${locale === 'am' ? claim.name_am : claim.name_en}${claim.code ? ` · ${claim.code}` : ''}`} />
+          <Line label={t('Months', 'ወራት')} value={`${claim.months.map(monthName).join(', ')} ${claim.year} ${t('E.C.', 'ዓ.ም')}`} />
+          <Line label={t('Says they paid', 'የከፈሉት (እንደገለጹት)')} value={formatETB(claim.amount)} />
+          {claim.expected !== null && <Line label={t('Expected', 'የሚጠበቀው')} value={formatETB(claim.expected)} />}
+          <Line label={t('How', 'በምን')} value={t(...METHOD[claim.method])} />
+          {claim.reference && <Line label={t('Transaction no.', 'የግብይት ቁጥር')} value={claim.reference} />}
+          <Line label={t('Reported on', 'የተላከበት ቀን')} value={formatEthiopianDate(claim.paid_on, locale)} />
+        </dl>
+
+        {claim.has_proof && (
+          <a href={proof} target="_blank" rel="noreferrer" className="block rounded-lg border border-slate-200 overflow-hidden hover:border-blue-300">
+            <div className="relative w-full h-64 bg-slate-50">
+              <Image src={proof} alt={t('Receipt photo', 'የደረሰኝ ፎቶ')} fill unoptimized className="object-contain" />
+            </div>
+            <div className="text-xs text-blue-600 px-3 py-1.5 inline-flex items-center gap-1">
+              <ImageIcon size={12} /> {t('Open the receipt photo', 'የደረሰኙን ፎቶ ክፈት')}
+            </div>
+          </a>
+        )}
+
+        {!rejecting ? (
+          <>
+            <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 space-y-2">
+              <label className="text-xs font-semibold text-slate-700 block">{t('Amount per month to record (birr)', 'የሚመዘገበው የአንድ ወር መጠን (ብር)')}</label>
+              <div className="flex items-center gap-3">
+                <input type="number" min={0} step="0.01" value={perMonth} onChange={(e) => setPerMonth(e.target.value)} className="form-input text-sm w-32" />
+                <span className="text-sm text-slate-700">
+                  {t('Total', 'ድምር')}: <b>{formatETB(total)}</b> <span className="text-xs text-slate-500">({claim.months.length} × {formatETB(Number(perMonth) || 0)})</span>
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                {t('Approving gives a receipt number, marks the months paid, adds the income to Finance and tells the member on Telegram.', 'ማጽደቅ ደረሰኝ ቁጥር ይሰጣል፣ ወራቱን እንደተከፈሉ ይመዘግባል፣ ገቢውን በፋይናንስ ይጨምራል፣ ለአባሉም በቴሌግራም ያሳውቃል።')}
+              </p>
+            </div>
+            <div className="flex justify-between gap-2 pt-3 border-t border-slate-100">
+              <button type="button" disabled={busy} onClick={() => setRejecting(true)} className="btn btn-secondary text-xs text-red-600">
+                {t('Reject…', 'ውድቅ አድርግ…')}
+              </button>
+              <div className="flex gap-2">
+                <button type="button" onClick={onClose} className="btn btn-secondary text-xs">{t('Close', 'ዝጋ')}</button>
+                <button type="button" disabled={busy || perMonth === ''} onClick={approve} className="btn btn-primary text-xs inline-flex items-center gap-1.5 disabled:opacity-50">
+                  <Check size={14} /> {busy ? t('Saving…', 'በማስቀመጥ ላይ…') : t('Approve and record', 'አጽድቅና መዝግብ')}
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="space-y-3 pt-3 border-t border-slate-100">
+            <label className="text-xs font-semibold text-slate-700 block">{t('Why? (the member sees this on Telegram)', 'ምክንያቱ? (አባሉ በቴሌግራም ያየዋል)')}</label>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              maxLength={300}
+              placeholder={t('e.g. The money has not arrived in the account', 'ለምሳሌ፦ ገንዘቡ ሂሳቡ ውስጥ አልገባም')}
+              className="form-input text-sm"
+            />
+            <div className="flex justify-end gap-2">
+              <button type="button" disabled={busy} onClick={() => setRejecting(false)} className="btn btn-secondary text-xs">{t('Back', 'ተመለስ')}</button>
+              <button type="button" disabled={busy || reason.trim().length < 3} onClick={reject} className="btn btn-primary bg-red-600 hover:bg-red-700 text-xs disabled:opacity-50">
+                {busy ? t('Saving…', 'በማስቀመጥ ላይ…') : t('Reject and tell the member', 'ውድቅ አድርግና ለአባሉ አሳውቅ')}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }
 

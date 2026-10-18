@@ -10,6 +10,7 @@
 import { z } from 'zod';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { nonMemberIds } from '@/lib/members/membership';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import type {
   AcquisitionType,
@@ -37,7 +38,7 @@ export async function loadProperty(): Promise<Loaded<PropertyData>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
     const { db } = await authorize('ASSET_VIEW', 'AUDIT_VIEW_ALL');
-    const [assetRows, movementRows, maintenanceRows, units, persons, students] = await Promise.all([
+    const [assetRows, movementRows, maintenanceRows, units, persons, notMembers] = await Promise.all([
       selectAll<Row>((a, b) =>
         db.from('assets')
           .select('*, unit:organization_units(name_en, name_am), custodian:persons!assets_custodian_person_id_fkey(full_name_en)')
@@ -58,10 +59,10 @@ export async function loadProperty(): Promise<Loaded<PropertyData>> {
       selectAll<{ id: string; full_name_en: string; full_name_am: string | null }>((a, b) =>
         db.from('persons').select('id, full_name_en, full_name_am').eq('status', 'ACTIVE').order('full_name_en').order('id').range(a, b)
       ),
-      selectAll<{ person_id: string }>((a, b) => db.from('students').select('person_id').order('id').range(a, b)),
+      // Students who are also members stay; student-only and parents' login records do not
+      nonMemberIds(db),
     ]);
-    const studentPersons = new Set(students.map((s) => s.person_id));
-
+    
     const assets: Asset[] = assetRows.map((r) => {
       const unit = r.unit as Named;
       return {
@@ -119,7 +120,7 @@ export async function loadProperty(): Promise<Loaded<PropertyData>> {
         movements,
         maintenance,
         units,
-        people: persons.filter((p) => !studentPersons.has(p.id)).map((p) => ({ id: p.id, name: p.full_name_en, name_am: p.full_name_am ?? '' })),
+        people: persons.filter((p) => !notMembers.has(p.id)).map((p) => ({ id: p.id, name: p.full_name_en, name_am: p.full_name_am ?? '' })),
       },
     };
   } catch (e) {

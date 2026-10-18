@@ -9,6 +9,7 @@
 import { z } from 'zod';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { nonMemberIds } from '@/lib/members/membership';
 import type { SessionUser } from '@/lib/auth/session';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import type { Program, ProgramOptions, ProgramStatus, ProgramType } from '@/lib/programs/types';
@@ -20,7 +21,7 @@ export async function loadPrograms(): Promise<Loaded<{ programs: Program[] } & P
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
     const { db } = await authorize('PROGRAM_VIEW', 'AUDIT_VIEW_ALL');
-    const [rows, units, persons, students] = await Promise.all([
+    const [rows, units, persons, notMembers] = await Promise.all([
       selectAll<Row>((a, b) =>
         db.from('programs')
           .select('*, unit:organization_units(name_en, name_am), coordinator:persons!programs_coordinator_person_id_fkey(full_name_en)')
@@ -32,10 +33,10 @@ export async function loadPrograms(): Promise<Loaded<{ programs: Program[] } & P
       selectAll<{ id: string; full_name_en: string }>((a, b) =>
         db.from('persons').select('id, full_name_en').eq('status', 'ACTIVE').order('full_name_en').order('id').range(a, b)
       ),
-      selectAll<{ person_id: string }>((a, b) => db.from('students').select('person_id').order('id').range(a, b)),
+      // Students who are also members stay; student-only and parents' login records do not
+      nonMemberIds(db),
     ]);
-    const studentPersons = new Set(students.map((s) => s.person_id));
-
+    
     const programs: Program[] = rows.map((p) => {
       const unit = (p.unit ?? null) as { name_en?: string; name_am?: string | null } | null;
       return {
@@ -66,7 +67,7 @@ export async function loadPrograms(): Promise<Loaded<{ programs: Program[] } & P
       data: {
         programs,
         units,
-        people: persons.filter((p) => !studentPersons.has(p.id)).map((p) => ({ id: p.id, name: p.full_name_en })),
+        people: persons.filter((p) => !notMembers.has(p.id)).map((p) => ({ id: p.id, name: p.full_name_en })),
       },
     };
   } catch (e) {

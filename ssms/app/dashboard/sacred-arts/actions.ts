@@ -8,6 +8,7 @@
 import { z } from 'zod';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { nonMemberIds } from '@/lib/members/membership';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import type { AttendanceStatus } from '@/lib/attendance/store';
 import {
@@ -30,7 +31,7 @@ export async function loadChoir(): Promise<Loaded<ChoirData>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
     const { db } = await authorize('MEMBER_VIEW', 'CHOIR_MANAGE', 'AUDIT_VIEW_ALL');
-    const [memberRows, hymnRows, sessionRows, persons, students, vestments, programs] = await Promise.all([
+    const [memberRows, hymnRows, sessionRows, persons, notMembers, vestments, programs] = await Promise.all([
       selectAll<Row>((a, b) =>
         db.from('choir_members')
           .select('*, person:persons(full_name_en, full_name_am, phone_primary), vestment:assets(tag, name_en)')
@@ -48,7 +49,8 @@ export async function loadChoir(): Promise<Loaded<ChoirData>> {
       selectAll<{ id: string; full_name_en: string }>((a, b) =>
         db.from('persons').select('id, full_name_en').eq('status', 'ACTIVE').order('full_name_en').order('id').range(a, b)
       ),
-      selectAll<{ person_id: string }>((a, b) => db.from('students').select('person_id').order('id').range(a, b)),
+      // Students who are also members stay; student-only and parents' login records do not
+      nonMemberIds(db),
       db.from('assets')
         .select('id, tag, name_en')
         .eq('category', 'Liturgical items & vestments')
@@ -122,14 +124,13 @@ export async function loadChoir(): Promise<Loaded<ChoirData>> {
     });
 
     const inChoir = new Set(members.map((m) => m.person_id));
-    const studentPersons = new Set(students.map((s) => s.person_id));
-    return {
+        return {
       mode: 'live',
       data: {
         members,
         hymns,
         sessions,
-        candidates: persons.filter((p) => !inChoir.has(p.id) && !studentPersons.has(p.id)).map((p) => ({ id: p.id, name: p.full_name_en })),
+        candidates: persons.filter((p) => !inChoir.has(p.id) && !notMembers.has(p.id)).map((p) => ({ id: p.id, name: p.full_name_en })),
         vestments: vestments.map((v) => ({ id: v.id, label: `${v.tag} · ${v.name_en}` })),
         programs: programs.map((p) => ({ id: p.id, label: `${p.start_date} · ${p.title_en}` })),
       },

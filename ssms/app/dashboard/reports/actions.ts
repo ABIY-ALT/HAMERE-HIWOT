@@ -7,6 +7,7 @@
 
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { nonMemberIds } from '@/lib/members/membership';
 import type { Loaded } from '@/lib/admin/types';
 import { computeBudget } from '@/lib/finance/budget';
 import { PASS_MARK } from '@/lib/education/types';
@@ -46,14 +47,14 @@ function attendanceRate(statuses: string[]): number | null {
 }
 
 async function membership(db: Db, period: ReportPeriod): Promise<MembershipReport> {
-  const [persons, students] = await Promise.all([
+  const [persons, notMembers] = await Promise.all([
     selectAll<{ id: string; gender: string; status: string; created_at: string }>((a, b) =>
       db.from('persons').select('id, gender, status, created_at').order('id').range(a, b)
     ),
-    selectAll<{ person_id: string }>((a, b) => db.from('students').select('person_id').order('id').range(a, b)),
+    // Students who are also members stay; student-only and parents' login records do not
+      nonMemberIds(db),
   ]);
-  const studentPersons = new Set(students.map((s) => s.person_id));
-  const members = persons.filter((p) => !studentPersons.has(p.id));
+    const members = persons.filter((p) => !notMembers.has(p.id));
   const inPeriod = members.filter((p) => p.created_at.slice(0, 10) >= period.from && p.created_at.slice(0, 10) <= period.to);
   const byStatus: Record<string, number> = {};
   for (const m of members) byStatus[m.status] = (byStatus[m.status] ?? 0) + 1;

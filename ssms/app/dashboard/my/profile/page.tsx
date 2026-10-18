@@ -33,7 +33,7 @@ export default function MyProfilePage() {
   const s = data.student;
   const rows: [string, string][] = [
     [t('Name', 'ስም'), locale === 'am' ? s.name_am : s.name_en],
-    [t('Registration No. (to sign in)', 'የምዝገባ ቁጥር (ለመግቢያ)'), s.reg_no],
+    [data.pin_login ? t('Registration No. (to sign in)', 'የምዝገባ ቁጥር (ለመግቢያ)') : t('Registration No.', 'የምዝገባ ቁጥር'), s.reg_no],
     [t('Class', 'ክፍል'), (locale === 'am' ? s.class_name_am : s.class_name) || '—'],
     [t('Baptismal name', 'የክርስትና ስም'), s.baptismal || '—'],
     [t('Gender', 'ጾታ'), s.gender === 'FEMALE' ? t('Female', 'ሴት') : t('Male', 'ወንድ')],
@@ -59,6 +59,14 @@ export default function MyProfilePage() {
 
       <TelegramConnect what={t('Get your results, absences and exam news on Telegram.', 'ውጤቶችዎን፣ የመቅረት መልእክቶችንና የፈተና ዜናዎችን በቴሌግራም ያግኙ።')} />
 
+      {!data.pin_login ? (
+        <p className="card p-5 text-sm text-slate-600">
+          {t(
+            'You see your student pages with your own account. Change its password from your account Profile.',
+            'የተማሪ ገጾችዎን በራስዎ መለያ ያያሉ። የይለፍ ቃሉን ከመለያዎ «መገለጫ» ይቀይሩ።'
+          )}
+        </p>
+      ) : (
       <form onSubmit={change} className="card p-5 space-y-4">
         <h2 className="font-bold text-slate-800 text-sm inline-flex items-center gap-2">
           <KeyRound size={16} /> {t('Change my PIN', 'ሚስጥር ቁጥሬን ቀይር')}
@@ -93,6 +101,7 @@ export default function MyProfilePage() {
           {busy ? t('Saving…', 'በማስቀመጥ ላይ…') : t('Change PIN', 'ሚስጥር ቁጥር ቀይር')}
         </button>
       </form>
+      )}
     </div>
   );
 }

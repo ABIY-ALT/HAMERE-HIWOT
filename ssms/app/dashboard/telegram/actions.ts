@@ -162,6 +162,7 @@ export async function connectBot(): Promise<ActionResult> {
         { command: 'attendance', description: 'Attendance · ክትትል' },
         { command: 'exams', description: 'Online exams · ፈተና' },
         { command: 'dues', description: 'Monthly dues · መዋጮ' },
+        { command: 'paid', description: 'I paid my dues · ከፍያለሁ' },
         { command: 'menu', description: 'Menu · ምናሌ' },
         { command: 'stop', description: 'Stop messages · መልእክት አቁም' },
       ],

@@ -11,6 +11,7 @@
 import { z } from 'zod';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { nonMemberIds } from '@/lib/members/membership';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import {
   SINGLE_HOLDER_POSITIONS,
@@ -75,7 +76,7 @@ export async function loadGovernanceBody(unitCode: string): Promise<Loaded<GovBo
       };
     }
 
-    const [rule, rows, persons, students] = await Promise.all([
+    const [rule, rows, persons, notMembers] = await Promise.all([
       bodyRule(db, body.id),
       selectAll<Row>((a, b) =>
         db.from('governance_memberships')
@@ -88,7 +89,8 @@ export async function loadGovernanceBody(unitCode: string): Promise<Loaded<GovBo
       selectAll<{ id: string; full_name_en: string; full_name_am: string | null; membership_code: string }>((a, b) =>
         db.from('persons').select('id, full_name_en, full_name_am, membership_code').eq('status', 'ACTIVE').order('full_name_en').order('id').range(a, b)
       ),
-      selectAll<{ person_id: string }>((a, b) => db.from('students').select('person_id').order('id').range(a, b)),
+      // Students who are also members stay; student-only and parents' login records do not
+      nonMemberIds(db),
     ]);
 
     const memberships: GovMembership[] = rows.map((m) => {
@@ -115,9 +117,8 @@ export async function loadGovernanceBody(unitCode: string): Promise<Loaded<GovBo
       };
     });
 
-    const studentPersons = new Set(students.map((s) => s.person_id));
-    const candidates: GovCandidate[] = persons
-      .filter((p) => !studentPersons.has(p.id))
+        const candidates: GovCandidate[] = persons
+      .filter((p) => !notMembers.has(p.id))
       .map((p) => ({ id: p.id, name_en: p.full_name_en, name_am: p.full_name_am || p.full_name_en, code: p.membership_code }));
 
     return {

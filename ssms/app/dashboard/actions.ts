@@ -10,6 +10,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Person, PermissionCode } from '@/types';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { nonMemberIds } from '@/lib/members/membership';
 import type { Loaded } from '@/lib/admin/types';
 import { todayIso, weekdayOfIso } from '@/lib/utils/ethiopian-calendar';
 import { addDays } from '@/lib/hr/types';
@@ -136,28 +137,28 @@ export async function loadDashboard(): Promise<Loaded<DashboardData>> {
     const [members, students, teachers, servants, choir, finance, financePending, assets, programs, governanceBodies, recentAudit, gradesPending, tasks] =
       await Promise.all([
         section(can('MEMBER_VIEW', 'AUDIT_VIEW_ALL'), async () => {
-          const [persons, studentRows, newPersons, newStudents, created, latest] = await Promise.all([
+          const [persons, notMembers, created, latest] = await Promise.all([
             count(db, 'persons'),
-            selectAll<{ person_id: string }>((a, b) => db.from('students').select('person_id').order('id').range(a, b)),
-            count(db, 'persons', {}, yearStart),
-            count(db, 'students', {}, yearStart),
+            // Students who are also members count as members (lib/members/membership)
+            nonMemberIds(db),
             selectAll<{ id: string; created_at: string }>((a, b) =>
               db.from('persons').select('id, created_at').gte('created_at', `${months[0]}-01`).order('id').range(a, b)
             ),
             db.from('persons').select('*').order('created_at', { ascending: false }).limit(25).then(check) as Promise<Person[]>,
           ]);
-          const studentIds = new Set(studentRows.map((s) => s.person_id));
           const perMonth = new Map(months.map((m) => [m, 0]));
+          let newThisYear = 0;
           for (const p of created) {
-            if (studentIds.has(p.id)) continue;
+            if (notMembers.has(p.id)) continue;
             const key = p.created_at.slice(0, 7);
             if (perMonth.has(key)) perMonth.set(key, perMonth.get(key)! + 1);
+            if (p.created_at >= yearStart) newThisYear += 1;
           }
           return {
-            total: persons - studentRows.length,
-            newThisYear: Math.max(0, newPersons - newStudents),
+            total: persons - notMembers.size,
+            newThisYear,
             byMonth: months.map((month) => ({ month, count: perMonth.get(month) ?? 0 })),
-            recent: latest.filter((p) => !studentIds.has(p.id)).slice(0, 5),
+            recent: latest.filter((p) => !notMembers.has(p.id)).slice(0, 5),
           };
         }),
         section(can('STUDENT_VIEW', 'ATTENDANCE_VIEW'), async () => {

@@ -8,6 +8,7 @@
 import { z } from 'zod';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { nonMemberIds } from '@/lib/members/membership';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import type { AttendanceStatus } from '@/lib/attendance/store';
 import { todayIso } from '@/lib/utils/ethiopian-calendar';
@@ -33,7 +34,7 @@ export async function loadHr(): Promise<Loaded<HrData>> {
   try {
     const { me, db } = await authorize('HR_VIEW', 'HR_MANAGE', 'AUDIT_VIEW_ALL');
     const canSeeCases = me.permissions.includes('HR_MANAGE');
-    const [assignRows, markRows, caseRows, persons, students, units, activeYear] = await Promise.all([
+    const [assignRows, markRows, caseRows, persons, notMembers, units, activeYear] = await Promise.all([
       selectAll<Row>((a, b) =>
         db.from('service_assignments')
           .select('*, unit:organization_units(name_en, name_am), class:classes(name_en)')
@@ -55,7 +56,8 @@ export async function loadHr(): Promise<Loaded<HrData>> {
       selectAll<PersonRow>((a, b) =>
         db.from('persons').select('id, full_name_en, full_name_am, phone_primary, baptismal_name, status').order('full_name_en').order('id').range(a, b)
       ),
-      selectAll<{ person_id: string }>((a, b) => db.from('students').select('person_id').order('id').range(a, b)),
+      // Students who are also members stay; student-only and parents' login records do not
+      nonMemberIds(db),
       db.from('organization_units')
         .select('id, code, name_en, name_am, unit_type')
         .eq('is_active', true)
@@ -117,8 +119,7 @@ export async function loadHr(): Promise<Loaded<HrData>> {
       ...cases.map((c) => c.person_id),
       ...classRows.map((c) => c.teacher_person_id).filter((id): id is string => Boolean(id)),
     ]);
-    const studentPersons = new Set(students.map((s) => s.person_id));
-    const toPerson = (p: PersonRow) => ({
+        const toPerson = (p: PersonRow) => ({
       id: p.id,
       name: p.full_name_en,
       name_am: p.full_name_am || p.full_name_en,
@@ -136,7 +137,7 @@ export async function loadHr(): Promise<Loaded<HrData>> {
         cases,
         canSeeCases,
         homeroom: classRows.map((c) => ({ class_id: c.id, class_name: c.name_en, person_id: c.teacher_person_id })),
-        candidates: persons.filter((p) => p.status === 'ACTIVE' && !studentPersons.has(p.id)).map((p) => ({ id: p.id, name: p.full_name_en })),
+        candidates: persons.filter((p) => p.status === 'ACTIVE' && !notMembers.has(p.id)).map((p) => ({ id: p.id, name: p.full_name_en })),
         units: units.map((u) => ({ id: u.id, code: u.code, name: u.name_en, name_am: u.name_am || u.name_en, type: u.unit_type })),
         classes: classRows.map((c) => ({ id: c.id, name: c.name_en })),
       },

@@ -29,6 +29,8 @@ export interface StudentLoginRow {
   student_login: boolean;
   active: boolean;
   last_login: string | null;
+  /** A staff account of the same person (a member who also studies) that already opens the student pages */
+  student_pages: boolean;
 }
 
 export interface LoginSlip {
@@ -55,7 +57,7 @@ export async function loadStudentLogins(): Promise<Loaded<StudentLoginsData>> {
     const year = (await db.from('academic_years').select('id').order('is_current', { ascending: false }).order('start_date', { ascending: false }).limit(1).maybeSingle().then(check)) as { id: string } | null;
     if (!year) return { mode: 'live', data: { classes: [], rows: [] } };
 
-    const [classes, enrollments, students, users] = await Promise.all([
+    const [classes, enrollments, students, users, studentRole] = await Promise.all([
       db.from('classes').select('id, name_en, name_am').eq('academic_year_id', year.id).order('grade_level').order('name_en').then(check) as Promise<
         { id: string; name_en: string; name_am: string | null }[]
       >,
@@ -67,8 +69,17 @@ export async function loadStudentLogins(): Promise<Loaded<StudentLoginsData>> {
           .order('reg_no')
           .range(a, b)
       ),
-      selectAll<Row>((a, b) => db.from('system_users').select('person_id, username, is_active, last_login_at').order('id').range(a, b)),
+      selectAll<Row>((a, b) => db.from('system_users').select('id, person_id, username, is_active, last_login_at').order('id').range(a, b)),
+      db.from('roles').select('id').eq('code', 'STUDENT').maybeSingle().then(check) as Promise<{ id: string } | null>,
     ]);
+    // Accounts that open the student pages: student logins, and staff accounts given the STUDENT role too
+    const withStudentRole = new Set(
+      studentRole
+        ? (await selectAll<Row>((a, b) => db.from('user_unit_assignments').select('system_user_id').eq('role_id', studentRole.id).eq('is_active', true).order('id').range(a, b))).map(
+            (r) => r.system_user_id as string
+          )
+        : []
+    );
     const classOf = new Map(enrollments.map((e) => [e.student_id as string, e.class_id as string]));
     const userOf = new Map(users.map((u) => [u.person_id as string, u]));
     const rows: StudentLoginRow[] = students
@@ -86,6 +97,7 @@ export async function loadStudentLogins(): Promise<Loaded<StudentLoginsData>> {
           student_login: Boolean(user && isStudentLogin(user.username as string)),
           active: Boolean(user?.is_active),
           last_login: (user?.last_login_at as string) ?? null,
+          student_pages: Boolean(user && withStudentRole.has(user.id as string)),
         };
       })
       .sort((a, b) => a.name_en.localeCompare(b.name_en));
@@ -155,6 +167,24 @@ export async function createStudentLogins(
     for (const id of studentIds) {
       const s = await studentRecord(db, id);
       const name = s.person?.full_name_en ?? s.reg_no;
+      if (s.user && !isStudentLogin(s.user.username)) {
+        // A member who also studies and already signs in (e.g. as staff): their own login gets the student pages too
+        const { data: had } = await db.from('user_unit_assignments')
+          .select('id, is_active')
+          .eq('system_user_id', s.user.id)
+          .eq('organization_unit_id', unit.id)
+          .eq('role_id', role.id);
+        const existing = ((had ?? []) as { id: string; is_active: boolean }[])[0];
+        if (!existing) {
+          await db.from('user_unit_assignments')
+            .insert({ system_user_id: s.user.id, organization_unit_id: unit.id, role_id: role.id, is_active: true, assigned_by: me.systemUser.id })
+            .then(check);
+        } else if (!existing.is_active) {
+          await db.from('user_unit_assignments').update({ is_active: true }).eq('id', existing.id).then(check);
+        }
+        skipped.push({ name, reason: `signs in with their own login (${s.user.username}) — the student pages were added to it` });
+        continue;
+      }
       if (s.user) {
         skipped.push({ name, reason: 'already has a login' });
         continue;

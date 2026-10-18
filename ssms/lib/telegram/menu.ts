@@ -13,23 +13,34 @@ import { studentPortalData, type MyPortal } from '@/lib/portal/student-data';
 import { ETHIOPIAN_MONTHS_AM, formatEthiopianDate } from '@/lib/utils/ethiopian-calendar';
 import { currentEthiopianYear, monthsDue, unpaidMonths } from '@/lib/finance/dues';
 import { escapeHtml, siteUrl } from '@/lib/telegram/bot';
+import { nonMemberIds } from '@/lib/members/membership';
 
 export const BUTTONS = {
   results: '📊 ውጤት · Results',
   attendance: '📋 ክትትል · Attendance',
   exams: '🖊️ ፈተና · Exams',
   dues: '🧾 መዋጮ · Dues',
+  paid: '💳 ከፍያለሁ · I paid',
   help: 'ℹ️ እርዳታ · Help',
 } as const;
 
-/** The menu that stays under the message box once a chat is linked. */
-export const MENU_KEYBOARD = {
+const menu = (withPaid: boolean) => ({
   reply_markup: {
-    keyboard: [[{ text: BUTTONS.results }, { text: BUTTONS.attendance }], [{ text: BUTTONS.exams }, { text: BUTTONS.dues }], [{ text: BUTTONS.help }]],
+    keyboard: [
+      [{ text: BUTTONS.results }, { text: BUTTONS.attendance }],
+      [{ text: BUTTONS.exams }, { text: BUTTONS.dues }],
+      withPaid ? [{ text: BUTTONS.paid }, { text: BUTTONS.help }] : [{ text: BUTTONS.help }],
+    ],
     resize_keyboard: true,
     is_persistent: true,
   },
-};
+});
+
+/** The menu that stays under the message box once a chat is linked. */
+export const MENU_KEYBOARD = menu(false);
+
+/** The menu for this chat: "💳 I paid" only when it is linked to a member who pays dues. */
+export const menuFor = (scope: ChatScope) => menu(scope.memberPersonIds.length > 0);
 
 /** One button that sends the account's own phone number (Telegram allows nothing else with it). */
 export const PHONE_KEYBOARD = {
@@ -54,8 +65,9 @@ export const WELCOME =
   'Staff and students can also connect from the website: Profile → “Connect Telegram”.';
 
 export const LINKED_HELP =
-  'ከታች ያሉትን አዝራሮች ይጫኑ፦\n📊 ውጤት · 📋 ክትትል · 🖊️ ፈተና · 🧾 መዋጮ\nመልእክት ለማቆም /stop\n\n' +
-  'Use the buttons below: results, attendance, exams and dues — only for you and your own children.\nTo stop messages: /stop';
+  'ከታች ያሉትን አዝራሮች ይጫኑ፦\n📊 ውጤት · 📋 ክትትል · 🖊️ ፈተና · 🧾 መዋጮ\nአባላት መዋጮ ከከፈሉ «💳 ከፍያለሁ» ይጫኑ።\nመልእክት ለማቆም /stop\n\n' +
+  'Use the buttons below: results, attendance, exams and dues — only for you and your own children.\n' +
+  'Members who paid their dues: tap “💳 I paid”.\nTo stop messages: /stop';
 
 // ── Who is this chat? ────────────────────────────────────────────────────────
 
@@ -63,7 +75,7 @@ export interface ChatScope {
   linked: boolean;
   /** Students this chat may see (themselves or their children) */
   studentIds: string[];
-  /** Members (not students) linked as themselves — for dues */
+  /** Members linked as themselves — for dues. A student who is also a member is in both lists. */
   memberPersonIds: string[];
 }
 
@@ -76,14 +88,15 @@ export async function chatScope(db: SupabaseClient, chatId: number): Promise<Cha
   const self = links.filter((l) => l.relation !== 'GUARDIAN').map((l) => l.person_id);
   const guarded = links.filter((l) => l.relation === 'GUARDIAN').map((l) => l.person_id);
 
-  const [{ data: students }, { data: children }] = await Promise.all([
+  const [{ data: students }, { data: children }, notMembers] = await Promise.all([
     db.from('students').select('id, person_id').in('person_id', [...self, ...guarded]),
     self.length ? db.from('student_guardians').select('student_id').in('guardian_person_id', self) : Promise.resolve({ data: [] }),
+    // Student-only records and parents' login records are not members (lib/members/membership)
+    nonMemberIds(db, self),
   ]);
   const studentRows = (students ?? []) as { id: string; person_id: string }[];
-  const studentPersons = new Set(studentRows.map((s) => s.person_id));
   const studentIds = [...new Set([...studentRows.map((s) => s.id), ...((children ?? []) as { student_id: string }[]).map((c) => c.student_id)])];
-  return { linked: true, studentIds, memberPersonIds: self.filter((p) => !studentPersons.has(p)) };
+  return { linked: true, studentIds, memberPersonIds: self.filter((p) => !notMembers.has(p)) };
 }
 
 // ── Sign in by phone ─────────────────────────────────────────────────────────
@@ -195,25 +208,32 @@ export async function duesText(db: SupabaseClient, scope: ChatScope): Promise<st
   if (scope.memberPersonIds.length === 0) return e('ለዚህ መለያ የአባልነት መዋጮ የለም · There are no member dues for this chat.');
   const year = currentEthiopianYear();
   const due = monthsDue(year);
-  const [{ data: people }, { data: paid, error }, { data: rate }] = await Promise.all([
+  const [{ data: people }, { data: paid, error }, { data: rate }, { data: claims }] = await Promise.all([
     db.from('persons').select('id, full_name_en, full_name_am, membership_type').in('id', scope.memberPersonIds),
     db.from('member_dues').select('person_id, month').eq('year', year).in('person_id', scope.memberPersonIds),
     db.from('dues_rates').select('monthly_amount').eq('year', year).maybeSingle(),
+    // Reported in the bot, not approved yet (migration 028; nothing before it)
+    db.from('dues_claims').select('person_id, months').eq('year', year).eq('status', 'PENDING').in('person_id', scope.memberPersonIds),
   ]);
   if (error) return e('መዋጮ ገና አልተዘጋጀም · Dues are not set up yet.');
   const amount = rate ? Number((rate as { monthly_amount: number }).monthly_amount) : null;
   const lines = [`🧾 <b>ወርሃዊ መዋጮ ${year} ዓ.ም · Monthly dues</b>`];
+  let payers = 0;
   for (const p of (people ?? []) as { id: string; full_name_en: string; full_name_am: string | null; membership_type: string | null }[]) {
     if (p.membership_type === 'HONORARY') continue;
+    payers += 1;
     const months = ((paid ?? []) as { person_id: string; month: number }[]).filter((x) => x.person_id === p.id).map((x) => x.month);
-    const unpaid = unpaidMonths(months, due);
+    const waiting = new Set(((claims ?? []) as { person_id: string; months: number[] }[]).filter((c) => c.person_id === p.id).flatMap((c) => c.months.map(Number)));
+    const unpaid = unpaidMonths(months, due).filter((m) => !waiting.has(m));
     lines.push(`\n👤 <b>${e(p.full_name_am || p.full_name_en)}</b>`);
     lines.push(e(`የተከፈሉ ወራት · Paid: ${months.length}`));
+    if (waiting.size) lines.push(e(`⏳ ማጽደቅ ይጠብቃል · Waiting for approval: ${[...waiting].sort((a, b) => a - b).map((m) => ETHIOPIAN_MONTHS_AM[m - 1]).join('፣ ')}`));
     lines.push(
       unpaid.length
         ? e(`ያልተከፈሉ · Unpaid: ${unpaid.map((m) => ETHIOPIAN_MONTHS_AM[m - 1]).join('፣ ')}${amount ? ` (${(amount * unpaid.length).toLocaleString('en-US')} ብር)` : ''}`)
         : e('✅ እስካሁን ያለው ሁሉ ተከፍሏል · All paid so far')
     );
   }
+  if (payers) lines.push('', e('ከፍለዋል? «💳 ከፍያለሁ» ይጫኑ — ፋይናንስ ሲያጸድቅ ይመዘገባል።\nPaid already? Tap “💳 I paid” — it is recorded once Finance approves it.'));
   return cut(lines.join('\n'));
 }

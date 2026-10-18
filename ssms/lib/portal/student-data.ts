@@ -75,6 +75,8 @@ export interface MyPortal {
   pass_mark: number;
   exams: MyExam[];
   attendance: MyAttendance[];
+  /** Signed in with the reg no + PIN login (false: a member who studies, with their own account) — set by the student portal */
+  pin_login?: boolean;
 }
 
 const round1 = (n: number) => Math.round(n * 10) / 10;

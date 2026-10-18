@@ -1,8 +1,10 @@
 'use server';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Members (persons) server actions. Students are persons too, but they are
-// managed on the Students page and left out of the members registry.
+// Members (persons) server actions. Students are persons too, managed on the
+// Students page; a student is in the members registry only when they are also
+// a member (registered with this form — lib/members/membership). One person
+// can be both: "Already a student?" on the form, or "Enroll in a class" here.
 // The fields follow the paper member registration form (lib/members/form.ts).
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -12,6 +14,7 @@ import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import { MAX_PHOTO_BYTES, PHOTO_TYPES, SERVICE_DEPARTMENT_CODES } from '@/lib/members/form';
+import { nonMemberIds } from '@/lib/members/membership';
 
 const MEMBER_COLUMNS =
   'id, membership_code, full_name_en, full_name_am, baptismal_name, gender, date_of_birth, phone_primary, phone_secondary, email, address, emergency_contact_name, emergency_contact_phone, father_of_confession, profile_photo_url, status, notes, created_at, updated_at, registration_term, registered_on, membership_type, father_name, mother_name, marital_status, education_level, profession, workplace, woreda, house_no, served_elsewhere, previous_school, previous_role, preferred_departments, preferred_department_other, emergency_contact_relation, declaration_signed, assigned_unit_id, registered_by_name, approved_by_name, approved_on';
@@ -19,7 +22,20 @@ const MEMBER_COLUMNS =
 const PHOTO_BUCKET = 'member-photos';
 
 export type MemberUnit = { id: string; name_en: string; name_am: string };
-export type MembersData = { members: Person[]; units: MemberUnit[] };
+/** A member's own student record, when they also attend classes */
+export type MemberStudent = { reg_no: string; status: string; class_en: string; class_am: string };
+export type MemberClass = { id: string; name_en: string; name_am: string };
+export type StudentPerson = Person & { reg_no: string };
+export type MembersData = {
+  members: Person[];
+  units: MemberUnit[];
+  /** person id → student record, for members who are also students */
+  student_of: Record<string, MemberStudent>;
+  /** This year's classes, for "Enroll in a class" */
+  classes: MemberClass[];
+  /** Students who are not members yet, for "Already a student?" on the form (only for MEMBER_CREATE) */
+  students_only: StudentPerson[];
+};
 
 function missingMigration(message: string) {
   return /registration_term|membership_type|father_name|assigned_unit_id|[Bb]ucket not found/.test(message)
@@ -30,18 +46,56 @@ function missingMigration(message: string) {
 export async function loadMembers(): Promise<Loaded<MembersData>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
-    const { db } = await authorize('MEMBER_VIEW', 'AUDIT_VIEW_ALL');
-    const [persons, students, units] = await Promise.all([
+    const { me, db } = await authorize('MEMBER_VIEW', 'AUDIT_VIEW_ALL');
+    const [persons, students, units, notMembers, year] = await Promise.all([
       selectAll<Person>((a, b) =>
         db.from('persons').select(MEMBER_COLUMNS).order('created_at', { ascending: false }).order('id').range(a, b)
       ),
-      selectAll<{ person_id: string }>((a, b) => db.from('students').select('person_id').order('id').range(a, b)),
+      selectAll<{ id: string; person_id: string; reg_no: string; status: string }>((a, b) =>
+        db.from('students').select('id, person_id, reg_no, status').order('id').range(a, b)
+      ),
       db.from('organization_units').select('id, name_en, name_am').eq('is_active', true).order('sort_order').then(check) as Promise<MemberUnit[]>,
+      // Student-only records and parents' login records (lib/members/membership)
+      nonMemberIds(db),
+      db.from('academic_years')
+        .select('id')
+        .order('is_current', { ascending: false })
+        .order('start_date', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+        .then(check) as Promise<{ id: string } | null>,
     ]);
-    // Parents' records made only for their login are not members (migration 025; none before it)
-    const { data: guardianOnly } = await db.from('persons').select('id').eq('is_guardian_only', true);
-    const skip = new Set([...students.map((s) => s.person_id), ...((guardianOnly ?? []) as { id: string }[]).map((g) => g.id)]);
-    return { mode: 'live', data: { members: persons.filter((p) => !skip.has(p.id)), units } };
+    const members = persons.filter((p) => !notMembers.has(p.id));
+    const isMember = new Set(members.map((p) => p.id));
+    const memberStudents = students.filter((s) => isMember.has(s.person_id));
+
+    // Members who are also students: their registration number and this year's class
+    type Enrolled = { student_id: string; class_id: string };
+    const [classes, enrolled]: [MemberClass[], Enrolled[]] = year
+      ? await Promise.all([
+          db.from('classes').select('id, name_en, name_am').eq('academic_year_id', year.id).order('grade_level').order('name_en').then(check) as Promise<MemberClass[]>,
+          memberStudents.length
+            ? (db.from('enrollments')
+                .select('student_id, class_id')
+                .eq('academic_year_id', year.id)
+                .in('student_id', memberStudents.map((s) => s.id))
+                .then(check) as Promise<Enrolled[]>)
+            : Promise.resolve([]),
+        ])
+      : [[], []];
+    const classById = new Map(classes.map((c) => [c.id, c]));
+    const classOf = new Map(enrolled.map((e) => [e.student_id, classById.get(e.class_id)]));
+    const student_of: Record<string, MemberStudent> = {};
+    for (const s of memberStudents) {
+      const c = classOf.get(s.id);
+      student_of[s.person_id] = { reg_no: s.reg_no, status: s.status, class_en: c?.name_en ?? '', class_am: c?.name_am || c?.name_en || '' };
+    }
+
+    const regNo = new Map(students.map((s) => [s.person_id, s.reg_no]));
+    const students_only = me.permissions.includes('MEMBER_CREATE')
+      ? persons.filter((p) => !isMember.has(p.id) && regNo.has(p.id) && p.status === 'ACTIVE').map((p) => ({ ...p, reg_no: regNo.get(p.id)! }))
+      : [];
+    return { mode: 'live', data: { members, units, student_of, classes, students_only } };
   } catch (e) {
     return { mode: 'error', error: missingMigration(errorMessage(e)) };
   }
@@ -138,8 +192,14 @@ async function nextMembershipCode(db: Awaited<ReturnType<typeof authorize>>['db'
   return `${prefix}${String(n + 1).padStart(4, '0')}`;
 }
 
+/**
+ * Register a member. `studentPersonId`: someone already registered as a
+ * student — their own record becomes a member too (a member ID and the form's
+ * fields), so results, attendance and logins stay with the same person.
+ */
 export async function createMember(
-  input: MemberInput
+  input: MemberInput,
+  studentPersonId?: string
 ): Promise<{ ok: true; code: string; id: string } | { ok: false; error: string }> {
   try {
     const { me, db } = await authorize('MEMBER_CREATE');
@@ -147,6 +207,20 @@ export async function createMember(
     // The secretary who registers is the signed-in user unless another name is written
     row.registered_by_name ??= me.person.full_name_am || me.person.full_name_en;
     row.registered_on ??= new Date().toISOString().slice(0, 10);
+    if (studentPersonId) {
+      const id = z.string().min(1).parse(studentPersonId);
+      const { data: student } = await db.from('students').select('id').eq('person_id', id).maybeSingle();
+      if (!student) throw new Error('That student was not found — reload the page');
+      if (!(await nonMemberIds(db, [id])).has(id)) throw new Error('This student is already a member');
+      for (let attempt = 0; ; attempt++) {
+        const code = await nextMembershipCode(db);
+        const { error } = await db.from('persons')
+          .update({ ...row, membership_code: code, status: 'ACTIVE', updated_at: new Date().toISOString() })
+          .eq('id', id);
+        if (!error) return { ok: true, code, id };
+        if (error.code !== '23505' || attempt > 0) throw new Error(missingMigration(error.message));
+      }
+    }
     // Two people registering at the same moment can collide on the code — retry once.
     for (let attempt = 0; ; attempt++) {
       const code = await nextMembershipCode(db);
@@ -157,6 +231,42 @@ export async function createMember(
       if (!error) return { ok: true, code, id: (data as { id: string }).id };
       if (error.code !== '23505' || attempt > 0) throw new Error(missingMigration(error.message));
     }
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) };
+  }
+}
+
+/** "Enroll in a class": a member who also attends classes becomes a student — the same person, with a registration number. */
+export async function enrollMemberAsStudent(
+  personId: string,
+  classId: string,
+  enrollmentDate: string
+): Promise<{ ok: true; reg_no: string } | { ok: false; error: string }> {
+  try {
+    const { db } = await authorize('STUDENT_CREATE');
+    const id = z.string().min(1).parse(personId);
+    const cls = z.string().min(1, 'Choose a class').parse(classId);
+    const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a valid date').parse(enrollmentDate);
+    const person = (await db.from('persons').select('id, membership_type').eq('id', id).maybeSingle().then(check)) as { id: string; membership_type: string | null } | null;
+    if (!person || (await nonMemberIds(db, [id])).has(id)) throw new Error('That member was not found — reload the page');
+    const { data: already } = await db.from('students').select('reg_no').eq('person_id', id).maybeSingle();
+    if (already) throw new Error(`Already a student (${(already as { reg_no: string }).reg_no})`);
+    const klass = (await db.from('classes').select('id, academic_year_id').eq('id', cls).maybeSingle().then(check)) as { id: string; academic_year_id: string } | null;
+    if (!klass) throw new Error('That class no longer exists');
+    // Members from before the form have no membership type; set it so they stay a member once they are a student
+    if (!person.membership_type) await db.from('persons').update({ membership_type: 'REGULAR' }).eq('id', id).then(check);
+
+    const student = (await db.from('students')
+      .insert({ id: crypto.randomUUID(), person_id: id, status: 'ACTIVE', enrollment_date: date })
+      .select('id, reg_no')
+      .single()
+      .then(check)) as { id: string; reg_no: string };
+    const { error } = await db.from('enrollments').insert({ student_id: student.id, class_id: cls, academic_year_id: klass.academic_year_id, status: 'ACTIVE' });
+    if (error) {
+      await db.from('students').delete().eq('id', student.id);
+      throw new Error(error.message);
+    }
+    return { ok: true, reg_no: student.reg_no };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
   }

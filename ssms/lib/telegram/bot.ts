@@ -47,6 +47,23 @@ export async function telegramApi<T = unknown>(method: string, body: Record<stri
   }
 }
 
+/** A file someone sent the bot (e.g. a receipt photo), fetched here so the token never reaches the browser. */
+export async function telegramFile(fileId: string): Promise<{ bytes: ArrayBuffer; type: string } | null> {
+  const token = env.telegramBotToken();
+  if (!token) return null;
+  const info = await telegramApi<{ file_path?: string }>('getFile', { file_id: fileId });
+  if (!info.ok || !info.result.file_path) return null;
+  try {
+    const res = await fetch(`https://api.telegram.org/file/bot${token}/${info.result.file_path}`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    const ext = info.result.file_path.split('.').pop()?.toLowerCase() ?? '';
+    const type = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', pdf: 'application/pdf' }[ext] ?? res.headers.get('content-type') ?? 'application/octet-stream';
+    return { bytes: await res.arrayBuffer(), type };
+  } catch {
+    return null;
+  }
+}
+
 let usernameCache: string | null = null;
 /** The bot's @username, for t.me links. */
 export async function botUsername(): Promise<string | null> {

@@ -57,6 +57,16 @@ export default function StudentLoginsPage() {
     loadStudentLogins().then(apply);
   };
 
+  /** A member who also studies and already has an account: that account opens My exams / results / attendance too. */
+  const addStudentPages = async (studentId: string) => {
+    setBusy(true);
+    const res = await createStudentLogins([studentId]);
+    setBusy(false);
+    if (!res.ok) return notify('error', res.error);
+    notify('success', t('Done — they see the student pages when they sign in with their own account', 'ተከናውኗል — በራሳቸው መለያ ሲገቡ የተማሪ ገጾችን ያያሉ'));
+    loadStudentLogins().then(apply);
+  };
+
   const reset = async (studentId: string) => {
     setBusy(true);
     const res = await resetStudentPin(studentId);
@@ -184,7 +194,16 @@ export default function StudentLoginsPage() {
                       {!r.has_login ? (
                         <span className="text-slate-400">{t('No login yet', 'መግቢያ የለውም')}</span>
                       ) : !r.student_login ? (
-                        <span className="text-slate-500">{t('Has a staff account', 'የሠራተኛ መለያ አለው')}</span>
+                        <span className="text-slate-500">
+                          {t('Signs in with their own account', 'በራሱ መለያ ይገባል')}
+                          {r.student_pages ? (
+                            <span className="text-emerald-700"> · {t('student pages on', 'የተማሪ ገጾች ተከፍተዋል')}</span>
+                          ) : (
+                            <button disabled={busy} onClick={() => addStudentPages(r.student_id)} className="ml-2 text-xs text-blue-600 hover:text-blue-800 font-semibold">
+                              {t('Add student pages', 'የተማሪ ገጾችን ጨምር')}
+                            </button>
+                          )}
+                        </span>
                       ) : r.active ? (
                         <span className="text-emerald-700">
                           {t('Active', 'ንቁ')}

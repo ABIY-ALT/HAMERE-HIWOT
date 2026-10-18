@@ -16,6 +16,7 @@ import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize'
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import { isValidPhone, normalizePhone, phoneToAuthEmail } from '@/lib/auth/phone';
 import { newPin } from '@/lib/auth/student-login';
+import { studentOnlyIds } from '@/lib/members/membership';
 
 type Row = Record<string, unknown>;
 
@@ -180,15 +181,11 @@ export async function createParentLogin(input: z.input<typeof ParentSchema>): Pr
           .then(check);
       }
     } else {
-      // A person for the parent: reuse one with this phone (not a student), or make one
+      // A person for the parent: reuse one with this phone (not a child's student record — a member who also studies is fine), or make one
       const { data: sameAll } = await db.from('persons').select('id').eq('phone_primary', p.phone);
       const sameIds = ((sameAll ?? []) as { id: string }[]).map((x) => x.id);
-      const studentPersons = new Set(
-        sameIds.length
-          ? ((await db.from('students').select('person_id').in('person_id', sameIds).then(check)) as { person_id: string }[]).map((s) => s.person_id)
-          : []
-      );
-      const same = sameIds.map((id) => ({ id })).find((x) => !studentPersons.has(x.id));
+      const studentOnly = await studentOnlyIds(db, sameIds);
+      const same = sameIds.map((id) => ({ id })).find((x) => !studentOnly.has(x.id));
       personId = same?.id ?? (await insertParentPerson(db, p));
 
       pin = newPin();

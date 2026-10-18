@@ -6,6 +6,8 @@
 //   /start, /register    welcome; not linked yet → "📱 Share my phone number"
 //   shared phone number  link by phone (lib/telegram/menu): parents to their children
 //   📊 📋 🖊️ 🧾 buttons  results, attendance, exams, dues — only this chat's own people
+//   💳 I paid            report a dues payment for Finance to approve (lib/telegram/dues-flow);
+//                        the steps after it, incl. a photo of the receipt, follow telegram_sessions
 //   /stop                stop all messages to this chat
 // Always answers 200, so Telegram does not resend.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -17,7 +19,6 @@ import { escapeHtml, sendTelegram, siteUrl, telegramConfigured, webhookSecret } 
 import {
   BUTTONS,
   LINKED_HELP,
-  MENU_KEYBOARD,
   PHONE_KEYBOARD,
   REMOVE_KEYBOARD,
   WELCOME,
@@ -26,8 +27,10 @@ import {
   duesText,
   examsText,
   linkByPhone,
+  menuFor,
   resultsText,
 } from '@/lib/telegram/menu';
+import { activeSession, clearSession, continuePaid, startPaid } from '@/lib/telegram/dues-flow';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,11 +40,27 @@ type Update = {
     chat?: { id: number; type?: string };
     from?: { id?: number; first_name?: string; last_name?: string; username?: string };
     contact?: { phone_number?: string; user_id?: number };
+    caption?: string;
+    /** The same picture in several sizes, smallest first */
+    photo?: { file_id: string }[];
+    /** A picture or PDF sent as a file */
+    document?: { file_id: string; mime_type?: string };
   };
 };
 
 /** "/results", "/results@HamereHiwotBot" or the 📊 button */
 const asked = (text: string, command: string, button: string) => text === button || new RegExp(`^/${command}(@\\w+)?$`, 'i').test(text);
+
+/** A menu button or a command (other than /cancel) leaves a conversation that is in progress. */
+const leavesSession = (text: string) => (Object.values(BUTTONS) as string[]).includes(text) || (text.startsWith('/') && !/^\/cancel/i.test(text));
+
+/** The receipt picture of a message, if it has one */
+function pictureOf(message: NonNullable<Update['message']>): string | undefined {
+  if (message.photo?.length) return message.photo[message.photo.length - 1].file_id;
+  const doc = message.document;
+  if (doc && (/^image\//.test(doc.mime_type ?? '') || doc.mime_type === 'application/pdf')) return doc.file_id;
+  return undefined;
+}
 
 export async function POST(request: Request) {
   if (!telegramConfigured() || !isSupabaseEnabled()) return new NextResponse('Not set up', { status: 404 });
@@ -81,7 +100,7 @@ export async function POST(request: Request) {
       if (found.self.length) lines.push(escapeHtml(`👤 ${found.self.join('፣ ')}`));
       if (found.children.length) lines.push(escapeHtml(`👨‍👩‍👧 ልጆች · Children: ${found.children.join('፣ ')}`));
       lines.push('', escapeHtml(LINKED_HELP));
-      await sendTelegram(chatId, lines.join('\n'), MENU_KEYBOARD);
+      await sendTelegram(chatId, lines.join('\n'), menuFor(await chatScope(db, chatId)));
       return NextResponse.json({ ok: true });
     }
 
@@ -109,13 +128,14 @@ export async function POST(request: Request) {
           escapeHtml('ተገናኝቷል። የትምህርት ቤቱ መልእክቶች እዚህ ይደርሱዎታል። ለማቆም /stop ይላኩ።\n') +
           escapeHtml('Connected. Messages from the school will come here. Send /stop to stop them.\n') +
           siteUrl(),
-        MENU_KEYBOARD
+        menuFor(await chatScope(db, chatId))
       );
       return NextResponse.json({ ok: true });
     }
 
     if (/^\/stop(@\w+)?$/i.test(text)) {
       await db.from('telegram_links').delete().eq('chat_id', chatId);
+      await clearSession(db, chatId);
       await sendTelegram(
         chatId,
         escapeHtml('መልእክቶች ቆመዋል። እንደገና ለመገናኘት /start ይላኩ።\nMessages stopped. Send /start to connect again.'),
@@ -130,11 +150,22 @@ export async function POST(request: Request) {
       await sendTelegram(chatId, escapeHtml(WELCOME), PHONE_KEYBOARD);
       return NextResponse.json({ ok: true });
     }
-    if (asked(text, 'results', BUTTONS.results)) await sendTelegram(chatId, await resultsText(db, scope), MENU_KEYBOARD);
-    else if (asked(text, 'attendance', BUTTONS.attendance)) await sendTelegram(chatId, await attendanceText(db, scope), MENU_KEYBOARD);
-    else if (asked(text, 'exams', BUTTONS.exams)) await sendTelegram(chatId, await examsText(db, scope), MENU_KEYBOARD);
-    else if (asked(text, 'dues', BUTTONS.dues)) await sendTelegram(chatId, await duesText(db, scope), MENU_KEYBOARD);
-    else await sendTelegram(chatId, escapeHtml(LINKED_HELP), MENU_KEYBOARD);
+    const menu = menuFor(scope);
+
+    // ── In the middle of "💳 I paid"? ──
+    const session = await activeSession(db, chatId);
+    if (session && !leavesSession(text)) {
+      await continuePaid(db, chatId, session, { text, photoFileId: pictureOf(message!), caption: message?.caption }, menu);
+      return NextResponse.json({ ok: true });
+    }
+    if (session) await clearSession(db, chatId);
+
+    if (asked(text, 'results', BUTTONS.results)) await sendTelegram(chatId, await resultsText(db, scope), menu);
+    else if (asked(text, 'attendance', BUTTONS.attendance)) await sendTelegram(chatId, await attendanceText(db, scope), menu);
+    else if (asked(text, 'exams', BUTTONS.exams)) await sendTelegram(chatId, await examsText(db, scope), menu);
+    else if (asked(text, 'dues', BUTTONS.dues)) await sendTelegram(chatId, await duesText(db, scope), menu);
+    else if (asked(text, 'paid', BUTTONS.paid)) await startPaid(db, chatId, scope);
+    else await sendTelegram(chatId, escapeHtml(LINKED_HELP), menu);
   } catch (e) {
     console.error('telegram webhook failed', e);
     await sendTelegram(chatId, escapeHtml('ይቅርታ፣ አሁን አልተሳካም። ትንሽ ቆይተው እንደገና ይሞክሩ። · Sorry, that did not work. Please try again a little later.')).catch(() => {});
