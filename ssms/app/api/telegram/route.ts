@@ -4,13 +4,16 @@
 // header. Handles:
 //   /start <code>        link this chat to the person who asked for the code on the website
 //   /start, /register    welcome; not linked yet → "📱 Share my phone number"
-//   shared phone number  link by phone (lib/telegram/menu): members and students to
-//                        themselves, parents to their children
-//   buttons by role      member: 🪪 membership, 🧾 dues, 💳 I paid · student / parent:
-//                        📊 results, 📋 attendance, 🖊️ exams — only this chat's own people
+//   shared phone number  link by phone (lib/telegram/links): members and students to
+//                        themselves, parents to their children. The number is kept, so
+//                        the links are checked again later (every few hours, on /start
+//                        and Help, and when the office changes a phone on a record)
+//   buttons by role      member: 🪪 membership, 🧾 dues, 💳 I paid, 📋 service & choir attendance
+//                        student / parent: 📋 attendance, 📊 results, 🖊️ exams
+//                        everyone linked: 📅 coming events — only this chat's own people
 //   💳 I paid            report a dues payment (one month or several) for Finance to approve (lib/telegram/dues-flow);
 //                        the steps after it, incl. a photo of the receipt, follow telegram_sessions
-//   /stop                stop all messages to this chat
+//   /stop                stop all messages to this chat (and forget its number)
 // Always answers 200, so Telegram does not resend.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -28,14 +31,15 @@ import {
   chatScope,
   connectedText,
   duesText,
+  eventsText,
   examsText,
   helpFor,
-  linkByPhone,
   membershipText,
   menuFor,
   resultsText,
 } from '@/lib/telegram/menu';
 import { activeSession, clearSession, continuePaid, startPaid } from '@/lib/telegram/dues-flow';
+import { refreshChat, savedChat, syncChat, tellUpdated } from '@/lib/telegram/links';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,6 +56,10 @@ type Update = {
     document?: { file_id: string; mime_type?: string };
   };
 };
+
+const WAITING =
+  '\n\nቁጥርዎ ተቀምጧል፦ ጽ/ቤቱ በመዝገብ ላይ ሲያስገባው ወዲያው ይገናኛሉ፤ እዚህ መልእክት ይደርስዎታል።\n' +
+  'Your number is kept: once the office puts it on a record, you are connected by yourself and get a message here.';
 
 /** "/results", "/results@HamereHiwotBot" or the 📊 button */
 const asked = (text: string, command: string, button: string) => text === button || new RegExp(`^/${command}(@\\w+)?$`, 'i').test(text);
@@ -89,9 +97,11 @@ export async function POST(request: Request) {
         await sendTelegram(chatId, escapeHtml('እባክዎ «📱 ስልኬን አጋራ» የሚለውን አዝራር ይጫኑ። · Please use the “Share my phone number” button.'), PHONE_KEYBOARD);
         return NextResponse.json({ ok: true });
       }
-      const found = await linkByPhone(db, chatId, message.contact.phone_number ?? '', telegramName);
+      // Links by this number now — and the number is kept, so the links follow later changes to the records
+      const found = await syncChat(db, chatId, message.contact.phone_number ?? '', telegramName);
       if (found.self.length === 0 && found.children.length === 0) {
-        await sendTelegram(chatId, escapeHtml(NOT_FOUND), REMOVE_KEYBOARD);
+        // (the number is kept from migration 030)
+        await sendTelegram(chatId, escapeHtml(NOT_FOUND + ((await savedChat(db, chatId)) ? WAITING : '')), REMOVE_KEYBOARD);
         return NextResponse.json({ ok: true });
       }
       // "Connected as": member, student and/or parent of whom — and the buttons for that
@@ -130,6 +140,8 @@ export async function POST(request: Request) {
 
     if (/^\/stop(@\w+)?$/i.test(text)) {
       await db.from('telegram_links').delete().eq('chat_id', chatId);
+      // Forget the number too, so changes to the records do not connect the chat again
+      await db.from('telegram_chats').delete().eq('chat_id', chatId);
       await clearSession(db, chatId);
       await sendTelegram(
         chatId,
@@ -139,10 +151,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
 
+    // ── Links still right? Checked by the saved number every few hours, at once on /start and Help ──
+    const force = /^\/(start|menu|help)(@\w+)?$/i.test(text) || text === BUTTONS.help;
+    const refreshed = await refreshChat(db, chatId, force);
+    if (refreshed?.added) await tellUpdated(db, chatId);
+
     // ── Everything else needs a linked chat ──
     const scope = await chatScope(db, chatId);
     if (!scope.linked) {
-      await sendTelegram(chatId, escapeHtml(WELCOME), PHONE_KEYBOARD);
+      // Shared a number that is on no record yet: it connects by itself once the office adds it
+      const waiting = await savedChat(db, chatId);
+      await sendTelegram(chatId, escapeHtml(waiting ? `${NOT_FOUND}${WAITING}` : WELCOME), PHONE_KEYBOARD);
       return NextResponse.json({ ok: true });
     }
     const menu = menuFor(scope);
@@ -161,6 +180,7 @@ export async function POST(request: Request) {
     else if (asked(text, 'exams', BUTTONS.exams)) await sendTelegram(chatId, await examsText(db, scope), menu);
     else if (asked(text, 'dues', BUTTONS.dues)) await sendTelegram(chatId, await duesText(db, scope), menu);
     else if (asked(text, 'paid', BUTTONS.paid)) await startPaid(db, chatId, scope);
+    else if (asked(text, 'events', BUTTONS.events)) await sendTelegram(chatId, await eventsText(db, scope), menu);
     else await sendTelegram(chatId, escapeHtml(helpFor(scope)), menu);
   } catch (e) {
     console.error('telegram webhook failed', e);

@@ -1,12 +1,22 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, Link2, Send, XCircle } from 'lucide-react';
+import { CheckCircle2, Link2, RefreshCw, Search, Send, Users, XCircle } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
 import type { LoadMode } from '@/lib/admin/types';
 import { formatEthiopianDate } from '@/lib/utils/ethiopian-calendar';
-import { connectBot, countAudience, loadBotStatus, sendBroadcast, type BotStatus } from '@/app/dashboard/telegram/actions';
+import {
+  connectBot,
+  countAudience,
+  disconnectTelegramChat,
+  loadBotStatus,
+  loadTelegramChats,
+  refreshTelegramChat,
+  sendBroadcast,
+  type BotStatus,
+  type TelegramChatRow,
+} from '@/app/dashboard/telegram/actions';
 
 /** Set up the Telegram bot, and send a message to a group of people who connected it. */
 export default function TelegramAdminPage() {
@@ -163,6 +173,156 @@ export default function TelegramAdminPage() {
           )}
         </form>
       )}
+
+      {status?.configured && <ConnectedChats notify={notify} />}
+    </div>
+  );
+}
+
+type Role = 'ALL' | 'MEMBER' | 'STUDENT' | 'PARENT' | 'WAITING';
+
+/** Who is connected, and what the bot treats each chat as: member, student, parent (or several). */
+function ConnectedChats({ notify }: { notify: (kind: 'success' | 'error', text: string) => void }) {
+  const { t, locale } = useLang();
+  const [chats, setChats] = useState<TelegramChatRow[] | null>(null);
+  const [canManage, setCanManage] = useState(false);
+  const [error, setError] = useState('');
+  const [role, setRole] = useState<Role>('ALL');
+  const [search, setSearch] = useState('');
+  const [busy, setBusy] = useState<number | null>(null);
+
+  const apply = useCallback((res: Awaited<ReturnType<typeof loadTelegramChats>>) => {
+    if (res.mode === 'live') {
+      setChats(res.data.chats);
+      setCanManage(res.data.can_manage);
+    }
+    if (res.mode === 'error') setError(res.error);
+  }, []);
+  useEffect(() => {
+    loadTelegramChats().then(apply);
+  }, [apply]);
+
+  const refresh = async (chatId: number) => {
+    setBusy(chatId);
+    const res = await refreshTelegramChat(chatId);
+    setBusy(null);
+    if (!res.ok) return notify('error', res.error);
+    notify('success', t(`Checked: ${res.added} added, ${res.removed} removed`, `ተፈትሿል፦ ${res.added} ተጨመሩ፣ ${res.removed} ተወገዱ`));
+    loadTelegramChats().then(apply);
+  };
+  const disconnect = async (chatId: number) => {
+    if (!window.confirm(t('Disconnect this chat? It stops getting messages until they connect again.', 'ይህን ቻት ይቋረጥ? እንደገና እስኪገናኙ መልእክት አይደርሳቸውም።'))) return;
+    setBusy(chatId);
+    const res = await disconnectTelegramChat(chatId);
+    setBusy(null);
+    if (!res.ok) return notify('error', res.error);
+    notify('success', t('Disconnected', 'ተቋርጧል'));
+    loadTelegramChats().then(apply);
+  };
+
+  if (error) return <p className="card p-4 text-sm text-red-700">{error}</p>;
+  if (!chats) return null;
+  const count = (r: Role) =>
+    chats.filter((c) =>
+      r === 'ALL' ? true : r === 'MEMBER' ? c.members.length > 0 : r === 'STUDENT' ? c.students.length > 0 : r === 'PARENT' ? c.children.length > 0 : c.waiting
+    ).length;
+  const needle = search.trim().toLowerCase();
+  const shown = chats
+    .filter((c) => (role === 'ALL' ? true : role === 'MEMBER' ? c.members.length > 0 : role === 'STUDENT' ? c.students.length > 0 : role === 'PARENT' ? c.children.length > 0 : c.waiting))
+    .filter((c) => !needle || [c.telegram_name, c.phone, ...c.members, ...c.students, ...c.children].join(' ').toLowerCase().includes(needle));
+  const roles: [Role, string][] = [
+    ['ALL', t('All', 'ሁሉም')],
+    ['MEMBER', t('🪪 Members', '🪪 አባላት')],
+    ['STUDENT', t('🎓 Students', '🎓 ተማሪዎች')],
+    ['PARENT', t('👨‍👩‍👧 Parents', '👨‍👩‍👧 ወላጆች')],
+    ['WAITING', t('⏳ Not found yet', '⏳ ገና ያልተገኙ')],
+  ];
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="p-4 border-b border-slate-100 space-y-3">
+        <div>
+          <h2 className="font-bold text-slate-800 text-sm inline-flex items-center gap-2">
+            <Users size={16} /> {t(`Connected chats (${chats.length})`, `የተገናኙ ቻቶች (${chats.length})`)}
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {t(
+              'What the bot treats each chat as. A member: their own number is on a member record. A student: on their student record. A parent: their number is the guardian phone of a current student. Fix a wrong one on the record, then press ⟳.',
+              'ቦቱ እያንዳንዱን ቻት እንደ ምን እንደሚያየው። አባል፦ ስልኩ በአባልነት መዝገብ ላይ ያለ። ተማሪ፦ በተማሪ መዝገቡ ላይ። ወላጅ፦ ስልኩ የአሁን ተማሪ የወላጅ ስልክ የሆነ። የተሳሳተ ካለ መዝገቡን አስተካክለው ⟳ ይጫኑ።'
+            )}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {roles.map(([r, label]) => (
+            <button
+              key={r}
+              onClick={() => setRole(r)}
+              className={`text-xs px-2.5 py-1 rounded-full border ${role === r ? 'bg-slate-900 text-white border-slate-900' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+            >
+              {label} · {count(r)}
+            </button>
+          ))}
+          <div className="relative ml-auto">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('Name or phone…', 'ስም ወይም ስልክ…')} className="form-input text-xs pl-8 py-1.5 w-48" />
+          </div>
+        </div>
+      </div>
+      <div className="table-container rounded-none border-0">
+        <table>
+          <thead>
+            <tr>
+              <th>{t('Telegram', 'ቴሌግራም')}</th>
+              <th>{t('The bot treats it as', 'ቦቱ የሚያየው እንደ')}</th>
+              <th>{t('Connected', 'የተገናኘበት')}</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((c) => (
+              <tr key={c.chat_id}>
+                <td>
+                  <div className="font-medium text-slate-900">{c.telegram_name || '—'}</div>
+                  <div className="text-[11px] font-mono text-slate-500">{c.phone || t('from the website', 'ከድረ-ገጹ')}</div>
+                </td>
+                <td className="text-xs space-y-0.5">
+                  {c.members.length > 0 && <RoleLine tone="bg-rose-50 text-rose-800" label={t('🪪 Member', '🪪 አባል')} names={c.members} />}
+                  {c.students.length > 0 && <RoleLine tone="bg-indigo-50 text-indigo-800" label={t('🎓 Student', '🎓 ተማሪ')} names={c.students} />}
+                  {c.children.length > 0 && <RoleLine tone="bg-emerald-50 text-emerald-800" label={t('👨‍👩‍👧 Parent of', '👨‍👩‍👧 ወላጅ')} names={c.children} />}
+                  {c.waiting && <span className="text-amber-700">{t('⏳ This number is on no record yet — add it to the member or student record.', '⏳ ይህ ስልክ ገና በምንም መዝገብ ላይ የለም — በአባል ወይም በተማሪ መዝገብ ላይ ያስገቡ።')}</span>}
+                </td>
+                <td className="text-xs text-slate-500 whitespace-nowrap">{c.connected_at ? formatEthiopianDate(c.connected_at.slice(0, 10), locale) : '—'}</td>
+                <td className="text-right whitespace-nowrap">
+                  {c.phone && (
+                    <button disabled={busy === c.chat_id} onClick={() => refresh(c.chat_id)} title={t('Check the links again by the shared number', 'በተጋራው ስልክ እንደገና ፈትሽ')} className="p-1.5 rounded text-slate-500 hover:bg-slate-100 disabled:opacity-50">
+                      <RefreshCw size={14} />
+                    </button>
+                  )}
+                  {canManage && (
+                    <button disabled={busy === c.chat_id} onClick={() => disconnect(c.chat_id)} className="text-xs text-red-600 hover:text-red-800 font-semibold px-2 py-1 rounded hover:bg-red-50 disabled:opacity-50">
+                      {t('Disconnect', 'አቋርጥ')}
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {shown.length === 0 && (
+              <tr>
+                <td colSpan={4} className="text-center text-sm text-slate-400 py-8">{t('No chats', 'ምንም ቻት የለም')}</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function RoleLine({ tone, label, names }: { tone: string; label: string; names: string[] }) {
+  return (
+    <div>
+      <span className={`inline-block px-1.5 py-0.5 rounded font-semibold mr-1.5 ${tone}`}>{label}</span>
+      <span className="text-slate-700">{names.join(', ')}</span>
     </div>
   );
 }

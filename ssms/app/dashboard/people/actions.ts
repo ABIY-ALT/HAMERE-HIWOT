@@ -8,6 +8,7 @@
 // The fields follow the paper member registration form (lib/members/form.ts).
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { after } from 'next/server';
 import { z } from 'zod';
 import type { Person } from '@/types';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
@@ -15,6 +16,7 @@ import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize'
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import { MAX_PHOTO_BYTES, PHOTO_TYPES, SERVICE_DEPARTMENT_CODES } from '@/lib/members/form';
 import { nonMemberIds } from '@/lib/members/membership';
+import { syncChatsForPhones } from '@/lib/telegram/links';
 
 const MEMBER_COLUMNS =
   'id, membership_code, full_name_en, full_name_am, baptismal_name, gender, date_of_birth, phone_primary, phone_secondary, email, address, emergency_contact_name, emergency_contact_phone, father_of_confession, profile_photo_url, status, notes, created_at, updated_at, registration_term, registered_on, membership_type, father_name, mother_name, marital_status, education_level, profession, workplace, woreda, house_no, served_elsewhere, previous_school, previous_role, preferred_departments, preferred_department_other, emergency_contact_relation, declaration_signed, assigned_unit_id, registered_by_name, approved_by_name, approved_on';
@@ -217,7 +219,10 @@ export async function createMember(
         const { error } = await db.from('persons')
           .update({ ...row, membership_code: code, status: 'ACTIVE', updated_at: new Date().toISOString() })
           .eq('id', id);
-        if (!error) return { ok: true, code, id };
+        if (!error) {
+          after(() => syncChatsForPhones(db, [row.phone_primary]));
+          return { ok: true, code, id };
+        }
         if (error.code !== '23505' || attempt > 0) throw new Error(missingMigration(error.message));
       }
     }
@@ -228,7 +233,11 @@ export async function createMember(
         .insert({ ...row, membership_code: code, status: 'ACTIVE' })
         .select('id')
         .single();
-      if (!error) return { ok: true, code, id: (data as { id: string }).id };
+      if (!error) {
+        // Someone who already shared this number with the bot is connected as this member at once
+        after(() => syncChatsForPhones(db, [row.phone_primary]));
+        return { ok: true, code, id: (data as { id: string }).id };
+      }
       if (error.code !== '23505' || attempt > 0) throw new Error(missingMigration(error.message));
     }
   } catch (e) {
@@ -280,8 +289,11 @@ export async function updateMember(
     const { db } = await authorize('MEMBER_UPDATE');
     const row = toRow(input);
     const status = StatusSchema.parse(input.status);
+    const { data: before } = await db.from('persons').select('phone_primary').eq('id', personId).maybeSingle();
     const { error } = await db.from('persons').update({ ...row, status, updated_at: new Date().toISOString() }).eq('id', personId);
     if (error) throw new Error(missingMigration(error.message));
+    // The bot's links follow the member's phone (old and new number) and status
+    after(() => syncChatsForPhones(db, [(before as { phone_primary: string | null } | null)?.phone_primary, row.phone_primary]));
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };

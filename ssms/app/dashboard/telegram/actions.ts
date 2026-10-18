@@ -2,8 +2,9 @@
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Telegram: connecting one's own chat (any signed-in user — staff, students,
-// parents), the bot's setup (SYSTEM_CONFIGURE), and messages to a group
-// (SYSTEM_CONFIGURE, MEMBER_UPDATE or STUDENT_UPDATE).
+// parents), the bot's setup (SYSTEM_CONFIGURE), messages to a group and the
+// list of connected chats with what the bot treats each as (SYSTEM_CONFIGURE,
+// MEMBER_UPDATE or STUDENT_UPDATE); disconnecting a chat (SYSTEM_CONFIGURE).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { headers } from 'next/headers';
@@ -14,7 +15,9 @@ import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import { createAdminClient } from '@/lib/supabase/server';
-import { botUsername, chatsOf, escapeHtml, newLinkCode, telegramApi, telegramConfigured, telegramToChats, webhookSecret } from '@/lib/telegram/bot';
+import { botUsername, chatsOf, escapeHtml, newLinkCode, sendTelegram, telegramApi, telegramConfigured, telegramToChats, webhookSecret } from '@/lib/telegram/bot';
+import { refreshChat, tellUpdated } from '@/lib/telegram/links';
+import { nonMemberIds } from '@/lib/members/membership';
 
 const MIGRATION_024 = 'Run database migration 024 (Telegram) first';
 const missing = (m: string) => (/telegram_/.test(m) && /does not exist|schema cache/.test(m) ? MIGRATION_024 : m);
@@ -162,6 +165,7 @@ export async function connectBot(): Promise<ActionResult> {
         { command: 'attendance', description: 'Attendance · ክትትል' },
         { command: 'exams', description: 'Online exams · ፈተና' },
         { command: 'membership', description: 'My membership · አባልነቴ' },
+        { command: 'events', description: 'Coming events · መርሐ ግብር' },
         { command: 'dues', description: 'Monthly dues · መዋጮ' },
         { command: 'paid', description: 'I paid my dues · ከፍያለሁ' },
         { command: 'menu', description: 'Menu · ምናሌ' },
@@ -245,6 +249,131 @@ export async function sendBroadcast(audience: string, message: string): Promise<
       const sent = await telegramToChats(bg, chats, html);
       await bg.from('telegram_broadcasts').update({ recipients: sent.recipients, delivered: sent.delivered }).eq('id', row.id);
     });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: missing(errorMessage(e)) };
+  }
+}
+
+// ── Who is connected (Administration → Telegram bot) ─────────────────────────
+
+/** One Telegram chat and what the bot treats it as — the same rules as the bot (lib/telegram/menu chatScope). */
+export interface TelegramChatRow {
+  chat_id: number;
+  telegram_name: string;
+  /** The number it shared ('' = connected from the website only) */
+  phone: string;
+  connected_at: string;
+  /** "Name (MBR-…)" — members linked as themselves */
+  members: string[];
+  /** "Name (REG-…)" — their own student records */
+  students: string[];
+  /** Children, linked as a parent */
+  children: string[];
+  /** Shared a number that is on no record yet; connects by itself once the office adds it */
+  waiting: boolean;
+}
+
+/** Bulk `.in()` without very long URLs */
+async function inChunks<T>(ids: string[], load: (part: string[]) => PromiseLike<{ data: unknown }>): Promise<T[]> {
+  const out: T[] = [];
+  for (let i = 0; i < ids.length; i += 150) out.push(...(((await load(ids.slice(i, i + 150))).data ?? []) as T[]));
+  return out;
+}
+
+export async function loadTelegramChats(): Promise<Loaded<{ chats: TelegramChatRow[]; can_manage: boolean }>> {
+  if (!isSupabaseEnabled()) return { mode: 'demo' };
+  try {
+    const { me, db } = await authorize(...BROADCASTERS);
+    const [links, saved, students, guardians, notMembers] = await Promise.all([
+      selectAll<Record<string, unknown>>((a, b) => db.from('telegram_links').select('chat_id, person_id, relation, telegram_name, linked_at').order('id').range(a, b)),
+      // Numbers kept from migration 030 (none before it)
+      db.from('telegram_chats').select('chat_id, phone, telegram_name, created_at'),
+      selectAll<{ id: string; person_id: string; reg_no: string }>((a, b) => db.from('students').select('id, person_id, reg_no').order('id').range(a, b)),
+      selectAll<{ student_id: string; guardian_person_id: string }>((a, b) => db.from('student_guardians').select('student_id, guardian_person_id').order('student_id').range(a, b)),
+      nonMemberIds(db),
+    ]);
+    const studentOf = new Map(students.map((s) => [s.person_id, s]));
+    const studentById = new Map(students.map((s) => [s.id, s]));
+    const selfPeople = new Set(links.filter((l) => l.relation !== 'GUARDIAN').map((l) => l.person_id as string));
+    const guarded = guardians.filter((g) => selfPeople.has(g.guardian_person_id));
+    const personIds = [
+      ...new Set([...links.map((l) => l.person_id as string), ...guarded.map((g) => studentById.get(g.student_id)?.person_id).filter((id): id is string => Boolean(id))]),
+    ];
+    const people = await inChunks<{ id: string; full_name_en: string; full_name_am: string | null; membership_code: string }>(personIds, (part) =>
+      db.from('persons').select('id, full_name_en, full_name_am, membership_code').in('id', part)
+    );
+    const personById = new Map(people.map((p) => [p.id, p]));
+    const nameOf = (id: string) => personById.get(id)?.full_name_am || personById.get(id)?.full_name_en || '—';
+
+    const rows = new Map<number, TelegramChatRow>();
+    const rowFor = (chatId: number, name: string, at: string) => {
+      const row = rows.get(chatId) ?? { chat_id: chatId, telegram_name: '', phone: '', connected_at: at, members: [], students: [], children: [], waiting: false };
+      if (!row.telegram_name && name) row.telegram_name = name;
+      if (at && (!row.connected_at || at < row.connected_at)) row.connected_at = at;
+      rows.set(chatId, row);
+      return row;
+    };
+    const add = (list: string[], item: string) => {
+      if (!list.includes(item)) list.push(item);
+    };
+    for (const l of links) {
+      const row = rowFor(Number(l.chat_id), (l.telegram_name as string) ?? '', (l.linked_at as string) ?? '');
+      const personId = l.person_id as string;
+      if (l.relation === 'GUARDIAN') {
+        add(row.children, nameOf(personId));
+        continue;
+      }
+      if (!notMembers.has(personId)) add(row.members, `${nameOf(personId)} (${personById.get(personId)?.membership_code ?? ''})`);
+      const own = studentOf.get(personId);
+      if (own) add(row.students, `${nameOf(personId)} (${own.reg_no})`);
+      // A parent's own account (parent portal): their children through the guardian list
+      for (const g of guarded.filter((x) => x.guardian_person_id === personId)) {
+        const child = studentById.get(g.student_id);
+        if (child) add(row.children, nameOf(child.person_id));
+      }
+    }
+    for (const c of (saved.data ?? []) as { chat_id: number; phone: string; telegram_name: string | null; created_at: string }[]) {
+      const row = rowFor(Number(c.chat_id), c.telegram_name ?? '', c.created_at);
+      row.phone = c.phone;
+      row.waiting = !row.members.length && !row.students.length && !row.children.length;
+    }
+    const chats = [...rows.values()].sort((a, b) => b.connected_at.localeCompare(a.connected_at));
+    return { mode: 'live', data: { chats, can_manage: me.permissions.includes('SYSTEM_CONFIGURE') } };
+  } catch (e) {
+    return { mode: 'error', error: missing(errorMessage(e)) };
+  }
+}
+
+/** Check a chat's links again by the number it shared (e.g. after fixing a record). */
+export async function refreshTelegramChat(chatId: number): Promise<{ ok: true; added: number; removed: number } | { ok: false; error: string }> {
+  try {
+    const { db } = await authorize(...BROADCASTERS);
+    const id = z.number().int().parse(chatId);
+    const result = await refreshChat(db, id, true);
+    if (!result) throw new Error('This chat connected from the website — it has no shared number to check');
+    if (result.added) await tellUpdated(db, id);
+    return { ok: true, added: result.added, removed: result.removed };
+  } catch (e) {
+    return { ok: false, error: missing(errorMessage(e)) };
+  }
+}
+
+/** Disconnect a chat (e.g. a wrong person): its links and kept number are removed, and it is told. */
+export async function disconnectTelegramChat(chatId: number): Promise<ActionResult> {
+  try {
+    const { db } = await authorize('SYSTEM_CONFIGURE');
+    const id = z.number().int().parse(chatId);
+    await db.from('telegram_links').delete().eq('chat_id', id).then(check);
+    await db.from('telegram_chats').delete().eq('chat_id', id);
+    await db.from('telegram_sessions').delete().eq('chat_id', id);
+    if (telegramConfigured()) {
+      await sendTelegram(
+        id,
+        escapeHtml('የትምህርት ቤቱ ጽ/ቤት ይህን ቻት አቋርጧል። እንደገና ለመገናኘት /start ይላኩ።\nThe school office disconnected this chat. Send /start to connect again.'),
+        { reply_markup: { remove_keyboard: true } }
+      );
+    }
     return { ok: true };
   } catch (e) {
     return { ok: false, error: missing(errorMessage(e)) };

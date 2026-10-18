@@ -10,9 +10,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { isValidPhone, normalizePhone } from '@/lib/auth/phone';
 import { studentPortalData, type MyPortal } from '@/lib/portal/student-data';
-import { formatEthiopianDate } from '@/lib/utils/ethiopian-calendar';
+import { formatEthiopianDate, todayIso } from '@/lib/utils/ethiopian-calendar';
 import { currentEthiopianYear, expectedTotal, periodsLabel } from '@/lib/finance/dues';
 import { periodsOf } from '@/lib/finance/dues-record';
 import { MEMBERSHIP_TYPES, choiceLabel } from '@/lib/members/form';
@@ -24,9 +23,10 @@ export const BUTTONS = {
   membership: '🪪 አባልነቴ · My membership',
   dues: '🧾 መዋጮ · Dues',
   paid: '💳 ከፍያለሁ · I paid',
-  results: '📊 ውጤት · Results',
   attendance: '📋 ክትትል · Attendance',
+  results: '📊 ውጤት · Results',
   exams: '🖊️ ፈተና · Exams',
+  events: '📅 መርሐ ግብር · Events',
   help: 'ℹ️ እርዳታ · Help',
 } as const;
 
@@ -84,17 +84,21 @@ export async function chatScope(db: SupabaseClient, chatId: number): Promise<Cha
 
 // ── Keyboards and help ───────────────────────────────────────────────────────
 
-/** The buttons under the message box, by what this chat is: member, student, parent (or several). */
+/**
+ * The buttons under the message box, by what this chat is:
+ *   member   🪪 membership · 🧾 dues · 💳 I paid · 📋 attendance (service, choir)
+ *   student / parent   📋 attendance · 📊 results · 🖊️ exams
+ *   everyone linked    📅 events · ℹ️ help
+ */
 export function menuFor(scope: ChatScope) {
   const rows: string[][] = [];
-  if (scope.memberPersonIds.length) {
-    rows.push([BUTTONS.membership, BUTTONS.dues]);
-    if (scope.duesPersonIds.length) rows.push([BUTTONS.paid]);
-  }
-  if (scope.studentIds.length) rows.push([BUTTONS.results, BUTTONS.attendance], [BUTTONS.exams]);
-  const lastRow = rows.at(-1);
-  if (lastRow && lastRow.length < 2) lastRow.push(BUTTONS.help);
-  else rows.push([BUTTONS.help]);
+  if (scope.memberPersonIds.length) rows.push([BUTTONS.membership, BUTTONS.dues]);
+  const middle: string[] = [];
+  if (scope.duesPersonIds.length) middle.push(BUTTONS.paid);
+  if (scope.memberPersonIds.length || scope.studentIds.length) middle.push(BUTTONS.attendance);
+  if (middle.length) rows.push(middle);
+  if (scope.studentIds.length) rows.push([BUTTONS.results, BUTTONS.exams]);
+  rows.push([BUTTONS.events, BUTTONS.help]);
   return { reply_markup: { keyboard: rows.map((r) => r.map((text) => ({ text }))), resize_keyboard: true, is_persistent: true } };
 }
 
@@ -137,16 +141,24 @@ export function helpFor(scope: ChatScope): string {
   const am = ['ከታች ያሉትን አዝራሮች ይጫኑ፦'];
   const en = ['Use the buttons below:'];
   if (scope.memberPersonIds.length) {
-    am.push('🪪 አባልነቴ — የአባልነት መረጃዎና የአገልግሎት ክፍልዎ', '🧾 መዋጮ — የተከፈሉ፣ ያልተከፈሉና ማጽደቅ የሚጠብቁ ወራት');
-    en.push('🪪 My membership — your member details and department', '🧾 Dues — paid, unpaid and waiting months');
+    am.push(
+      '🪪 አባልነቴ — የአባልነት መረጃ፣ ክፍል፣ አገልግሎት፣ መዘምራንና ኮሚቴ',
+      '🧾 መዋጮ — የተከፈሉ፣ ያልተከፈሉና ማጽደቅ የሚጠብቁ ወራት',
+      '📋 ክትትል — የአገልግሎትና የመዘምራን ክትትልዎ ታሪክ'
+    );
+    en.push(
+      '🪪 My membership — member details, department, service, choir and committees',
+      '🧾 Dues — paid, unpaid and waiting months',
+      '📋 Attendance — your service and choir attendance history'
+    );
     if (scope.duesPersonIds.length) {
       am.push('💳 ከፍያለሁ — የከፈሉትን (አንድ ወይም ብዙ ወር) ለፋይናንስ ያሳውቁ');
       en.push('💳 I paid — tell Finance you paid (one month or several)');
     }
   }
   if (scope.selfStudentIds.length) {
-    am.push('📊 📋 🖊️ — የእርስዎ ውጤት፣ ክትትልና ፈተና');
-    en.push('📊 📋 🖊️ — your own results, attendance and exams');
+    am.push('📊 📋 🖊️ — የእርስዎ ውጤት፣ የክፍል ክትትልና ፈተና');
+    en.push('📊 📋 🖊️ — your own results, class attendance and exams');
   }
   if (scope.childStudentIds.length) {
     am.push('📊 📋 🖊️ — የልጆችዎ ውጤት፣ ክትትልና ፈተና');
@@ -156,6 +168,8 @@ export function helpFor(scope: ChatScope): string {
     am.push('ይህ ቻት ገና ከአባል ወይም ከተማሪ ጋር አልተያያዘም — ጽ/ቤቱን ይጠይቁ።');
     en.push('This chat is not linked to a member or a student yet — ask the office.');
   }
+  am.push('📅 መርሐ ግብር — የሚመጡ የትምህርት ቤቱ መርሐ ግብሮች');
+  en.push('📅 Events — the school’s coming programs');
   am.push('መልእክት ለማቆም /stop');
   en.push('To stop messages: /stop');
   return `${am.join('\n')}\n\n${en.join('\n')}`;
@@ -183,49 +197,7 @@ export async function connectedText(db: SupabaseClient, scope: ChatScope): Promi
   return lines.join('\n');
 }
 
-// ── Sign in by phone ─────────────────────────────────────────────────────────
-
-/**
- * Link the chat by the number Telegram shared: as themselves to the people with
- * that phone (members, students), and as a parent to the students whose
- * guardian phone it is.
- */
-export async function linkByPhone(
-  db: SupabaseClient,
-  chatId: number,
-  sharedPhone: string,
-  telegramName: string
-): Promise<{ self: string[]; children: string[] }> {
-  const phone = normalizePhone(sharedPhone);
-  if (!isValidPhone(phone)) return { self: [], children: [] };
-  // Stored numbers vary (09…, +2519…, "0911 22 33 44"): find candidates by the last 9 digits in order, then compare exactly
-  const tail = `%${phone.slice(1).split('').join('%')}`;
-  const [{ data: own }, { data: guardianOf }] = await Promise.all([
-    db.from('persons').select('id, full_name_en, full_name_am, phone_primary, status').ilike('phone_primary', tail),
-    db.from('persons').select('id, full_name_en, full_name_am, emergency_contact_phone').ilike('emergency_contact_phone', tail),
-  ]);
-  type P = { id: string; full_name_en: string; full_name_am: string | null; phone_primary?: string | null; emergency_contact_phone?: string | null; status?: string };
-  const selfPeople = ((own ?? []) as P[]).filter((p) => p.status === 'ACTIVE' && normalizePhone(p.phone_primary ?? '') === phone);
-  const childPeople = ((guardianOf ?? []) as P[]).filter((p) => normalizePhone(p.emergency_contact_phone ?? '') === phone);
-  // Only children who are current students
-  const { data: activeStudents } = childPeople.length
-    ? await db.from('students').select('person_id').eq('status', 'ACTIVE').in('person_id', childPeople.map((c) => c.id))
-    : { data: [] };
-  const activeChild = new Set(((activeStudents ?? []) as { person_id: string }[]).map((s) => s.person_id));
-  const selfIds = new Set(selfPeople.map((p) => p.id));
-  const children = childPeople.filter((c) => activeChild.has(c.id) && !selfIds.has(c.id));
-
-  const rows = [
-    ...selfPeople.map((p) => ({ person_id: p.id, chat_id: chatId, telegram_name: telegramName || null, relation: 'SELF' })),
-    ...children.map((c) => ({ person_id: c.id, chat_id: chatId, telegram_name: telegramName || null, relation: 'GUARDIAN' })),
-  ];
-  if (rows.length) {
-    const { error } = await db.from('telegram_links').upsert(rows, { onConflict: 'person_id,chat_id' });
-    if (error) throw new Error(error.message);
-  }
-  const name = (p: P) => p.full_name_am || p.full_name_en;
-  return { self: selfPeople.map(name), children: children.map(name) };
-}
+// Signing in by phone (and keeping those links right): lib/telegram/links
 
 // ── Member answers ───────────────────────────────────────────────────────────
 
@@ -308,11 +280,18 @@ const NOT_MEMBER = 'ይህ ቻት ከአባል ጋር አልተያያዘም · T
 export async function membershipText(db: SupabaseClient, scope: ChatScope): Promise<string> {
   if (scope.memberPersonIds.length === 0) return e(NOT_MEMBER);
   const people = await memberRows(db, scope.memberPersonIds);
-  const [{ data: units }, { data: service }, { data: studies }] = await Promise.all([
+  const [{ data: units }, { data: service }, { data: studies }, { data: choir }, { data: committees }] = await Promise.all([
     db.from('organization_units').select('id, name_en, name_am'),
     db.from('service_assignments').select('person_id, unit_id, role_kind, title, status').in('person_id', scope.memberPersonIds).eq('status', 'ACTIVE'),
     db.from('students').select('person_id, reg_no, status').in('person_id', scope.memberPersonIds),
+    db.from('choir_members').select('person_id, voice_part, status').in('person_id', scope.memberPersonIds).eq('status', 'ACTIVE'),
+    db.from('governance_memberships')
+      .select('person_id, body:governance_bodies(name_en, name_am), position:governance_positions(name_en, name_am)')
+      .in('person_id', scope.memberPersonIds)
+      .eq('status', 'ACTIVE'),
   ]);
+  type Named = { name_en: string; name_am: string | null } | null;
+  const one = (x: unknown) => (Array.isArray(x) ? x[0] : x) as Named;
   const unitName = new Map(((units ?? []) as { id: string; name_en: string; name_am: string | null }[]).map((u) => [u.id, u.name_am || u.name_en]));
   const parts: string[] = [];
   for (const p of people) {
@@ -324,6 +303,13 @@ export async function membershipText(db: SupabaseClient, scope: ChatScope): Prom
     if (p.assigned_unit_id && unitName.get(p.assigned_unit_id)) lines.push(e(`ክፍል · Department: ${unitName.get(p.assigned_unit_id)}`));
     for (const s of ((service ?? []) as { person_id: string; unit_id: string; role_kind: string; title: string | null }[]).filter((x) => x.person_id === p.id)) {
       lines.push(e(`🙏 አገልግሎት · Serving: ${unitName.get(s.unit_id) ?? ''} — ${s.title || ROLE[s.role_kind] || s.role_kind}`));
+    }
+    const sings = ((choir ?? []) as { person_id: string; voice_part: string }[]).find((x) => x.person_id === p.id);
+    if (sings) lines.push(e(`🎵 መዘምራን · Choir${sings.voice_part && sings.voice_part !== 'NOT_SET' ? ` (${sings.voice_part.toLowerCase()})` : ''}`));
+    for (const c of ((committees ?? []) as { person_id: string; body: unknown; position: unknown }[]).filter((x) => x.person_id === p.id)) {
+      const body = one(c.body);
+      const position = one(c.position);
+      lines.push(e(`🏛️ ኮሚቴ · Committee: ${body?.name_am || body?.name_en || ''} — ${position?.name_am || position?.name_en || ''}`));
     }
     const study = ((studies ?? []) as { person_id: string; reg_no: string; status: string }[]).find((x) => x.person_id === p.id);
     if (study) lines.push(e(`🎓 ተማሪም · Also a student: ${study.reg_no}`));
@@ -362,12 +348,17 @@ async function portals(db: SupabaseClient, scope: ChatScope): Promise<{ p: MyPor
 const header = ({ p, self }: { p: MyPortal; self: boolean }) =>
   `${self ? '🎓' : '👨‍👩‍👧'} <b>${e(p.student.name_am)}</b> · ${e(p.student.class_name_am || p.student.class_name || '')}`;
 const NONE = 'ለዚህ ቻት የተያያዘ ተማሪ የለም። · No student is linked to this chat.';
+const NO_CLASS =
+  'ፈተናና የክፍል ውጤት ለክፍል ተማሪዎች ነው። ትምህርት የሚከታተሉ ከሆነ ጽ/ቤቱ በክፍል እንዲመዘግብዎ ይጠይቁ — ከዚያ ፈተናዎችና ውጤትዎ እዚህ ይታያሉ።\n' +
+  'Exams and class results are for people enrolled in a class. If you attend classes, ask the office to enroll you — then your exams and results show here.';
+/** No student here: a member is told how to get exams and results; anyone else that no student is linked */
+const noStudent = (scope: ChatScope) => e(scope.memberPersonIds.length ? NO_CLASS : NONE);
 /** "Results" for a student, "Your children's results" for a parent */
 const title = (scope: ChatScope, icon: string, am: string, en: string) =>
   scope.selfStudentIds.length ? `${icon} <b>${am} · ${en}</b>` : `${icon} <b>የልጆች ${am} · Your children’s ${en.toLowerCase()}</b>`;
 
 export async function resultsText(db: SupabaseClient, scope: ChatScope): Promise<string> {
-  if (scope.studentIds.length === 0) return e(NONE);
+  if (scope.studentIds.length === 0) return noStudent(scope);
   const parts = (await portals(db, scope)).map((x) => {
     const { p } = x;
     const lines = [header(x)];
@@ -384,26 +375,107 @@ export async function resultsText(db: SupabaseClient, scope: ChatScope): Promise
 
 const MARK: Record<string, string> = { PRESENT: '✅', LATE: '⏰', ABSENT: '❌', EXCUSED: '📝' };
 
-export async function attendanceText(db: SupabaseClient, scope: ChatScope): Promise<string> {
-  if (scope.studentIds.length === 0) return e(NONE);
-  const parts = (await portals(db, scope)).map((x) => {
-    const { p } = x;
-    const c = { PRESENT: 0, LATE: 0, ABSENT: 0, EXCUSED: 0 } as Record<string, number>;
-    for (const r of p.attendance) c[r.status] += 1;
-    const considered = c.PRESENT + c.LATE + c.ABSENT;
-    const lines = [header(x)];
-    if (p.attendance.length === 0) lines.push(e('እስካሁን ክትትል አልተመዘገበም · No roll calls yet'));
-    else {
-      lines.push(e(`ተገኝነት ${considered ? Math.round(((c.PRESENT + c.LATE) / considered) * 100) : 0}% · ✅ ${c.PRESENT} ⏰ ${c.LATE} ❌ ${c.ABSENT} 📝 ${c.EXCUSED}`));
-      for (const r of p.attendance.slice(0, 5)) lines.push(`${MARK[r.status]} ${e(formatEthiopianDate(r.date, 'am'))}`);
+/** "ተገኝነት 90% · ✅ 9 ⏰ 0 ❌ 1 📝 0" — present + late over present + late + absent */
+function tally(marks: { status: string }[]): string {
+  const c = { PRESENT: 0, LATE: 0, ABSENT: 0, EXCUSED: 0 } as Record<string, number>;
+  for (const r of marks) c[r.status] = (c[r.status] ?? 0) + 1;
+  const considered = c.PRESENT + c.LATE + c.ABSENT;
+  return `ተገኝነት ${considered ? Math.round(((c.PRESENT + c.LATE) / considered) * 100) : 0}% · ✅ ${c.PRESENT} ⏰ ${c.LATE} ❌ ${c.ABSENT} 📝 ${c.EXCUSED}`;
+}
+
+const CHOIR_KIND: Record<string, string> = { REHEARSAL: 'ልምምድ · rehearsal', SERVICE: 'አገልግሎት · service', PERFORMANCE: 'ዝግጅት · performance' };
+const RECENT = 6;
+
+/** A member's own attendance: as a servant (HR → service attendance) and in the choir. */
+async function memberAttendance(db: SupabaseClient, personIds: string[]): Promise<string[]> {
+  if (personIds.length === 0) return [];
+  const [people, { data: service }, { data: choirRows }] = await Promise.all([
+    memberRows(db, personIds),
+    db.from('servant_attendance').select('person_id, service_date, status').in('person_id', personIds).order('service_date', { ascending: false }).limit(500),
+    db.from('choir_members').select('id, person_id').in('person_id', personIds),
+  ]);
+  const choir = (choirRows ?? []) as { id: string; person_id: string }[];
+  const { data: choirMarks } = choir.length
+    ? await db.from('choir_attendance').select('member_id, status, session:choir_sessions(session_date, kind, status)').in('member_id', choir.map((c) => c.id))
+    : { data: [] };
+  type ChoirMark = { member_id: string; status: string; session: unknown };
+  const sessionOf = (m: ChoirMark) => (Array.isArray(m.session) ? m.session[0] : m.session) as { session_date: string; kind: string } | null;
+
+  return people.map((p) => {
+    const lines = [`🙏 <b>${e(p.full_name_am || p.full_name_en)}</b>`];
+    const served = ((service ?? []) as { person_id: string; service_date: string; status: string }[])
+      .filter((r) => r.person_id === p.id)
+      .sort((a, b) => b.service_date.localeCompare(a.service_date));
+    if (served.length) {
+      lines.push(e(`አገልግሎት · Service: ${tally(served)}`));
+      for (const r of served.slice(0, RECENT)) lines.push(`${MARK[r.status] ?? '•'} ${e(formatEthiopianDate(r.service_date, 'am'))}`);
     }
+    const mine = choir.find((c) => c.person_id === p.id);
+    const sung = ((choirMarks ?? []) as ChoirMark[])
+      .filter((m) => m.member_id === mine?.id && sessionOf(m))
+      .sort((a, b) => sessionOf(b)!.session_date.localeCompare(sessionOf(a)!.session_date));
+    if (mine) {
+      lines.push(e(`🎵 መዘምራን · Choir: ${sung.length ? tally(sung) : 'እስካሁን አልተመዘገበም · nothing recorded yet'}`));
+      for (const m of sung.slice(0, RECENT)) {
+        const s = sessionOf(m)!;
+        lines.push(`${MARK[m.status] ?? '•'} ${e(`${formatEthiopianDate(s.session_date, 'am')} — ${CHOIR_KIND[s.kind] ?? s.kind}`)}`);
+      }
+    }
+    if (!served.length && !mine) lines.push(e('እስካሁን የአገልግሎት ክትትል አልተመዘገበም · No service attendance recorded yet'));
     return lines.join('\n');
   });
-  return cut(`${title(scope, '📋', 'ክትትል', 'Attendance')}\n\n${parts.join('\n\n')}`);
+}
+
+/** 📋 Attendance: a member's service and choir attendance, a student's own class attendance, and children's. */
+export async function attendanceText(db: SupabaseClient, scope: ChatScope): Promise<string> {
+  if (scope.studentIds.length === 0 && scope.memberPersonIds.length === 0) return e(NONE);
+  const parts = await memberAttendance(db, scope.memberPersonIds);
+  if (scope.studentIds.length) {
+    for (const x of await portals(db, scope)) {
+      const lines = [header(x)];
+      if (x.p.attendance.length === 0) lines.push(e('እስካሁን የክፍል ክትትል አልተመዘገበም · No roll calls yet'));
+      else {
+        lines.push(e(`ክፍል · Class: ${tally(x.p.attendance)}`));
+        for (const r of x.p.attendance.slice(0, RECENT)) lines.push(`${MARK[r.status]} ${e(formatEthiopianDate(r.date, 'am'))}`);
+      }
+      parts.push(lines.join('\n'));
+    }
+  }
+  // Only a parent's chat gets "Your children's attendance"
+  const heading = scope.memberPersonIds.length || scope.selfStudentIds.length ? '📋 <b>ክትትል · Attendance</b>' : title(scope, '📋', 'ክትትል', 'Attendance');
+  return cut(`${heading}\n\n${parts.join('\n\n')}`);
+}
+
+/** 📅 Events: the school's coming programs, and coming choir sessions for choir members. */
+export async function eventsText(db: SupabaseClient, scope: ChatScope): Promise<string> {
+  const today = todayIso();
+  const [{ data: programs }, { data: choir }] = await Promise.all([
+    db.from('programs')
+      .select('title_en, title_am, start_date, start_time, end_date, location, status')
+      .in('status', ['PLANNED', 'CONFIRMED'])
+      .gte('start_date', today)
+      .order('start_date')
+      .limit(10),
+    scope.memberPersonIds.length ? db.from('choir_members').select('id').in('person_id', scope.memberPersonIds).eq('status', 'ACTIVE') : Promise.resolve({ data: [] }),
+  ]);
+  const { data: rehearsals } = (choir ?? []).length
+    ? await db.from('choir_sessions').select('session_date, start_time, kind, title, location').eq('status', 'PLANNED').gte('session_date', today).order('session_date').limit(6)
+    : { data: [] };
+  const when = (date: string, time: string | null) => `${formatEthiopianDate(date, 'am')}${time ? ` · ${time.slice(0, 5)}` : ''}`;
+  const lines = ['📅 <b>የሚመጡ መርሐ ግብሮች · Coming events</b>'];
+  const list = (programs ?? []) as { title_en: string; title_am: string | null; start_date: string; start_time: string | null; location: string | null }[];
+  if (list.length === 0) lines.push(e('ለጊዜው የተያዘ መርሐ ግብር የለም · No events planned yet'));
+  for (const p of list) lines.push(e(`• ${when(p.start_date, p.start_time)} — ${p.title_am || p.title_en}${p.location ? ` (${p.location})` : ''}`));
+  const sessions = (rehearsals ?? []) as { session_date: string; start_time: string | null; kind: string; title: string | null; location: string | null }[];
+  if (sessions.length) {
+    lines.push('', '🎵 <b>መዘምራን · Choir</b>');
+    for (const s of sessions) lines.push(e(`• ${when(s.session_date, s.start_time)} — ${s.title || CHOIR_KIND[s.kind] || s.kind}${s.location ? ` (${s.location})` : ''}`));
+  }
+  return cut(lines.join('\n'));
 }
 
 export async function examsText(db: SupabaseClient, scope: ChatScope): Promise<string> {
-  if (scope.studentIds.length === 0) return e(NONE);
+  if (scope.studentIds.length === 0) return noStudent(scope);
   const parts = (await portals(db, scope)).map((x) => {
     const { p } = x;
     const lines = [header(x)];

@@ -183,6 +183,9 @@ try {
   const { error: periodsColumn } = await db.from('dues_claims').select('periods').limit(1);
   if (periodsColumn) problem(`Dues of two years in one report missing — run migration 029_dues_claims_periods.sql (${periodsColumn.message})`);
   else ok('Migration 029 (dues of two years in one report) applied');
+  const { error: chatsTable } = await db.from('telegram_chats').select('chat_id').limit(1);
+  if (chatsTable) problem(`Telegram links kept up to date missing — run migration 030_telegram_chats.sql (${chatsTable.message})`);
+  else ok('Migration 030 (Telegram links kept up to date) applied');
   if (process.env.TELEGRAM_BOT_TOKEN) ok('Telegram bot token is set (add the same TELEGRAM_BOT_TOKEN on Render)');
   else problem('Telegram bot token missing — optional; see Administration → Telegram bot');
   const { error: pushTable } = await db.from('push_subscriptions').select('id').limit(1);

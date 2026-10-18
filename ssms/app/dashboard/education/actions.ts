@@ -11,7 +11,9 @@ import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { after } from 'next/server';
 import { notifyLater } from '@/lib/push/send';
+import { syncChatsForPhones } from '@/lib/telegram/links';
 import { escapeHtml, siteUrl, studentAndGuardians, telegramLater, telegramToPersons } from '@/lib/telegram/bot';
 import { formatEthiopianDate } from '@/lib/utils/ethiopian-calendar';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
@@ -449,6 +451,9 @@ export async function enrollStudents(input: z.input<typeof StudentSchema>[]): Pr
         .then(check);
     }
 
+    // Parents who shared these numbers with the bot are linked to the new children at once
+    const linkDb = db;
+    after(() => syncChatsForPhones(linkDb, rows.map((r) => r.phone)));
     return { ok: true, regNos: planned.map((p) => regNoById.get(p.studentId) ?? '') };
   } catch (e) {
     // Roll back (enrollments cascade with students)
@@ -483,6 +488,9 @@ export async function updateStudent(
     const student = (await db.from('students').select('id, person_id').eq('id', studentId).single().then(check)) as {
       id: string; person_id: string;
     };
+    const { data: before } = await db.from('persons').select('emergency_contact_phone').eq('id', student.person_id).maybeSingle();
+    // The bot's parent links follow the guardian phone (old and new number) and the student's status
+    after(() => syncChatsForPhones(db, [(before as { emergency_contact_phone: string | null } | null)?.emergency_contact_phone, s.phone]));
 
     await db.from('persons')
       .update({
