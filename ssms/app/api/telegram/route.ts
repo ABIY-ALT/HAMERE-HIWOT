@@ -4,9 +4,11 @@
 // header. Handles:
 //   /start <code>        link this chat to the person who asked for the code on the website
 //   /start, /register    welcome; not linked yet → "📱 Share my phone number"
-//   shared phone number  link by phone (lib/telegram/menu): parents to their children
-//   📊 📋 🖊️ 🧾 buttons  results, attendance, exams, dues — only this chat's own people
-//   💳 I paid            report a dues payment for Finance to approve (lib/telegram/dues-flow);
+//   shared phone number  link by phone (lib/telegram/menu): members and students to
+//                        themselves, parents to their children
+//   buttons by role      member: 🪪 membership, 🧾 dues, 💳 I paid · student / parent:
+//                        📊 results, 📋 attendance, 🖊️ exams — only this chat's own people
+//   💳 I paid            report a dues payment (one month or several) for Finance to approve (lib/telegram/dues-flow);
 //                        the steps after it, incl. a photo of the receipt, follow telegram_sessions
 //   /stop                stop all messages to this chat
 // Always answers 200, so Telegram does not resend.
@@ -18,15 +20,18 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { escapeHtml, sendTelegram, siteUrl, telegramConfigured, webhookSecret } from '@/lib/telegram/bot';
 import {
   BUTTONS,
-  LINKED_HELP,
+  NOT_FOUND,
   PHONE_KEYBOARD,
   REMOVE_KEYBOARD,
   WELCOME,
   attendanceText,
   chatScope,
+  connectedText,
   duesText,
   examsText,
+  helpFor,
   linkByPhone,
+  membershipText,
   menuFor,
   resultsText,
 } from '@/lib/telegram/menu';
@@ -86,21 +91,12 @@ export async function POST(request: Request) {
       }
       const found = await linkByPhone(db, chatId, message.contact.phone_number ?? '', telegramName);
       if (found.self.length === 0 && found.children.length === 0) {
-        await sendTelegram(
-          chatId,
-          escapeHtml(
-            'ይህ ስልክ በትምህርት ቤቱ መዝገብ ውስጥ አልተገኘም። በልጅዎ መዝገብ ላይ ያለውን ስልክ ለማስተካከል የትምህርት ቤቱን ጽ/ቤት ይጠይቁ።\n' +
-              'This number is not in the school’s records. Ask the school office to put it on your child’s record (guardian phone).'
-          ),
-          REMOVE_KEYBOARD
-        );
+        await sendTelegram(chatId, escapeHtml(NOT_FOUND), REMOVE_KEYBOARD);
         return NextResponse.json({ ok: true });
       }
-      const lines = ['✅ <b>ተገናኝቷል · Connected</b>'];
-      if (found.self.length) lines.push(escapeHtml(`👤 ${found.self.join('፣ ')}`));
-      if (found.children.length) lines.push(escapeHtml(`👨‍👩‍👧 ልጆች · Children: ${found.children.join('፣ ')}`));
-      lines.push('', escapeHtml(LINKED_HELP));
-      await sendTelegram(chatId, lines.join('\n'), menuFor(await chatScope(db, chatId)));
+      // "Connected as": member, student and/or parent of whom — and the buttons for that
+      const scope = await chatScope(db, chatId);
+      await sendTelegram(chatId, await connectedText(db, scope), menuFor(scope));
       return NextResponse.json({ ok: true });
     }
 
@@ -121,14 +117,13 @@ export async function POST(request: Request) {
       }
       await db.from('telegram_links').upsert({ person_id: row.person_id, chat_id: chatId, telegram_name: telegramName || null }, { onConflict: 'person_id,chat_id' });
       await db.from('telegram_link_codes').delete().eq('code', startCode);
-      const name = row.person?.full_name_am || row.person?.full_name_en || '';
+      const scope = await chatScope(db, chatId);
       await sendTelegram(
         chatId,
-        `✅ <b>${escapeHtml(name)}</b>\n` +
-          escapeHtml('ተገናኝቷል። የትምህርት ቤቱ መልእክቶች እዚህ ይደርሱዎታል። ለማቆም /stop ይላኩ።\n') +
-          escapeHtml('Connected. Messages from the school will come here. Send /stop to stop them.\n') +
+        `${await connectedText(db, scope)}\n\n` +
+          escapeHtml('የትምህርት ቤቱ መልእክቶች እዚህ ይደርሱዎታል። · Messages from the school will come here.\n') +
           siteUrl(),
-        menuFor(await chatScope(db, chatId))
+        menuFor(scope)
       );
       return NextResponse.json({ ok: true });
     }
@@ -160,12 +155,13 @@ export async function POST(request: Request) {
     }
     if (session) await clearSession(db, chatId);
 
-    if (asked(text, 'results', BUTTONS.results)) await sendTelegram(chatId, await resultsText(db, scope), menu);
+    if (asked(text, 'membership', BUTTONS.membership)) await sendTelegram(chatId, await membershipText(db, scope), menu);
+    else if (asked(text, 'results', BUTTONS.results)) await sendTelegram(chatId, await resultsText(db, scope), menu);
     else if (asked(text, 'attendance', BUTTONS.attendance)) await sendTelegram(chatId, await attendanceText(db, scope), menu);
     else if (asked(text, 'exams', BUTTONS.exams)) await sendTelegram(chatId, await examsText(db, scope), menu);
     else if (asked(text, 'dues', BUTTONS.dues)) await sendTelegram(chatId, await duesText(db, scope), menu);
     else if (asked(text, 'paid', BUTTONS.paid)) await startPaid(db, chatId, scope);
-    else await sendTelegram(chatId, escapeHtml(LINKED_HELP), menu);
+    else await sendTelegram(chatId, escapeHtml(helpFor(scope)), menu);
   } catch (e) {
     console.error('telegram webhook failed', e);
     await sendTelegram(chatId, escapeHtml('ይቅርታ፣ አሁን አልተሳካም። ትንሽ ቆይተው እንደገና ይሞክሩ። · Sorry, that did not work. Please try again a little later.')).catch(() => {});

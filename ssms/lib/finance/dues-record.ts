@@ -93,3 +93,18 @@ export async function recordPayment(
     paid_on: p.paid_on,
   };
 }
+
+/** Undo a receipt: its months become unpaid and its income entry is removed. */
+export async function removeReceipt(db: SupabaseClient, receiptNo: string): Promise<void> {
+  const rows = (await db.from('member_dues').select('id, transaction_id').eq('receipt_no', receiptNo).then(check)) as { id: string; transaction_id: string | null }[];
+  if (rows.length === 0) throw new Error('Receipt not found');
+  await db.from('member_dues').delete().eq('receipt_no', receiptNo).then(check);
+  const txn = rows.find((r) => r.transaction_id)?.transaction_id;
+  if (txn) await db.from('finance_transactions').delete().eq('id', txn).then(check);
+}
+
+/** All the months of a payment report: `periods` (migration 029), else its one year's months. */
+export function periodsOf(claim: { year: number; months: number[] | null; periods?: number[] | null }): number[] {
+  if (claim.periods?.length) return [...claim.periods].map(Number).sort((a, b) => a - b);
+  return (claim.months ?? []).map((m) => Number(claim.year) * 100 + Number(m)).sort((a, b) => a - b);
+}

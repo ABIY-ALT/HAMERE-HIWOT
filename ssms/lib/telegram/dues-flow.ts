@@ -3,17 +3,30 @@
 // payment in a few steps; it waits in dues_claims until Finance approves it
 // (Finance → Member dues → Payment reports). Steps, kept in telegram_sessions:
 //   PERSON  (only when the chat is linked to several members) which member
-//   COUNT   how many months — the oldest unpaid ones first
+//   COUNT   how many months — the oldest unpaid ones first, from the month
+//           they joined; last year's unpaid months too when Finance keeps
+//           last year here (a monthly amount is set for it); "all I owe"
 //   METHOD  cash / bank / Telebirr / other
-//   AMOUNT  the total, only when no monthly amount is set for the year
+//   AMOUNT  the total, only when a year has no monthly amount set
 //   PROOF   transaction number or a photo of the receipt (not for cash; can skip)
 //   CONFIRM send to Finance
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { notifyLater } from '@/lib/push/send';
-import { ETHIOPIAN_MONTHS_AM, todayIso } from '@/lib/utils/ethiopian-calendar';
-import { DUES_MONTHS, currentEthiopianYear } from '@/lib/finance/dues';
+import { todayIso } from '@/lib/utils/ethiopian-calendar';
+import {
+  DUES_MONTHS,
+  currentEthiopianYear,
+  expectedTotal,
+  firstOwedMonth,
+  monthsDue,
+  periodMonth,
+  periodYear,
+  periodsLabel,
+  toPeriod,
+} from '@/lib/finance/dues';
+import { periodsOf } from '@/lib/finance/dues-record';
 import { escapeHtml, sendTelegram } from '@/lib/telegram/bot';
 import type { ChatScope } from '@/lib/telegram/menu';
 
@@ -36,10 +49,13 @@ interface Data {
   options?: { id: string; name: string }[];
   person_id?: string;
   name?: string;
-  year?: number;
+  /** Open months, oldest first (year × 100 + month) */
   available?: number[];
-  months?: number[];
-  rate?: number | null;
+  /** How many of them are already due (the rest would be paid ahead) */
+  due_now?: number;
+  /** Monthly amount per year (JSON keys are strings) */
+  rates?: Record<string, number>;
+  periods?: number[];
   method?: 'CASH' | 'BANK' | 'TELEBIRR' | 'OTHER';
   amount?: number;
   reference?: string;
@@ -52,7 +68,7 @@ export interface PaidMessage {
 }
 
 const keyboard = (rows: string[][]) => ({ reply_markup: { keyboard: rows.map((r) => r.map((text) => ({ text }))), resize_keyboard: true, one_time_keyboard: true } });
-const monthNames = (months: number[]) => months.map((m) => ETHIOPIAN_MONTHS_AM[m - 1]).join('፣ ');
+const birr = (n: number) => `${n.toLocaleString('en-US')} ብር`;
 
 async function save(db: SupabaseClient, chatId: number, step: Step, data: Data) {
   const { error } = await db.from('telegram_sessions').upsert({ chat_id: chatId, step, data, updated_at: new Date().toISOString() }, { onConflict: 'chat_id' });
@@ -72,52 +88,74 @@ export async function activeSession(db: SupabaseClient, chatId: number): Promise
 
 /** Members (not honorary) this chat may report for. */
 async function payers(db: SupabaseClient, scope: ChatScope) {
-  if (scope.memberPersonIds.length === 0) return [];
-  const { data } = await db.from('persons').select('id, full_name_en, full_name_am, membership_type').in('id', scope.memberPersonIds);
-  return ((data ?? []) as { id: string; full_name_en: string; full_name_am: string | null; membership_type: string | null }[])
-    .filter((p) => p.membership_type !== 'HONORARY')
-    .map((p) => ({ id: p.id, name: p.full_name_am || p.full_name_en }));
+  if (scope.duesPersonIds.length === 0) return [];
+  const { data } = await db.from('persons').select('id, full_name_en, full_name_am').in('id', scope.duesPersonIds);
+  return ((data ?? []) as { id: string; full_name_en: string; full_name_am: string | null }[]).map((p) => ({ id: p.id, name: p.full_name_am || p.full_name_en }));
 }
 
-/** Months of this year still open for this member: not paid, not waiting in another report (oldest first). */
-async function openMonths(db: SupabaseClient, personId: string, year: number): Promise<number[]> {
-  const [{ data: paid }, { data: pending }] = await Promise.all([
-    db.from('member_dues').select('month').eq('person_id', personId).eq('year', year),
-    db.from('dues_claims').select('months').eq('person_id', personId).eq('year', year).eq('status', 'PENDING'),
+/**
+ * The months this member can report, oldest first: not paid, not waiting in
+ * another report, not before they joined. Last year's too when Finance keeps
+ * last year here (it has a monthly amount); this year's all 12 (paying ahead).
+ */
+export async function openPeriods(db: SupabaseClient, personId: string, today = todayIso()) {
+  const year = currentEthiopianYear(today);
+  const [{ data: person }, { data: rateRows }, { data: paid }, { data: pending }] = await Promise.all([
+    db.from('persons').select('registered_on, created_at').eq('id', personId).maybeSingle(),
+    db.from('dues_rates').select('year, monthly_amount').in('year', [year - 1, year]),
+    db.from('member_dues').select('year, month').eq('person_id', personId).in('year', [year - 1, year]),
+    db.from('dues_claims').select('*').eq('person_id', personId).eq('status', 'PENDING'),
   ]);
+  const p = person as { registered_on: string | null; created_at: string | null } | null;
+  const joined = p?.registered_on ?? p?.created_at?.slice(0, 10) ?? null;
+  const rates: Record<string, number> = {};
+  for (const r of (rateRows ?? []) as { year: number; monthly_amount: number }[]) rates[String(r.year)] = Number(r.monthly_amount);
   const taken = new Set([
-    ...((paid ?? []) as { month: number }[]).map((r) => Number(r.month)),
-    ...((pending ?? []) as { months: number[] }[]).flatMap((r) => r.months.map(Number)),
+    ...((paid ?? []) as { year: number; month: number }[]).map((r) => toPeriod(Number(r.year), Number(r.month))),
+    ...((pending ?? []) as { year: number; months: number[] | null; periods?: number[] | null }[]).flatMap(periodsOf),
   ]);
-  return Array.from({ length: DUES_MONTHS }, (_, i) => i + 1).filter((m) => !taken.has(m));
+  const years = rates[String(year - 1)] !== undefined ? [year - 1, year] : [year];
+  const available: number[] = [];
+  for (const y of years) {
+    for (let m = firstOwedMonth(joined, y); m <= DUES_MONTHS; m++) if (!taken.has(toPeriod(y, m))) available.push(toPeriod(y, m));
+  }
+  const dueThisYear = monthsDue(year, today);
+  const due_now = available.filter((x) => periodYear(x) < year || periodMonth(x) <= dueThisYear).length;
+  return { available, due_now, rates };
 }
+
+const ratesOf = (data: Data): Record<number, number | undefined> =>
+  Object.fromEntries(Object.entries(data.rates ?? {}).map(([y, r]) => [Number(y), r]));
 
 async function askCount(db: SupabaseClient, chatId: number, data: Data) {
-  const year = currentEthiopianYear();
-  const available = await openMonths(db, data.person_id!, year);
+  const { available, due_now, rates } = await openPeriods(db, data.person_id!);
   if (available.length === 0) {
     await clearSession(db, chatId);
-    return sendTelegram(chatId, e(`✅ የ${year} ዓ.ም ወራት በሙሉ ተከፍለዋል ወይም ማጽደቅ እየጠበቁ ናቸው። · All months of ${year} are paid or waiting for approval.`));
+    return sendTelegram(chatId, e('✅ ሁሉም ወራት ተከፍለዋል ወይም ማጽደቅ እየጠበቁ ናቸው። · All months are paid or waiting for approval.'));
   }
-  const { data: rate } = await db.from('dues_rates').select('monthly_amount').eq('year', year).maybeSingle();
-  const counts = [1, 2, 3, 4, 5, 6, 12].filter((n) => n <= available.length);
-  if (!counts.includes(available.length) && available.length > 6) counts.push(available.length);
-  await save(db, chatId, 'COUNT', { ...data, year, available, rate: rate ? Number((rate as { monthly_amount: number }).monthly_amount) : null });
+  await save(db, chatId, 'COUNT', { ...data, available, due_now, rates });
+  const counts = [1, 2, 3, 4, 6, 12].filter((n) => n <= available.length && n !== due_now);
+  const buttons = counts.map(String);
   const rows: string[][] = [];
-  for (let i = 0; i < counts.length; i += 4) rows.push(counts.slice(i, i + 4).map(String));
+  if (due_now > 0) rows.push([`${due_now} · ያለብኝ ሁሉ · all I owe`]);
+  for (let i = 0; i < buttons.length; i += 3) rows.push(buttons.slice(i, i + 3));
   rows.push([CANCEL]);
+  const owed = due_now ? expectedTotal(available.slice(0, due_now), ratesOf({ rates })) : null;
   return sendTelegram(
     chatId,
     `💳 <b>${e(data.name ?? '')}</b>\n` +
-      e(`ያልተከፈሉ ወራት (${year} ዓ.ም)፦ ${monthNames(available.slice(0, 6))}${available.length > 6 ? '…' : ''}\n`) +
-      e('ስንት ወር ከፈሉ? ከቀደመው ወር ጀምሮ ይቆጠራል።\nHow many months did you pay? They are counted from the oldest unpaid month.'),
+      e(`ያልተከፈሉ ወራት (ከቀደመው)፦ ${periodsLabel(available.slice(0, 8))}${available.length > 8 ? '…' : ''}\n`) +
+      (due_now
+        ? e(`እስካሁን ያለብዎ፦ ${due_now} ወር${owed !== null ? ` (${birr(owed)})` : ''} · You owe ${due_now} month(s) so far.\n`)
+        : e('እስካሁን ያለብዎ የለም — የሚከፍሉት ቀድመው ነው። · Nothing owed yet — this would be paying ahead.\n')) +
+      e('ስንት ወር ከፈሉ? ከቀደመው ያልተከፈለ ወር ጀምሮ ይቆጠራል።\nHow many months did you pay? They are counted from the oldest unpaid month.'),
     keyboard(rows)
   );
 }
 
 async function askMethod(db: SupabaseClient, chatId: number, data: Data) {
   await save(db, chatId, 'METHOD', data);
-  return sendTelegram(chatId, e(`ወራት፦ ${monthNames(data.months!)}\nእንዴት ከፈሉ? · How did you pay?`), keyboard([[METHODS[0][0], METHODS[1][0]], [METHODS[2][0], METHODS[3][0]], [CANCEL]]));
+  return sendTelegram(chatId, e(`ወራት፦ ${periodsLabel(data.periods!)}\nእንዴት ከፈሉ? · How did you pay?`), keyboard([[METHODS[0][0], METHODS[1][0]], [METHODS[2][0], METHODS[3][0]], [CANCEL]]));
 }
 
 async function askProofOrConfirm(db: SupabaseClient, chatId: number, data: Data) {
@@ -135,8 +173,8 @@ async function confirm(db: SupabaseClient, chatId: number, data: Data) {
   const lines = [
     '🧾 <b>ማረጋገጫ · Please check</b>',
     e(`👤 ${data.name}`),
-    e(`📅 ${monthNames(data.months!)} ${data.year} ዓ.ም`),
-    e(`💰 ${data.amount!.toLocaleString('en-US')} ብር · birr`),
+    e(`📅 ${periodsLabel(data.periods!)} (${data.periods!.length} ወር · months)`),
+    e(`💰 ${birr(data.amount!)} · birr`),
     e(`💳 ${methodLabel(data.method!)}`),
   ];
   if (data.reference) lines.push(e(`🔢 ${data.reference}`));
@@ -156,6 +194,29 @@ export async function startPaid(db: SupabaseClient, chatId: number, scope: ChatS
     return sendTelegram(chatId, e('ለማን ነው? · For whom?'), keyboard([...people.map((p) => [p.name]), [CANCEL]]));
   }
   return askCount(db, chatId, { person_id: people[0].id, name: people[0].name });
+}
+
+/** Insert the report; before migration 029 (no `periods`) a report of one year still works. */
+async function insertClaim(db: SupabaseClient, chatId: number, data: Data) {
+  const periods = data.periods!;
+  const first = periodYear(periods[0]);
+  const older = {
+    person_id: data.person_id,
+    year: first,
+    months: periods.filter((p) => periodYear(p) === first).map(periodMonth),
+    amount: data.amount,
+    method: data.method,
+    reference: data.reference || null,
+    proof_file_id: data.proof_file_id || null,
+    paid_on: todayIso(),
+    chat_id: chatId,
+  };
+  let { error } = await db.from('dues_claims').insert({ ...older, periods });
+  if (error && /periods/.test(error.message)) {
+    if (periods.some((p) => periodYear(p) !== first)) throw new Error('Run database migration 029 (dues of two years) first');
+    ({ error } = await db.from('dues_claims').insert(older));
+  }
+  if (error) throw new Error(error.message);
 }
 
 /** The next step of a report in progress. */
@@ -180,10 +241,11 @@ export async function continuePaid(
   }
 
   if (step === 'COUNT') {
-    const n = Number(text);
+    // "3", or "5 · ያለብኝ ሁሉ · all I owe"
+    const n = /^\d+/.test(text) ? parseInt(text, 10) : NaN;
     if (!Number.isInteger(n) || n < 1 || n > (data.available?.length ?? 0)) return sendTelegram(chatId, e('ከአዝራሮቹ ቁጥር ይምረጡ። · Choose a number from the buttons.'));
-    const months = data.available!.slice(0, n);
-    return askMethod(db, chatId, { ...data, months, amount: data.rate ? data.rate * months.length : undefined });
+    const periods = data.available!.slice(0, n);
+    return askMethod(db, chatId, { ...data, periods, amount: expectedTotal(periods, ratesOf(data)) ?? undefined });
   }
 
   if (step === 'METHOD') {
@@ -212,24 +274,16 @@ export async function continuePaid(
 
   if (step === 'CONFIRM') {
     if (text !== SEND) return sendTelegram(chatId, e('«ላክ» ወይም «ሰርዝ» ይጫኑ። · Tap Send or Cancel.'));
-    const { error } = await db.from('dues_claims').insert({
-      person_id: data.person_id,
-      year: data.year,
-      months: data.months,
-      amount: data.amount,
-      method: data.method,
-      reference: data.reference || null,
-      proof_file_id: data.proof_file_id || null,
-      paid_on: todayIso(),
-      chat_id: chatId,
-    });
-    await clearSession(db, chatId);
-    if (error) throw new Error(error.message);
+    try {
+      await insertClaim(db, chatId, data);
+    } finally {
+      await clearSession(db, chatId);
+    }
     notifyLater(
       { permissions: ['FINANCE_CREATE'] },
       {
         title: 'የመዋጮ ክፍያ ሪፖርት · Dues payment reported',
-        body: `${data.name}: ${monthNames(data.months!)} ${data.year} — ${data.amount} birr (${methodLabel(data.method!)})`,
+        body: `${data.name}: ${periodsLabel(data.periods!, 'en')} — ${data.amount} birr (${methodLabel(data.method!)})`,
         url: '/dashboard/finance/dues',
         tag: 'dues-claims',
       }

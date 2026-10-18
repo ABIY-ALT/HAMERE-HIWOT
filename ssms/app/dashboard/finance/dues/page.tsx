@@ -9,7 +9,7 @@ import { EthiopianDateInput } from '@/components/ui/EthiopianDateInput';
 import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
 import type { LoadMode } from '@/lib/admin/types';
 import { formatETB } from '@/lib/finance/types';
-import { DUES_MONTHS, unpaidMonths } from '@/lib/finance/dues';
+import { DUES_MONTHS, claimPlan, firstOwedMonth, periodsLabel, unpaidMonths } from '@/lib/finance/dues';
 import { ETHIOPIAN_MONTHS_AM, ETHIOPIAN_MONTHS_EN, formatEthiopianDate, todayIso } from '@/lib/utils/ethiopian-calendar';
 import {
   approveDuesClaim,
@@ -43,7 +43,7 @@ export default function DuesPage() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'ALL' | 'BEHIND' | 'PAID'>('ALL');
   const [paying, setPaying] = useState<DuesMember | 'NEW' | null>(null);
-  const [receipt, setReceipt] = useState<DuesReceipt | null>(null);
+  const [receipts, setReceipts] = useState<DuesReceipt[] | null>(null);
   const [viewing, setViewing] = useState<{ member: DuesMember; receipt_no: string } | null>(null);
   const [reviewing, setReviewing] = useState<DuesClaim | null>(null);
   const [remindBehind, setRemindBehind] = useState(2);
@@ -70,12 +70,14 @@ export default function DuesPage() {
   const reload = (year = data?.year) => loadDues(year).then(apply);
   const monthName = (m: number) => (locale === 'am' ? ETHIOPIAN_MONTHS_AM[m - 1] : ETHIOPIAN_MONTHS_EN[m - 1]);
   const name = (m: { name_en: string; name_am: string }) => (locale === 'am' ? m.name_am : m.name_en);
+  /** Months a member owes this year: from the month they joined */
+  const behindOf = (m: DuesMember, d: DuesData) => unpaidMonths(Object.keys(m.paid).map(Number), d.due_months, firstOwedMonth(m.joined, d.year)).length;
 
   const rows = useMemo(() => {
     if (!data) return [];
     const needle = search.trim().toLowerCase();
     return data.members
-      .map((m) => ({ ...m, behind: unpaidMonths(Object.keys(m.paid).map(Number), data.due_months).length }))
+      .map((m) => ({ ...m, behind: behindOf(m, data) }))
       .filter((m) => !needle || `${m.name_en} ${m.name_am} ${m.code} ${m.phone}`.toLowerCase().includes(needle))
       .filter((m) => filter === 'ALL' || (filter === 'BEHIND' ? m.behind > 0 : m.behind === 0));
   }, [data, search, filter]);
@@ -88,7 +90,7 @@ export default function DuesPage() {
     let behindMonths = 0;
     for (const m of data.members) {
       for (const p of Object.values(m.paid)) collected += p.amount;
-      const b = unpaidMonths(Object.keys(m.paid).map(Number), data.due_months).length;
+      const b = behindOf(m, data);
       if (b === 0) paidUp += 1;
       else behindMembers += 1;
       behindMonths += b;
@@ -219,7 +221,8 @@ export default function DuesPage() {
                           <div className="text-[11px] font-mono text-slate-400">{c.code}</div>
                         </td>
                         <td className="text-sm">
-                          {c.months.map(monthName).join(', ')} <span className="text-xs text-slate-500">{c.year}</span>
+                          {periodsLabel(c.periods, locale === 'am' ? 'am' : 'en')}
+                          <div className="text-[11px] text-slate-500">{t(`${c.periods.length} month(s)`, `${c.periods.length} ወር`)}</div>
                         </td>
                         <td className="text-sm">
                           {formatETB(c.amount)}
@@ -299,6 +302,7 @@ export default function DuesPage() {
                       {MONTHS.map((month) => {
                         const p = m.paid[month];
                         const due = month <= data.due_months;
+                        const beforeJoining = month < firstOwedMonth(m.joined, data.year);
                         return (
                           <td key={month} className="text-center px-1">
                             {p ? (
@@ -316,6 +320,8 @@ export default function DuesPage() {
                               >
                                 <Hourglass size={12} />
                               </span>
+                            ) : beforeJoining ? (
+                              <span title={t('Before they joined — not owed', 'ከመመዝገቡ በፊት — አይከፈልም')} className="inline-flex w-6 h-6 items-center justify-center text-slate-300 text-xs">–</span>
                             ) : (
                               <span className={`inline-block w-6 h-6 rounded-md ${due ? 'bg-red-50 border border-red-200' : 'bg-slate-50 border border-slate-100'}`} />
                             )}
@@ -351,7 +357,7 @@ export default function DuesPage() {
           onClose={() => setPaying(null)}
           onDone={(r) => {
             setPaying(null);
-            setReceipt(r);
+            setReceipts([r]);
             reload();
           }}
         />
@@ -386,7 +392,7 @@ export default function DuesPage() {
           onClose={() => setReviewing(null)}
           onApproved={(r) => {
             setReviewing(null);
-            setReceipt(r);
+            setReceipts(r);
             reload();
           }}
           onRejected={() => {
@@ -397,30 +403,32 @@ export default function DuesPage() {
         />
       )}
 
-      {receipt && <ReceiptSheet receipt={receipt} onClose={() => setReceipt(null)} />}
+      {receipts && <ReceiptSheet receipts={receipts} onClose={() => setReceipts(null)} />}
     </div>
   );
 }
 
 /** Approve or reject a payment a member reported in the bot. */
-function ClaimDialog({ claim, onClose, onApproved, onRejected }: { claim: DuesClaim; onClose: () => void; onApproved: (r: DuesReceipt) => void; onRejected: () => void }) {
+function ClaimDialog({ claim, onClose, onApproved, onRejected }: { claim: DuesClaim; onClose: () => void; onApproved: (r: DuesReceipt[]) => void; onRejected: () => void }) {
   const { t, locale } = useLang();
-  const [perMonth, setPerMonth] = useState(String(Math.round((claim.amount / claim.months.length) * 100) / 100));
+  /** Empty: automatic — each year's monthly amount when the total matches, else the total shared equally */
+  const [perMonth, setPerMonth] = useState('');
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const monthName = (m: number) => (locale === 'am' ? ETHIOPIAN_MONTHS_AM[m - 1] : ETHIOPIAN_MONTHS_EN[m - 1]);
-  const total = (Number(perMonth) || 0) * claim.months.length;
+  const lang = locale === 'am' ? 'am' : 'en';
+  const plan = claimPlan(claim.periods, claim.amount, claim.rates, perMonth === '' ? undefined : Number(perMonth) || 0);
+  const total = plan.reduce((sum, p) => sum + p.amount_per_month * p.months.length, 0);
   const proof = `/dashboard/finance/dues/proof/${claim.id}`;
 
   const approve = async () => {
     setBusy(true);
     setError('');
-    const res = await approveDuesClaim(claim.id, Number(perMonth));
+    const res = await approveDuesClaim(claim.id, perMonth === '' ? undefined : Number(perMonth));
     setBusy(false);
     if (!res.ok) return setError(res.error);
-    onApproved(res.receipt);
+    onApproved(res.receipts);
   };
   const reject = async () => {
     setBusy(true);
@@ -437,7 +445,7 @@ function ClaimDialog({ claim, onClose, onApproved, onRejected }: { claim: DuesCl
         {error && <p className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{error}</p>}
         <dl className="text-sm space-y-1.5">
           <Line label={t('Member', 'አባል')} value={`${locale === 'am' ? claim.name_am : claim.name_en}${claim.code ? ` · ${claim.code}` : ''}`} />
-          <Line label={t('Months', 'ወራት')} value={`${claim.months.map(monthName).join(', ')} ${claim.year} ${t('E.C.', 'ዓ.ም')}`} />
+          <Line label={t('Months', 'ወራት')} value={`${periodsLabel(claim.periods, lang)} (${claim.periods.length})`} />
           <Line label={t('Says they paid', 'የከፈሉት (እንደገለጹት)')} value={formatETB(claim.amount)} />
           {claim.expected !== null && <Line label={t('Expected', 'የሚጠበቀው')} value={formatETB(claim.expected)} />}
           <Line label={t('How', 'በምን')} value={t(...METHOD[claim.method])} />
@@ -460,12 +468,27 @@ function ClaimDialog({ claim, onClose, onApproved, onRejected }: { claim: DuesCl
           <>
             <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 space-y-2">
               <label className="text-xs font-semibold text-slate-700 block">{t('Amount per month to record (birr)', 'የሚመዘገበው የአንድ ወር መጠን (ብር)')}</label>
-              <div className="flex items-center gap-3">
-                <input type="number" min={0} step="0.01" value={perMonth} onChange={(e) => setPerMonth(e.target.value)} className="form-input text-sm w-32" />
+              <div className="flex flex-wrap items-center gap-3">
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={perMonth}
+                  placeholder={t('automatic', 'በራሱ')}
+                  onChange={(e) => setPerMonth(e.target.value)}
+                  className="form-input text-sm w-32"
+                />
                 <span className="text-sm text-slate-700">
-                  {t('Total', 'ድምር')}: <b>{formatETB(total)}</b> <span className="text-xs text-slate-500">({claim.months.length} × {formatETB(Number(perMonth) || 0)})</span>
+                  {t('Total', 'ድምር')}: <b>{formatETB(total)}</b>
                 </span>
               </div>
+              <ul className="text-xs text-slate-600 space-y-0.5">
+                {plan.map((p) => (
+                  <li key={p.year}>
+                    {t('Receipt', 'ደረሰኝ')} {p.year}: {periodsLabel(p.months.map((m) => p.year * 100 + m), lang)} — {p.months.length} × {formatETB(p.amount_per_month)}
+                  </li>
+                ))}
+              </ul>
               <p className="text-[11px] text-slate-500">
                 {t('Approving gives a receipt number, marks the months paid, adds the income to Finance and tells the member on Telegram.', 'ማጽደቅ ደረሰኝ ቁጥር ይሰጣል፣ ወራቱን እንደተከፈሉ ይመዘግባል፣ ገቢውን በፋይናንስ ይጨምራል፣ ለአባሉም በቴሌግራም ያሳውቃል።')}
               </p>
@@ -476,7 +499,7 @@ function ClaimDialog({ claim, onClose, onApproved, onRejected }: { claim: DuesCl
               </button>
               <div className="flex gap-2">
                 <button type="button" onClick={onClose} className="btn btn-secondary text-xs">{t('Close', 'ዝጋ')}</button>
-                <button type="button" disabled={busy || perMonth === ''} onClick={approve} className="btn btn-primary text-xs inline-flex items-center gap-1.5 disabled:opacity-50">
+                <button type="button" disabled={busy} onClick={approve} className="btn btn-primary text-xs inline-flex items-center gap-1.5 disabled:opacity-50">
                   <Check size={14} /> {busy ? t('Saving…', 'በማስቀመጥ ላይ…') : t('Approve and record', 'አጽድቅና መዝግብ')}
                 </button>
               </div>
@@ -511,7 +534,7 @@ function PaymentDialog({ data, member, onClose, onDone }: { data: DuesData; memb
   const [personId, setPersonId] = useState(member?.person_id ?? '');
   const chosen = data.members.find((m) => m.person_id === personId) ?? null;
   // Start with the earliest unpaid month (one month by default)
-  const firstUnpaid = (m: DuesMember | null) => (m ? MONTHS.find((x) => !m.paid[x]) : undefined);
+  const firstUnpaid = (m: DuesMember | null) => (m ? MONTHS.find((x) => x >= firstOwedMonth(m.joined, data.year) && !m.paid[x]) : undefined);
   const [months, setMonths] = useState<number[]>(() => {
     const f = firstUnpaid(member);
     return f ? [f] : [];
@@ -597,13 +620,15 @@ function PaymentDialog({ data, member, onClose, onDone }: { data: DuesData; memb
   );
 }
 
-function ReceiptSheet({ receipt, onClose }: { receipt: DuesReceipt; onClose: () => void }) {
+/** The printable receipt(s) of a payment — one per year it covers. */
+function ReceiptSheet({ receipts, onClose }: { receipts: DuesReceipt[]; onClose: () => void }) {
   const { t, locale } = useLang();
   const monthName = (m: number) => (locale === 'am' ? ETHIOPIAN_MONTHS_AM[m - 1] : ETHIOPIAN_MONTHS_EN[m - 1]);
   return (
-    <Modal isOpen onClose={onClose} title={t('Payment recorded', 'ክፍያው ተመዝግቧል')} subtitle={receipt.receipt_no} maxWidth="md">
+    <Modal isOpen onClose={onClose} title={t('Payment recorded', 'ክፍያው ተመዝግቧል')} subtitle={receipts.map((r) => r.receipt_no).join(', ')} maxWidth="md">
       <div className="space-y-4">
-        <div className="print-sheet border border-slate-300 rounded-lg p-5 space-y-3 bg-white">
+        {receipts.map((receipt) => (
+        <div key={receipt.receipt_no} className="print-sheet border border-slate-300 rounded-lg p-5 space-y-3 bg-white break-inside-avoid">
           <div className="flex items-center gap-3 border-b border-slate-300 pb-3">
             <Image src="/logo.png" alt="" width={48} height={48} className="rounded-full" />
             <div>
@@ -623,6 +648,7 @@ function ReceiptSheet({ receipt, onClose }: { receipt: DuesReceipt; onClose: () 
             <div className="border-t border-slate-400 pt-1">{t('Signature', 'ፊርማ')}</div>
           </div>
         </div>
+        ))}
         <div className="no-print flex justify-end gap-2">
           <button onClick={onClose} className="btn btn-secondary text-xs">{t('Close', 'ዝጋ')}</button>
           <button onClick={() => window.print()} className="btn btn-primary text-xs inline-flex items-center gap-1.5">
