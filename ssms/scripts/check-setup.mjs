@@ -173,6 +173,9 @@ try {
   else ok('Migration 025 (parent portal) applied');
   if (duesTable) problem(`Member dues tables missing — run migration 026_member_dues.sql (${duesTable.message})`);
   else ok('Migration 026 (member dues) applied');
+  const { error: phoneLinks } = await db.from('telegram_links').select('relation').limit(1);
+  if (phoneLinks) problem(`Telegram sign-in by phone missing — run migration 027_telegram_phone.sql (${phoneLinks.message})`);
+  else ok('Migration 027 (Telegram sign-in by phone) applied');
   if (process.env.TELEGRAM_BOT_TOKEN) ok('Telegram bot token is set (add the same TELEGRAM_BOT_TOKEN on Render)');
   else problem('Telegram bot token missing — optional; see Administration → Telegram bot');
   const { error: pushTable } = await db.from('push_subscriptions').select('id').limit(1);

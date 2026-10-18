@@ -14,7 +14,7 @@ import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import { createAdminClient } from '@/lib/supabase/server';
-import { botUsername, escapeHtml, newLinkCode, telegramApi, telegramConfigured, telegramToPersons, webhookSecret } from '@/lib/telegram/bot';
+import { botUsername, chatsOf, escapeHtml, newLinkCode, telegramApi, telegramConfigured, telegramToChats, webhookSecret } from '@/lib/telegram/bot';
 
 const MIGRATION_024 = 'Run database migration 024 (Telegram) first';
 const missing = (m: string) => (/telegram_/.test(m) && /does not exist|schema cache/.test(m) ? MIGRATION_024 : m);
@@ -32,7 +32,11 @@ export async function loadMyTelegram(): Promise<Loaded<MyTelegram>> {
   try {
     const { me, db } = await authorize();
     if (!telegramConfigured()) return { mode: 'live', data: { configured: false, links: [] } };
-    const { data, error } = await db.from('telegram_links').select('id, telegram_name, linked_at').eq('person_id', me.person.id).order('linked_at');
+    // Own chats only — a parent's chat linked to a student (relation GUARDIAN, 027) is not the student's
+    let res = await db.from('telegram_links').select('id, telegram_name, linked_at, relation').eq('person_id', me.person.id).order('linked_at');
+    if (res.error && /relation/.test(res.error.message)) res = (await db.from('telegram_links').select('id, telegram_name, linked_at').eq('person_id', me.person.id).order('linked_at')) as typeof res;
+    const { error } = res;
+    const data = ((res.data ?? []) as { relation?: string }[]).filter((l) => l.relation !== 'GUARDIAN');
     if (error) throw new Error(missing(error.message));
     return {
       mode: 'live',
@@ -66,7 +70,9 @@ export async function startTelegramLink(): Promise<{ ok: true; url: string } | {
 export async function unlinkMyTelegram(linkId: string): Promise<ActionResult> {
   try {
     const { me, db } = await authorize();
-    await db.from('telegram_links').delete().eq('id', linkId).eq('person_id', me.person.id).then(check);
+    const { data: link } = await db.from('telegram_links').select('*').eq('id', linkId).eq('person_id', me.person.id).maybeSingle();
+    if (!link || (link as { relation?: string }).relation === 'GUARDIAN') throw new Error('Not your Telegram link');
+    await db.from('telegram_links').delete().eq('id', linkId).then(check);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
@@ -152,8 +158,12 @@ export async function connectBot(): Promise<ActionResult> {
     await telegramApi('setMyCommands', {
       commands: [
         { command: 'start', description: 'Connect · ማገናኘት' },
+        { command: 'results', description: 'Results · ውጤት' },
+        { command: 'attendance', description: 'Attendance · ክትትል' },
+        { command: 'exams', description: 'Online exams · ፈተና' },
+        { command: 'dues', description: 'Monthly dues · መዋጮ' },
+        { command: 'menu', description: 'Menu · ምናሌ' },
         { command: 'stop', description: 'Stop messages · መልእክት አቁም' },
-        { command: 'help', description: 'Help · እርዳታ' },
       ],
     });
     return { ok: true };
@@ -170,11 +180,15 @@ const AudienceSchema = z.union([
   z.string().regex(/^(STUDENTS|PARENTS):(ALL|[0-9a-f-]{36})$/, 'Choose who gets the message'),
 ]);
 
-/** The people an audience covers. */
-async function audiencePeople(db: SupabaseClient, audience: string): Promise<string[]> {
+/**
+ * The Telegram chats an audience reaches (each once). Students: their own chats.
+ * Parents: guardians' own chats plus parents linked to the students by phone.
+ */
+async function audienceChats(db: SupabaseClient, audience: string): Promise<{ people: number; chats: Set<number> }> {
   if (audience === 'EVERYONE') {
-    const { data } = await db.from('telegram_links').select('person_id');
-    return ((data ?? []) as { person_id: string }[]).map((r) => r.person_id);
+    const { data } = await db.from('telegram_links').select('person_id, chat_id');
+    const rows = (data ?? []) as { person_id: string; chat_id: number }[];
+    return { people: new Set(rows.map((r) => r.person_id)).size, chats: new Set(rows.map((r) => Number(r.chat_id))) };
   }
   if (audience === 'STAFF') {
     // Accounts with any role other than the student / parent portals
@@ -184,34 +198,31 @@ async function audiencePeople(db: SupabaseClient, audience: string): Promise<str
     const roleOf = (r: Record<string, unknown>) => (r.role as { code: string } | null)?.code;
     const staff = [...new Set(rows.filter((r) => roleOf(r) && !['STUDENT', 'PARENT'].includes(roleOf(r)!)).map((r) => r.system_user_id as string))];
     const { data } = await db.from('system_users').select('person_id').eq('is_active', true).in('id', staff.length ? staff : ['00000000-0000-0000-0000-000000000000']);
-    return ((data ?? []) as { person_id: string }[]).map((r) => r.person_id);
+    const people = ((data ?? []) as { person_id: string }[]).map((r) => r.person_id);
+    return { people: people.length, chats: await chatsOf(db, people, 'SELF') };
   }
   const [kind, scope] = audience.split(':');
   const year = (await db.from('academic_years').select('id').order('is_current', { ascending: false }).order('start_date', { ascending: false }).limit(1).maybeSingle().then(check)) as { id: string } | null;
-  if (!year) return [];
+  if (!year) return { people: 0, chats: new Set() };
   let enrollments = db.from('enrollments').select('student_id').eq('academic_year_id', year.id).eq('status', 'ACTIVE');
   if (scope !== 'ALL') enrollments = enrollments.eq('class_id', scope);
   const studentIds = ((await enrollments.then(check)) as { student_id: string }[]).map((e) => e.student_id);
-  if (studentIds.length === 0) return [];
-  if (kind === 'STUDENTS') {
-    const { data } = await db.from('students').select('person_id').in('id', studentIds);
-    return ((data ?? []) as { person_id: string }[]).map((r) => r.person_id);
-  }
+  if (studentIds.length === 0) return { people: 0, chats: new Set() };
+  const { data: students } = await db.from('students').select('person_id').in('id', studentIds);
+  const studentPersons = ((students ?? []) as { person_id: string }[]).map((r) => r.person_id);
+  if (kind === 'STUDENTS') return { people: studentPersons.length, chats: await chatsOf(db, studentPersons, 'SELF') };
   const { data } = await db.from('student_guardians').select('guardian_person_id').in('student_id', studentIds);
-  return ((data ?? []) as { guardian_person_id: string }[]).map((r) => r.guardian_person_id);
+  const guardians = ((data ?? []) as { guardian_person_id: string }[]).map((r) => r.guardian_person_id);
+  const chats = new Set([...(await chatsOf(db, guardians, 'SELF')), ...(await chatsOf(db, studentPersons, 'GUARDIAN'))]);
+  return { people: studentIds.length, chats };
 }
 
-/** How many connected people an audience would reach. */
+/** How many Telegram chats an audience would reach. */
 export async function countAudience(audience: string): Promise<{ ok: true; people: number; connected: number } | { ok: false; error: string }> {
   try {
     const { db } = await authorize(...BROADCASTERS);
-    const people = [...new Set(await audiencePeople(db, AudienceSchema.parse(audience)))];
-    let connected = 0;
-    for (let i = 0; i < people.length; i += 200) {
-      const { data } = await db.from('telegram_links').select('person_id').in('person_id', people.slice(i, i + 200));
-      connected += new Set(((data ?? []) as { person_id: string }[]).map((r) => r.person_id)).size;
-    }
-    return { ok: true, people: people.length, connected };
+    const { people, chats } = await audienceChats(db, AudienceSchema.parse(audience));
+    return { ok: true, people, connected: chats.size };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
   }
@@ -225,11 +236,11 @@ export async function sendBroadcast(audience: string, message: string): Promise<
     const who = AudienceSchema.parse(audience);
     const text = z.string().trim().min(2, 'Write the message').max(3500, 'The message is too long').parse(message);
     const row = (await db.from('telegram_broadcasts').insert({ audience: who, message: text, sent_by: me.systemUser.id }).select('id').single().then(check)) as { id: string };
-    const people = [...new Set(await audiencePeople(db, who))];
+    const { chats } = await audienceChats(db, who);
     after(async () => {
       const bg = createAdminClient();
       const html = `📢 <b>የሐመረ ሕይወት ሰንበት ት/ቤት · Hamere Hiwot</b>\n\n${escapeHtml(text)}`;
-      const sent = await telegramToPersons(bg, people, html);
+      const sent = await telegramToChats(bg, chats, html);
       await bg.from('telegram_broadcasts').update({ recipients: sent.recipients, delivered: sent.delivered }).eq('id', row.id);
     });
     return { ok: true };

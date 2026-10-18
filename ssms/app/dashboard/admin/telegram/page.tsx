@@ -137,8 +137,8 @@ export default function TelegramAdminPage() {
           {reach && (
             <p className="text-xs text-slate-500">
               {audience === 'EVERYONE'
-                ? t(`Reaches ${reach.connected} people.`, `${reach.connected} ሰዎች ይደርሳቸዋል።`)
-                : t(`Reaches ${reach.connected} of ${reach.people} — the others have not connected Telegram.`, `ከ${reach.people} ውስጥ ${reach.connected} ይደርሳቸዋል — ሌሎቹ ቴሌግራም አላገናኙም።`)}
+                ? t(`Reaches ${reach.connected} Telegram chat(s).`, `${reach.connected} የቴሌግራም ቻት(ዎች) ይደርሳል።`)
+                : t(`Reaches ${reach.connected} Telegram chat(s) · ${reach.people} people in this group (the others have not connected Telegram).`, `${reach.connected} የቴሌግራም ቻት(ዎች) ይደርሳል · በዚህ ቡድን ${reach.people} ሰዎች አሉ (ሌሎቹ ቴሌግራም አላገናኙም)።`)}
             </p>
           )}
           <textarea required rows={4} maxLength={3500} value={message} onChange={(e) => setMessage(e.target.value)} placeholder={t('e.g. Sunday’s program starts at 8:00.', 'ለምሳሌ፦ የእሑድ መርሐ ግብር በ2:00 ይጀምራል።')} className="form-input text-sm" />

@@ -2,10 +2,11 @@
 // POST /api/telegram — Telegram calls this for every message to the bot
 // (set up under Administration → Telegram bot). Only Telegram knows the secret
 // header. Handles:
-//   /start <code>   link this chat to the person who asked for the code in the app
-//   /start          how to connect
-//   /stop           stop all messages to this chat
-//   anything else   short help
+//   /start <code>        link this chat to the person who asked for the code on the website
+//   /start, /register    welcome; not linked yet → "📱 Share my phone number"
+//   shared phone number  link by phone (lib/telegram/menu): parents to their children
+//   📊 📋 🖊️ 🧾 buttons  results, attendance, exams, dues — only this chat's own people
+//   /stop                stop all messages to this chat
 // Always answers 200, so Telegram does not resend.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -13,20 +14,34 @@ import { NextResponse } from 'next/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { createAdminClient } from '@/lib/supabase/server';
 import { escapeHtml, sendTelegram, siteUrl, telegramConfigured, webhookSecret } from '@/lib/telegram/bot';
+import {
+  BUTTONS,
+  LINKED_HELP,
+  MENU_KEYBOARD,
+  PHONE_KEYBOARD,
+  REMOVE_KEYBOARD,
+  WELCOME,
+  attendanceText,
+  chatScope,
+  duesText,
+  examsText,
+  linkByPhone,
+  resultsText,
+} from '@/lib/telegram/menu';
 
 export const dynamic = 'force-dynamic';
 
-const HELP =
-  'ሰላም! ይህ የሐመረ ሕይወት ሰንበት ትምህርት ቤት ቦት ነው።\n' +
-  'ለማገናኘት፦ ወደ ድረ-ገጹ ገብተው «መገለጫ» ላይ «ቴሌግራም አገናኝ» ይጫኑ።\n' +
-  'መልእክት ለማቆም፦ /stop\n\n' +
-  'Hello! This is the Hamere Hiwot Sunday School bot.\n' +
-  'To connect: sign in to the website and tap “Connect Telegram” on your profile.\n' +
-  'To stop messages: /stop';
-
 type Update = {
-  message?: { text?: string; chat?: { id: number; type?: string }; from?: { first_name?: string; last_name?: string; username?: string } };
+  message?: {
+    text?: string;
+    chat?: { id: number; type?: string };
+    from?: { id?: number; first_name?: string; last_name?: string; username?: string };
+    contact?: { phone_number?: string; user_id?: number };
+  };
 };
+
+/** "/results", "/results@HamereHiwotBot" or the 📊 button */
+const asked = (text: string, command: string, button: string) => text === button || new RegExp(`^/${command}(@\\w+)?$`, 'i').test(text);
 
 export async function POST(request: Request) {
   if (!telegramConfigured() || !isSupabaseEnabled()) return new NextResponse('Not set up', { status: 404 });
@@ -40,16 +55,42 @@ export async function POST(request: Request) {
   if (!chatId || message?.chat?.type !== 'private') return NextResponse.json({ ok: true });
 
   const db = createAdminClient();
+  const from = message?.from;
+  const telegramName = [from?.first_name, from?.last_name].filter(Boolean).join(' ') + (from?.username ? ` (@${from.username})` : '');
   try {
-    if (/^\/start(\s|$)/.test(text)) {
-      const code = text.split(/\s+/)[1];
-      if (!code) {
-        await sendTelegram(chatId, escapeHtml(HELP));
+    // ── A shared phone number ──
+    if (message?.contact) {
+      // Only the person's own number (the button), never a contact they forward
+      if (!message.contact.user_id || message.contact.user_id !== from?.id) {
+        await sendTelegram(chatId, escapeHtml('እባክዎ «📱 ስልኬን አጋራ» የሚለውን አዝራር ይጫኑ። · Please use the “Share my phone number” button.'), PHONE_KEYBOARD);
         return NextResponse.json({ ok: true });
       }
+      const found = await linkByPhone(db, chatId, message.contact.phone_number ?? '', telegramName);
+      if (found.self.length === 0 && found.children.length === 0) {
+        await sendTelegram(
+          chatId,
+          escapeHtml(
+            'ይህ ስልክ በትምህርት ቤቱ መዝገብ ውስጥ አልተገኘም። በልጅዎ መዝገብ ላይ ያለውን ስልክ ለማስተካከል የትምህርት ቤቱን ጽ/ቤት ይጠይቁ።\n' +
+              'This number is not in the school’s records. Ask the school office to put it on your child’s record (guardian phone).'
+          ),
+          REMOVE_KEYBOARD
+        );
+        return NextResponse.json({ ok: true });
+      }
+      const lines = ['✅ <b>ተገናኝቷል · Connected</b>'];
+      if (found.self.length) lines.push(escapeHtml(`👤 ${found.self.join('፣ ')}`));
+      if (found.children.length) lines.push(escapeHtml(`👨‍👩‍👧 ልጆች · Children: ${found.children.join('፣ ')}`));
+      lines.push('', escapeHtml(LINKED_HELP));
+      await sendTelegram(chatId, lines.join('\n'), MENU_KEYBOARD);
+      return NextResponse.json({ ok: true });
+    }
+
+    // ── /start <code> from the website ──
+    const startCode = /^\/start\s+(\S+)/.exec(text)?.[1];
+    if (startCode) {
       const { data: link } = await db.from('telegram_link_codes')
         .select('person_id, expires_at, person:persons(full_name_en, full_name_am)')
-        .eq('code', code)
+        .eq('code', startCode)
         .maybeSingle();
       const row = link as { person_id: string; expires_at: string; person: { full_name_en: string; full_name_am: string | null } | null } | null;
       if (!row || Date.parse(row.expires_at) < Date.now()) {
@@ -59,30 +100,44 @@ export async function POST(request: Request) {
         );
         return NextResponse.json({ ok: true });
       }
-      const from = message?.from;
-      const telegramName = [from?.first_name, from?.last_name].filter(Boolean).join(' ') + (from?.username ? ` (@${from.username})` : '');
       await db.from('telegram_links').upsert({ person_id: row.person_id, chat_id: chatId, telegram_name: telegramName || null }, { onConflict: 'person_id,chat_id' });
-      await db.from('telegram_link_codes').delete().eq('code', code);
+      await db.from('telegram_link_codes').delete().eq('code', startCode);
       const name = row.person?.full_name_am || row.person?.full_name_en || '';
       await sendTelegram(
         chatId,
         `✅ <b>${escapeHtml(name)}</b>\n` +
           escapeHtml('ተገናኝቷል። የትምህርት ቤቱ መልእክቶች እዚህ ይደርሱዎታል። ለማቆም /stop ይላኩ።\n') +
           escapeHtml('Connected. Messages from the school will come here. Send /stop to stop them.\n') +
-          siteUrl()
+          siteUrl(),
+        MENU_KEYBOARD
       );
       return NextResponse.json({ ok: true });
     }
 
-    if (/^\/stop(\s|$)/.test(text)) {
+    if (/^\/stop(@\w+)?$/i.test(text)) {
       await db.from('telegram_links').delete().eq('chat_id', chatId);
-      await sendTelegram(chatId, escapeHtml('መልእክቶች ቆመዋል። እንደገና ለማገናኘት ከድረ-ገጹ «ቴሌግራም አገናኝ» ይጫኑ።\nMessages stopped. To connect again, tap “Connect Telegram” on the website.'));
+      await sendTelegram(
+        chatId,
+        escapeHtml('መልእክቶች ቆመዋል። እንደገና ለመገናኘት /start ይላኩ።\nMessages stopped. Send /start to connect again.'),
+        REMOVE_KEYBOARD
+      );
       return NextResponse.json({ ok: true });
     }
 
-    await sendTelegram(chatId, escapeHtml(HELP));
+    // ── Everything else needs a linked chat ──
+    const scope = await chatScope(db, chatId);
+    if (!scope.linked) {
+      await sendTelegram(chatId, escapeHtml(WELCOME), PHONE_KEYBOARD);
+      return NextResponse.json({ ok: true });
+    }
+    if (asked(text, 'results', BUTTONS.results)) await sendTelegram(chatId, await resultsText(db, scope), MENU_KEYBOARD);
+    else if (asked(text, 'attendance', BUTTONS.attendance)) await sendTelegram(chatId, await attendanceText(db, scope), MENU_KEYBOARD);
+    else if (asked(text, 'exams', BUTTONS.exams)) await sendTelegram(chatId, await examsText(db, scope), MENU_KEYBOARD);
+    else if (asked(text, 'dues', BUTTONS.dues)) await sendTelegram(chatId, await duesText(db, scope), MENU_KEYBOARD);
+    else await sendTelegram(chatId, escapeHtml(LINKED_HELP), MENU_KEYBOARD);
   } catch (e) {
     console.error('telegram webhook failed', e);
+    await sendTelegram(chatId, escapeHtml('ይቅርታ፣ አሁን አልተሳካም። ትንሽ ቆይተው እንደገና ይሞክሩ። · Sorry, that did not work. Please try again a little later.')).catch(() => {});
   }
   return NextResponse.json({ ok: true });
 }

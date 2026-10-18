@@ -56,23 +56,48 @@ export async function botUsername(): Promise<string | null> {
   return usernameCache;
 }
 
-/** One message to one chat. 'blocked' = the person stopped or blocked the bot. */
-export async function sendTelegram(chatId: number, html: string): Promise<'ok' | 'blocked' | 'failed'> {
-  const res = await telegramApi('sendMessage', { chat_id: chatId, text: html, parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+/** One message to one chat (`extra`: e.g. a reply_markup keyboard). 'blocked' = the person stopped or blocked the bot. */
+export async function sendTelegram(chatId: number, html: string, extra: Record<string, unknown> = {}): Promise<'ok' | 'blocked' | 'failed'> {
+  const res = await telegramApi('sendMessage', { chat_id: chatId, text: html, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, ...extra });
   if (res.ok) return 'ok';
   if (res.error_code === 403) return 'blocked';
   console.error('telegram send failed', res.error_code, res.description);
   return 'failed';
 }
 
-/** The same message to every linked chat of these people (each chat once). Forgets chats that blocked the bot. */
-export async function telegramToPersons(db: SupabaseClient, personIds: string[], html: string): Promise<{ recipients: number; delivered: number }> {
-  if (!telegramConfigured() || personIds.length === 0) return { recipients: 0, delivered: 0 };
+/**
+ * The chats linked to these people. `relation` narrows it: SELF = the person's
+ * own chats, GUARDIAN = parents who linked to a student by their phone (027).
+ */
+export async function chatsOf(db: SupabaseClient, personIds: string[], relation?: 'SELF' | 'GUARDIAN'): Promise<Set<number>> {
   const chats = new Set<number>();
-  for (let i = 0; i < personIds.length; i += 200) {
-    const { data } = await db.from('telegram_links').select('chat_id').in('person_id', [...new Set(personIds)].slice(i, i + 200));
+  const ids = [...new Set(personIds)];
+  for (let i = 0; i < ids.length; i += 200) {
+    const part = ids.slice(i, i + 200);
+    const res = relation
+      ? await db.from('telegram_links').select('chat_id').in('person_id', part).eq('relation', relation)
+      : await db.from('telegram_links').select('chat_id').in('person_id', part);
+    // Before migration 027 there is no relation: every link is the person's own
+    const data = res.error && relation === 'SELF' ? (await db.from('telegram_links').select('chat_id').in('person_id', part)).data : res.data;
     for (const r of (data ?? []) as { chat_id: number }[]) chats.add(Number(r.chat_id));
   }
+  return chats;
+}
+
+/** The same message to every linked chat of these people (each chat once). Forgets chats that blocked the bot. */
+export async function telegramToPersons(
+  db: SupabaseClient,
+  personIds: string[],
+  html: string,
+  relation?: 'SELF' | 'GUARDIAN'
+): Promise<{ recipients: number; delivered: number }> {
+  if (!telegramConfigured() || personIds.length === 0) return { recipients: 0, delivered: 0 };
+  return telegramToChats(db, await chatsOf(db, personIds, relation), html);
+}
+
+/** The same message to each of these chats. */
+export async function telegramToChats(db: SupabaseClient, chats: Set<number>, html: string): Promise<{ recipients: number; delivered: number }> {
+  if (!telegramConfigured() || chats.size === 0) return { recipients: 0, delivered: 0 };
   let delivered = 0;
   const blocked: number[] = [];
   for (const chat of chats) {
