@@ -128,6 +128,13 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
         staffOnly: true,
       },
       {
+        labelEn: 'My service',
+        labelAm: 'አገልግሎቴ',
+        href: '/dashboard/my-service',
+        icon: Music,
+        staffOnly: true,
+      },
+      {
         labelEn: 'I’m here (check in)',
         labelAm: 'ተገኝቻለሁ',
         href: '/dashboard/check-in/me',
@@ -222,6 +229,7 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
         permissions: ['MEMBER_VIEW', 'CHOIR_MANAGE'],
         children: [
           { labelEn: 'Rehearsals & Services', labelAm: 'ልምምድና አገልግሎት', href: '/dashboard/sacred-arts/choir', permissions: ['MEMBER_VIEW', 'CHOIR_MANAGE'] },
+          { labelEn: 'Service roster & vestments', labelAm: 'ምደባና የክብር ልብስ', href: '/dashboard/sacred-arts/service', permissions: ['MEMBER_VIEW', 'CHOIR_MANAGE'] },
           { labelEn: 'Hymn Library', labelAm: 'የመዝሙራት ማውጫ', href: '/dashboard/sacred-arts/hymns', permissions: ['MEMBER_VIEW', 'CHOIR_MANAGE'] },
         ],
       },

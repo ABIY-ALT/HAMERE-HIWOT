@@ -15,6 +15,8 @@
 //                        the steps after it, incl. a photo of the receipt, follow telegram_sessions
 //   ✅ I'm here          check in at a program / choir rehearsal: code on the leader's screen
 //                        + optional location (lib/telegram/checkin-flow)
+//   🎵 My service        choir members: published service rosters (on it or not), confirm / can't come,
+//                        rehearsal attendance and vestments held (lib/telegram/service-flow)
 //   🗂️ My tasks          tasks the member's department gave them; report progress (lib/telegram/tasks-flow)
 //   ✉️ Ask a department  a question to a department, answered on the website (lib/telegram/questions)
 //   ℹ️ About us          topics about the Sunday school written by the office (lib/telegram/about) — for anyone
@@ -48,6 +50,7 @@ import { refreshChat, savedChat, syncChat, tellUpdated } from '@/lib/telegram/li
 import { askerOf, continueAsk, startAsk, type AskData } from '@/lib/telegram/questions';
 import { continueTasks, startTasks, type TasksData } from '@/lib/telegram/tasks-flow';
 import { continueCheckin, startCheckin, type CheckinData } from '@/lib/telegram/checkin-flow';
+import { continueService, startService, type ServiceData } from '@/lib/telegram/service-flow';
 import { BACK_BUTTON, aboutMenu, isAboutMessage, loadAbout, topicButton, topicText } from '@/lib/telegram/about';
 
 export const dynamic = 'force-dynamic';
@@ -197,6 +200,8 @@ export async function POST(request: Request) {
       if (session.step.startsWith('CHECK_')) {
         const loc = message?.location ? { lat: message.location.latitude, lng: message.location.longitude } : null;
         await continueCheckin(db, chatId, session as unknown as { step: string; data: CheckinData }, { text, location: loc }, menu);
+      } else if (session.step.startsWith('SERVE_')) {
+        await continueService(db, chatId, session as unknown as { step: string; data: ServiceData }, text, scope, menu);
       } else if (session.step.startsWith('TASK_')) {
         await continueTasks(db, chatId, session as unknown as { step: string; data: TasksData }, text, scope, menu);
       } else if (session.step.startsWith('ASK_')) {
@@ -217,6 +222,7 @@ export async function POST(request: Request) {
     else if (asked(text, 'ask', BUTTONS.ask)) await startAsk(db, chatId, scope);
     else if (asked(text, 'tasks', BUTTONS.mytasks)) await startTasks(db, chatId, scope, menu);
     else if (asked(text, 'here', BUTTONS.here)) await startCheckin(db, chatId, scope, menu);
+    else if (asked(text, 'service', BUTTONS.service)) await startService(db, chatId, scope, menu);
     else if (asked(text, 'events', BUTTONS.events)) await sendTelegram(chatId, await eventsText(db, scope), menu);
     else await sendTelegram(chatId, escapeHtml(helpFor(scope)), menu);
   } catch (e) {

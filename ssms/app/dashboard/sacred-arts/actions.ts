@@ -9,6 +9,8 @@ import { z } from 'zod';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
 import { nonMemberIds } from '@/lib/members/membership';
+import { telegramLater, telegramToPersons } from '@/lib/telegram/bot';
+import { cancelledText, sessionTitle } from '@/lib/choir/service-core';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import type { AttendanceStatus } from '@/lib/attendance/store';
 import {
@@ -294,6 +296,15 @@ export async function cancelChoirSession(sessionId: string): Promise<ActionResul
   try {
     const { db } = await authorize('CHOIR_MANAGE');
     await db.from('choir_sessions').update({ status: 'CANCELLED' }).eq('id', sessionId).eq('status', 'PLANNED').then(check);
+    // A published roster: the people on it are told (migration 037; before it, nothing to tell)
+    const { data: session } = await db.from('choir_sessions').select('session_date, start_time, title, kind, roster_status').eq('id', sessionId).maybeSingle();
+    const s = session as { session_date: string; start_time: string | null; title: string | null; kind: string; roster_status?: string } | null;
+    if (s?.roster_status === 'PUBLISHED') {
+      const { data: rows } = await db.from('service_roster').select('member:choir_members(person_id)').eq('session_id', sessionId);
+      const people = ((rows ?? []) as unknown as { member: { person_id: string } | null }[]).map((r) => r.member?.person_id).filter((id): id is string => Boolean(id));
+      const html = cancelledText({ title: sessionTitle(s), date: s.session_date, time: (s.start_time ?? '').slice(0, 5) });
+      if (people.length) telegramLater((bg) => telegramToPersons(bg, people, html, 'SELF'));
+    }
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };

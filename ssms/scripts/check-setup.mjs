@@ -201,6 +201,9 @@ try {
   const { error: checkinTable } = await db.from('checkin_events').select('id').limit(1);
   if (checkinTable) problem(`Check-in at programs and rehearsals missing — run migration 036_checkins.sql (${checkinTable.message})`);
   else ok('Migration 036 (check-in at programs and rehearsals) applied');
+  const { error: rosterTable } = await db.from('vestment_loans').select('id').limit(1);
+  if (rosterTable) problem(`Service roster and vestments missing — run migration 037_service_roster.sql (${rosterTable.message})`);
+  else ok('Migration 037 (service roster and vestments) applied');
   if (process.env.TELEGRAM_BOT_TOKEN) ok('Telegram bot token is set (add the same TELEGRAM_BOT_TOKEN on Render)');
   else problem('Telegram bot token missing — optional; see Administration → Telegram bot');
   const { error: pushTable } = await db.from('push_subscriptions').select('id').limit(1);

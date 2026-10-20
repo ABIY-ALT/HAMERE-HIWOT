@@ -32,6 +32,7 @@ export const BUTTONS = {
   ask: '✉️ ጥያቄ · Ask a department',
   mytasks: '🗂️ ተግባሮቼ · My tasks',
   here: '✅ ተገኝቻለሁ · I’m here',
+  service: '🎵 አገልግሎቴ · My service',
   help: '❓ እርዳታ · Help',
 } as const;
 
@@ -49,9 +50,11 @@ export interface ChatScope {
   memberPersonIds: string[];
   /** Of those, the ones who pay dues (not honorary members) */
   duesPersonIds: string[];
+  /** One of them is an active choir member: service roster and vestments (037) */
+  inChoir: boolean;
 }
 
-const NOBODY: ChatScope = { linked: false, studentIds: [], selfStudentIds: [], childStudentIds: [], memberPersonIds: [], duesPersonIds: [] };
+const NOBODY: ChatScope = { linked: false, studentIds: [], selfStudentIds: [], childStudentIds: [], memberPersonIds: [], duesPersonIds: [], inChoir: false };
 
 export async function chatScope(db: SupabaseClient, chatId: number): Promise<ChatScope> {
   // `relation` exists from migration 027; before it every link is the person's own
@@ -62,12 +65,13 @@ export async function chatScope(db: SupabaseClient, chatId: number): Promise<Cha
   const self = links.filter((l) => l.relation !== 'GUARDIAN').map((l) => l.person_id);
   const guarded = links.filter((l) => l.relation === 'GUARDIAN').map((l) => l.person_id);
 
-  const [{ data: students }, { data: children }, notMembers, { data: types }] = await Promise.all([
+  const [{ data: students }, { data: children }, notMembers, { data: types }, { data: choir }] = await Promise.all([
     db.from('students').select('id, person_id').in('person_id', [...self, ...guarded]),
     self.length ? db.from('student_guardians').select('student_id').in('guardian_person_id', self) : Promise.resolve({ data: [] }),
     // Student-only records and parents' login records are not members (lib/members/membership)
     nonMemberIds(db, self),
     self.length ? db.from('persons').select('id, membership_type').in('id', self) : Promise.resolve({ data: [] }),
+    self.length ? db.from('choir_members').select('person_id').in('person_id', self).eq('status', 'ACTIVE') : Promise.resolve({ data: [] }),
   ]);
   const studentRows = (students ?? []) as { id: string; person_id: string }[];
   const selfSet = new Set(self);
@@ -84,6 +88,7 @@ export async function chatScope(db: SupabaseClient, chatId: number): Promise<Cha
     childStudentIds,
     memberPersonIds,
     duesPersonIds: memberPersonIds.filter((p) => !honorary.has(p)),
+    inChoir: ((choir ?? []) as { person_id: string }[]).some((c) => memberPersonIds.includes(c.person_id)),
   };
 }
 
@@ -98,7 +103,7 @@ export async function chatScope(db: SupabaseClient, chatId: number): Promise<Cha
 export function menuFor(scope: ChatScope) {
   const rows: string[][] = [];
   // Checking in at a program or rehearsal: anyone linked as themselves
-  if (scope.memberPersonIds.length || scope.selfStudentIds.length) rows.push([BUTTONS.here]);
+  if (scope.memberPersonIds.length || scope.selfStudentIds.length) rows.push(scope.inChoir ? [BUTTONS.here, BUTTONS.service] : [BUTTONS.here]);
   if (scope.memberPersonIds.length) rows.push([BUTTONS.membership, BUTTONS.dues]);
   const middle: string[] = [];
   if (scope.duesPersonIds.length) middle.push(BUTTONS.paid);
@@ -155,12 +160,14 @@ export function helpFor(scope: ChatScope): string {
       '📋 ክትትል — የአገልግሎትና የመዘምራን ክትትልዎ ታሪክ',
       '🗂️ ተግባሮቼ — ክፍልዎ የሰጠዎት ተግባራት፤ ሂደቱን ያሳውቁ'
     );
+    if (scope.inChoir) am.push('🎵 አገልግሎቴ — የአገልግሎት ምደባ (መመደብዎን)፣ የጥናት ተገኝነትና የክብር ልብስ');
     en.push(
       '🪪 My membership — member details, department, service, choir and committees',
       '🧾 Dues — paid, unpaid and waiting months',
       '📋 Attendance — your service and choir attendance history',
       '🗂️ My tasks — tasks your department gave you; report progress'
     );
+    if (scope.inChoir) en.push('🎵 My service — service rosters (are you on it?), rehearsal attendance and vestments');
     if (scope.duesPersonIds.length) {
       am.push('💳 ከፍያለሁ — የከፈሉትን (አንድ ወይም ብዙ ወር) ለፋይናንስ ያሳውቁ');
       en.push('💳 I paid — tell Finance you paid (one month or several)');
