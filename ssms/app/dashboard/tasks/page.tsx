@@ -2,11 +2,12 @@
 
 import React, { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { ClipboardList, Download, Plus, Repeat, Search } from 'lucide-react';
+import { ClipboardList, Download, Plus, Repeat, Search, UserPlus } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
 import { ProgressBar, TaskDetail, TaskForm } from '@/components/tasks/TaskDialogs';
+import { OwnTaskForm, type OwnTaskUnit } from '@/components/tasks/OwnTaskForm';
 import { stopRepeating } from '@/app/dashboard/tasks/actions';
 import { runTasks, useTasks } from '@/lib/tasks/client';
 import {
@@ -25,7 +26,7 @@ import { cell, downloadXlsx, headerCell } from '@/lib/export/xlsx';
 import { formatEthiopianDate, todayIso } from '@/lib/utils/ethiopian-calendar';
 
 type Show = 'OPEN' | 'REVIEW' | 'OVERDUE' | 'DONE' | 'ALL';
-type Dialog = { kind: 'new' } | { kind: 'open' | 'edit'; id: string } | null;
+type Dialog = { kind: 'new' } | { kind: 'open' | 'edit'; id: string } | { kind: 'own'; parentId?: string } | null;
 
 export default function TasksPage() {
   const { t, locale } = useLang();
@@ -33,6 +34,7 @@ export default function TasksPage() {
   const data = useTasks();
   const today = todayIso();
   const canAssign = can('TASK_ASSIGN');
+  const isHead = can('TASK_REPORT');
 
   const [view, setView] = useState<'tasks' | 'units' | 'repeating'>('tasks');
   const [show, setShow] = useState<Show>('OPEN');
@@ -91,7 +93,7 @@ export default function TasksPage() {
     .filter(matchesShow[show])
     .filter((x) => unit === 'ALL' || x.unit_id === unit)
     .filter((x) => meeting === 'ALL' || (meeting === 'ROUTINE' ? x.source === 'ROUTINE' : meetingKey(x) === meeting))
-    .filter((x) => !needle || `${x.task_no} ${x.title} ${x.unit} ${x.unit_am} ${x.decision_ref}`.toLowerCase().includes(needle))
+    .filter((x) => !needle || `${x.task_no} ${x.title} ${x.unit} ${x.unit_am} ${x.decision_ref} ${x.assignee}`.toLowerCase().includes(needle))
     .sort(
       (a, b) =>
         Number(isOverdue(b, today)) - Number(isOverdue(a, today)) ||
@@ -149,7 +151,16 @@ export default function TasksPage() {
     });
   };
 
-  const selected = dialog && dialog.kind !== 'new' ? data.tasks.find((x) => x.id === dialog.id) : undefined;
+  const selected = dialog && (dialog.kind === 'open' || dialog.kind === 'edit') ? data.tasks.find((x) => x.id === dialog.id) : undefined;
+  /** Departments this user gives tasks in, with their people (migration 035) */
+  const ownUnits: OwnTaskUnit[] = Object.entries(data.people)
+    .map(([id, people]) => {
+      const u = data.units.find((x) => x.id === id);
+      return { id, name: u ? (locale === 'am' ? u.name_am : u.name_en) : '', people };
+    })
+    .filter((u) => u.name)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const parentTask = dialog?.kind === 'own' && dialog.parentId ? data.tasks.find((x) => x.id === dialog.parentId) : undefined;
 
   return (
     <div className="space-y-6">
@@ -169,6 +180,15 @@ export default function TasksPage() {
           <button onClick={exportExcel} disabled={rows.length === 0} className="btn btn-secondary text-xs inline-flex items-center gap-1.5 disabled:opacity-50">
             <Download size={14} /> {t('Export Excel', 'ወደ ኤክሴል')}
           </button>
+          {isHead && ownUnits.length > 0 && (
+            <button
+              onClick={() => setDialog({ kind: 'own' })}
+              disabled={data.mode !== 'live'}
+              className="btn btn-secondary text-xs inline-flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <UserPlus size={14} /> {t('Give to my people', 'ለክፍሌ ሰዎች ስጥ')}
+            </button>
+          )}
           {canAssign && (
             <button
               onClick={() => setDialog({ kind: 'new' })}
@@ -269,9 +289,20 @@ export default function TasksPage() {
                             )}
                             {x.priority !== 'NORMAL' && <span className={`ml-1 ${PRIORITY[x.priority].cls}`}>· {t(...PRIORITY[x.priority].label)}</span>}
                           </div>
+                          {(x.internal || x.plan_activity || x.parent_task_no || x.parts.total > 0) && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {x.internal && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700">{t('Own task', 'የውስጥ')}</span>}
+                              {x.plan_activity && <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-50 text-rose-800 max-w-[220px] truncate">🎯 {x.plan_activity}</span>}
+                              {x.parent_task_no && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">🧩 {x.parent_task_no}</span>}
+                              {x.parts.total > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">🧩 {x.parts.done}/{x.parts.total}</span>}
+                            </div>
+                          )}
                         </button>
                       </td>
-                      <td className="text-xs text-slate-700">{unitLabel(x)}</td>
+                      <td className="text-xs text-slate-700">
+                        {unitLabel(x)}
+                        {x.assignee && <div className="text-[11px] text-slate-500 mt-0.5">👤 {x.assignee}</div>}
+                      </td>
                       <td className="text-xs whitespace-nowrap">
                         <div className={overdue ? 'text-red-600 font-semibold' : 'text-slate-600'}>{date(x.due_date)}</div>
                         {overdue && <div className="text-[11px] text-red-600">{t('overdue', 'ጊዜው አልፏል')}</div>}
@@ -387,7 +418,24 @@ export default function TasksPage() {
       {dialog?.kind === 'new' && <TaskForm data={data} onClose={closeDialog} onDone={done} />}
       {dialog?.kind === 'edit' && selected && <TaskForm data={data} task={selected} onClose={() => setDialog({ kind: 'open', id: selected.id })} onDone={done} />}
       {dialog?.kind === 'open' && selected && (
-        <TaskDetail task={selected} onClose={closeDialog} onEdit={() => setDialog({ kind: 'edit', id: selected.id })} onDone={done} />
+        <TaskDetail
+          task={selected}
+          people={data.people[selected.unit_id] ?? []}
+          onClose={closeDialog}
+          onEdit={() => setDialog({ kind: 'edit', id: selected.id })}
+          onGivePart={data.people[selected.unit_id] ? () => setDialog({ kind: 'own', parentId: selected.id }) : undefined}
+          onDone={done}
+        />
+      )}
+      {dialog?.kind === 'own' && (
+        <OwnTaskForm
+          units={parentTask ? ownUnits.filter((u) => u.id === parentTask.unit_id) : ownUnits}
+          unitId={parentTask?.unit_id}
+          parent={parentTask ? { id: parentTask.id, label: `${parentTask.task_no} — ${parentTask.title}` } : undefined}
+          run={(save) => runTasks(save)}
+          onClose={closeDialog}
+          onDone={done}
+        />
       )}
     </div>
   );

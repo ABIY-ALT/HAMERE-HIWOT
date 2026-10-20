@@ -195,6 +195,12 @@ try {
   const { error: questionsTable } = await db.from('member_questions').select('id').limit(1);
   if (questionsTable) problem(`Questions to departments missing — run migration 033_member_questions.sql (${questionsTable.message})`);
   else ok('Migration 033 (questions to departments) applied');
+  const { error: assigneeColumn } = await db.from('tasks').select('assignee_person_id, internal, plan_activity_id').limit(1);
+  if (assigneeColumn) problem(`Tasks for people in a department missing — run migration 035_task_people.sql (${assigneeColumn.message})`);
+  else ok('Migration 035 (tasks for people in a department) applied');
+  const { error: checkinTable } = await db.from('checkin_events').select('id').limit(1);
+  if (checkinTable) problem(`Check-in at programs and rehearsals missing — run migration 036_checkins.sql (${checkinTable.message})`);
+  else ok('Migration 036 (check-in at programs and rehearsals) applied');
   if (process.env.TELEGRAM_BOT_TOKEN) ok('Telegram bot token is set (add the same TELEGRAM_BOT_TOKEN on Render)');
   else problem('Telegram bot token missing — optional; see Administration → Telegram bot');
   const { error: pushTable } = await db.from('push_subscriptions').select('id').limit(1);

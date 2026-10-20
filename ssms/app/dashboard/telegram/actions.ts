@@ -169,6 +169,8 @@ export async function connectBot(): Promise<ActionResult> {
         { command: 'events', description: 'Coming events · መርሐ ግብር' },
         { command: 'about', description: 'About the Sunday school · ስለ እኛ' },
         { command: 'ask', description: 'Ask a department · ጥያቄ' },
+        { command: 'tasks', description: 'My tasks · ተግባሮቼ' },
+        { command: 'here', description: 'I am here (check in) · ተገኝቻለሁ' },
         { command: 'dues', description: 'Monthly dues · መዋጮ' },
         { command: 'paid', description: 'I paid my dues · ከፍያለሁ' },
         { command: 'menu', description: 'Menu · ምናሌ' },

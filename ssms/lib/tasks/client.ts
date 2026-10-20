@@ -48,6 +48,7 @@ function demoTasks(): TasksData {
       priority: 'NORMAL', due_date: null, status: 'ASSIGNED', progress: 0,
       created_by_id: 'sysuser-002', created_by: 'Executive Secretary', completed_at: null, created_at: at(-12), updates: [],
       files: [], series_id: null, repeats: null,
+      assignee_id: null, assignee: '', internal: false, parent_task_id: null, parent_task_no: '', plan_activity_id: null, plan_activity: '', parts: { total: 0, done: 0 },
       ...partial,
     };
   };
@@ -84,7 +85,7 @@ function demoTasks(): TasksData {
   const series: TaskSeries[] = [
     { id: 'ser-1', title: 'Submit the monthly servant attendance summary', unit_id: hr.id, unit: hr.name_en, unit_am: hr.name_am, frequency: 'MONTHLY', next_due: addDays(today, 10), is_active: true, created_by: 'Executive Secretary' },
   ];
-  return { tasks, units, series };
+  return { tasks, units, series, people: {} };
 }
 
 export function refreshTasks(): Promise<void> {

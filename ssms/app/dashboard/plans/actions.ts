@@ -15,11 +15,13 @@ import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize'
 import type { SessionUser } from '@/lib/auth/session';
 import { notifyLater } from '@/lib/push/send';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
+import { unitPeople } from '@/lib/tasks/people';
 import {
   ACTIVITY_STATES,
   nowQuarter,
   type ActivityState,
   type PlanActivity,
+  type PlanTask,
   type PlanStatus,
   type PlanUnit,
   type PlansData,
@@ -82,6 +84,21 @@ export async function loadPlans(year?: number): Promise<Loaded<PlansData>> {
       ? await selectAll<Row>((a, b) => db.from('plan_updates').select('*').in('activity_id', activityIds).order('created_at', { ascending: false }).range(a, b))
       : [];
     const who = await names(db, [...planRows.map((p) => p.reviewed_by as string), ...updateRows.map((u) => u.author_id as string)]);
+    // Tasks made from the activities (migration 035; none before it)
+    const { data: taskData } = activityIds.length
+      ? await db.from('tasks').select('id, task_no, title, status, progress, assignee_person_id, plan_activity_id').in('plan_activity_id', activityIds).neq('status', 'CANCELLED')
+      : { data: [] };
+    const taskRows = (taskData ?? []) as Row[];
+    const assignees = [...new Set(taskRows.map((x) => x.assignee_person_id as string).filter(Boolean))];
+    const { data: assigneeRows } = assignees.length ? await db.from('persons').select('id, full_name_en, full_name_am').in('id', assignees) : { data: [] };
+    const assigneeName = new Map(((assigneeRows ?? []) as Row[]).map((x) => [x.id as string, (x.full_name_am as string) || (x.full_name_en as string)]));
+    const tasksOf = new Map<string, PlanTask[]>();
+    for (const x of taskRows) {
+      tasksOf.set(x.plan_activity_id as string, [
+        ...(tasksOf.get(x.plan_activity_id as string) ?? []),
+        { id: x.id as string, task_no: x.task_no as string, title: x.title as string, status: x.status as string, progress: Number(x.progress ?? 0), assignee: assigneeName.get(x.assignee_person_id as string) ?? '' },
+      ]);
+    }
 
     const updatesOf = new Map<string, PlanUpdate[]>();
     for (const u of updateRows) {
@@ -114,6 +131,7 @@ export async function loadPlans(year?: number): Promise<Loaded<PlansData>> {
         progress: Number(a.progress ?? 0),
         state: (a.state as ActivityState) ?? 'NOT_STARTED',
         updates: (updatesOf.get(a.id as string) ?? []).sort((x, y) => y.created_at.localeCompare(x.created_at)),
+        tasks: tasksOf.get(a.id as string) ?? [],
       });
       activitiesOf.set(a.plan_id as string, list);
     }
@@ -139,6 +157,7 @@ export async function loadPlans(year?: number): Promise<Loaded<PlansData>> {
         units,
         plans,
         editable_units: unitIds.filter((id) => canEdit(me, id)),
+        people: await unitPeople(db, unitIds.filter((id) => canEdit(me, id))),
         can_review: me.permissions.includes('TASK_ASSIGN'),
       },
     };

@@ -13,6 +13,7 @@ import {
   Pencil,
   Repeat,
   Send,
+  UserCheck,
   X,
 } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
@@ -28,6 +29,7 @@ import {
   remindTask,
   reportTask,
   reviewTask,
+  setTaskAssignee,
   stopRepeating,
   updateTask,
   type TaskInput,
@@ -50,6 +52,7 @@ import {
   type Frequency,
   type Task,
   type TaskFile,
+  type TaskPerson,
   type TaskPriority,
   type TaskSource,
 } from '@/lib/tasks/types';
@@ -370,16 +373,39 @@ export function TaskForm({ data, task, onClose, onDone }: { data: TasksState; ta
 
 // ── One task: details, reports, review ──────────────────────────────────────
 
-export function TaskDetail({ task, onClose, onEdit, onDone }: { task: Task; onClose: () => void; onEdit: () => void; onDone: Done }) {
+export function TaskDetail({
+  task,
+  people = [],
+  onClose,
+  onEdit,
+  onGivePart,
+  onDone,
+}: {
+  task: Task;
+  /** The department's people, to choose who does it */
+  people?: TaskPerson[];
+  onClose: () => void;
+  onEdit: () => void;
+  /** Give a part of this task to someone in the department */
+  onGivePart?: () => void;
+  onDone: Done;
+}) {
   const { t, locale } = useLang();
   const { user, can } = useAuth();
   const today = todayIso();
   const canAssign = can('TASK_ASSIGN');
   const inUnit = can('TASK_REPORT') && (user?.organizationIds ?? []).includes(task.unit_id);
-  const canReport = WORK_STATUSES.includes(task.status) && (inUnit || canAssign);
-  const canReview = canAssign && task.status === 'SUBMITTED';
+  /** The department's head (or someone who gives tasks) */
+  const head = inUnit || canAssign;
+  /** The person this task was given to */
+  const isMine = Boolean(task.assignee_id) && task.assignee_id === user?.person?.id;
+  /** Who gave it follows it up: the Executive (TASK_ASSIGN), or the head for the department's own tasks */
+  const followUp = canAssign || (task.internal && inUnit);
+  const canReport = WORK_STATUSES.includes(task.status) && (head || isMine);
+  const canReview = followUp && task.status === 'SUBMITTED';
   const isOpen = OPEN_STATUSES.includes(task.status);
-  const canAttach = task.status !== 'CANCELLED' && (inUnit || canAssign);
+  const canAttach = task.status !== 'CANCELLED' && (head || isMine);
+  const [who, setWho] = useState(task.assignee_id ?? '');
   const canRemove = (f: TaskFile) => canAssign || f.uploaded_by_id === user?.systemUser.id;
 
   const [report, setReport] = useState('');
@@ -465,6 +491,9 @@ export function TaskDetail({ task, onClose, onEdit, onDone }: { task: Task; onCl
           <span className={STATUS[task.status].cls}>{t(...STATUS[task.status].label)}</span>
           {overdue && <span className="badge badge-danger">{t('Overdue', 'ጊዜው አልፏል')}</span>}
           <span className={`text-xs ${PRIORITY[task.priority].cls}`}>{t(...PRIORITY[task.priority].label)}</span>
+          {task.internal && <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">{t('Department’s own task', 'የክፍሉ የውስጥ ተግባር')}</span>}
+          {task.plan_activity && <span className="text-[11px] px-2 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200">🎯 {task.plan_activity}</span>}
+          {task.parent_task_no && <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">🧩 {t('Part of', 'የ… አካል')} {task.parent_task_no}</span>}
           {task.repeats && task.series_id && (
             <span className="inline-flex items-center gap-1 text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-full px-2 py-0.5">
               <Repeat size={12} />
@@ -500,6 +529,49 @@ export function TaskDetail({ task, onClose, onEdit, onDone }: { task: Task; onCl
           {task.completed_at && <Info label={t('Completed on', 'የተጠናቀቀበት')} value={date(task.completed_at)} />}
         </dl>
 
+        {/* Who does it — the department's head chooses */}
+        <div className="flex flex-wrap items-center gap-2 p-3 rounded-xl bg-slate-50 border border-slate-200">
+          <UserCheck size={15} className="text-slate-500" />
+          <span className="text-xs text-slate-500">{t('Who does it', 'የሚሠራው')}:</span>
+          {head && isOpen && people.length > 0 ? (
+            <>
+              <select value={who} onChange={(e) => setWho(e.target.value)} className="form-input text-xs py-1 w-auto min-w-[12rem]">
+                <option value="">{t('The department (no one person)', 'ክፍሉ (አንድ ሰው አይደለም)')}</option>
+                {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              {who !== (task.assignee_id ?? '') && (
+                <button
+                  disabled={busy}
+                  onClick={() => run(() => setTaskAssignee(task.id, who), who ? t('Given — they were told', 'ተሰጥቷል — ተነግሯቸዋል') : t('Taken back to the department', 'ወደ ክፍሉ ተመልሷል'))}
+                  className="btn btn-primary text-xs py-1 disabled:opacity-50"
+                >
+                  {t('Save', 'አስቀምጥ')}
+                </button>
+              )}
+            </>
+          ) : (
+            <span className="text-sm font-medium text-slate-900">{task.assignee || t('The department', 'ክፍሉ')}</span>
+          )}
+          {head && isOpen && people.length === 0 && (
+            <span className="text-[11px] text-slate-400">{t('(no people listed in this department yet)', '(በዚህ ክፍል ገና ሰው አልተመዘገበም)')}</span>
+          )}
+        </div>
+
+        {(task.parts.total > 0 || (head && isOpen && onGivePart && !task.parent_task_id)) && (
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <span className="text-slate-600">
+              🧩 {task.parts.total > 0
+                ? t(`Parts given to people: ${task.parts.done} of ${task.parts.total} done`, `ለሰዎች የተሰጡ ክፍሎች፦ ${task.parts.total} ውስጥ ${task.parts.done} ተጠናቀዋል`)
+                : t('You can split this task among people in the department.', 'ይህን ተግባር በክፍሉ ሰዎች መካከል መከፋፈል ይችላሉ።')}
+            </span>
+            {head && isOpen && onGivePart && !task.parent_task_id && (
+              <button onClick={onGivePart} className="text-xs text-blue-600 hover:bg-blue-50 font-semibold px-2 py-1 rounded">
+                + {t('Give a part to someone', 'ክፍሉን ለሰው ስጥ')}
+              </button>
+            )}
+          </div>
+        )}
+
         {task.details && <p className="whitespace-pre-wrap text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3">{task.details}</p>}
 
         {/* History */}
@@ -513,12 +585,12 @@ export function TaskDetail({ task, onClose, onEdit, onDone }: { task: Task; onCl
                 <li key={u.id} className="relative">
                   <span className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-blue-500 ring-2 ring-white" />
                   <div className="text-xs text-slate-500">
-                    <span className="font-semibold text-slate-800">{t(...UPDATE_KIND[u.kind])}</span>
+                    <span className="font-semibold text-slate-800">{t(...UPDATE_KIND[u.kind])}{u.kind === 'HANDED' && u.note ? ` ${u.note}` : ''}</span>
                     {u.progress !== null && u.kind === 'PROGRESS' && ` · ${u.progress}%`}
                     {' · '}
                     {u.author || '—'} · {date(u.at)}
                   </div>
-                  {u.note && <p className="whitespace-pre-wrap text-slate-700 mt-0.5">{u.note}</p>}
+                  {u.note && u.kind !== 'HANDED' && <p className="whitespace-pre-wrap text-slate-700 mt-0.5">{u.note}</p>}
                   {fileList(task.files.filter((f) => f.update_id === u.id))}
                 </li>
               ))}
@@ -551,7 +623,7 @@ export function TaskDetail({ task, onClose, onEdit, onDone }: { task: Task; onCl
         {canReport && (
           <div className="space-y-3 p-4 rounded-xl border border-blue-100 bg-blue-50/50">
             <h4 className="text-xs font-bold text-slate-800">
-              {inUnit ? t('Report on this task', 'በዚህ ተግባር ላይ ሪፖርት ያድርጉ') : t('Record a report for the department', 'ለክፍሉ ሪፖርት መዝግብ')}
+              {isMine && !head ? t('Report on your work', 'በሥራዎ ላይ ሪፖርት ያድርጉ') : inUnit ? t('Report on this task', 'በዚህ ተግባር ላይ ሪፖርት ያድርጉ') : t('Record a report for the department', 'ለክፍሉ ሪፖርት መዝግብ')}
             </h4>
             {task.status === 'RETURNED' && (
               <p className="text-xs text-red-700">{t('Returned — see the note above for what is still needed.', 'ተመልሷል — የሚቀረውን ከላይ ያለውን ማስታወሻ ይመልከቱ።')}</p>
@@ -607,14 +679,14 @@ export function TaskDetail({ task, onClose, onEdit, onDone }: { task: Task; onCl
                 className="btn btn-primary text-xs inline-flex items-center gap-1.5 disabled:opacity-50"
               >
                 <Send size={14} />
-                {t('Submit final report', 'የማጠቃለያ ሪፖርት አቅርብ')}
+                {head ? t('Submit final report', 'የማጠቃለያ ሪፖርት አቅርብ') : task.internal ? t('Done — send for review', 'ጨርሻለሁ — ለግምገማ ላክ') : t('My part is done', 'ድርሻዬን ጨርሻለሁ')}
               </button>
             </div>
           </div>
         )}
 
         {/* The giver follows up */}
-        {canAssign && isOpen && (
+        {followUp && isOpen && (
           <div className="space-y-3 p-4 rounded-xl border border-slate-200">
             <h4 className="text-xs font-bold text-slate-800">
               {canReview ? t('Review the report', 'ሪፖርቱን ገምግም') : t('Follow up', 'ክትትል')}
@@ -631,10 +703,12 @@ export function TaskDetail({ task, onClose, onEdit, onDone }: { task: Task; onCl
               className="form-input text-sm"
             />
             <div className="flex flex-wrap justify-end gap-2">
-              <button onClick={onEdit} disabled={busy} className="btn btn-secondary text-xs inline-flex items-center gap-1.5 disabled:opacity-50">
-                <Pencil size={13} />
-                {t('Edit', 'አስተካክል')}
-              </button>
+              {canAssign && (
+                <button onClick={onEdit} disabled={busy} className="btn btn-secondary text-xs inline-flex items-center gap-1.5 disabled:opacity-50">
+                  <Pencil size={13} />
+                  {t('Edit', 'አስተካክል')}
+                </button>
+              )}
               <button
                 onClick={() => run(() => cancelTask(task.id, note), t('Task cancelled', 'ተግባሩ ተሰርዟል'))}
                 disabled={busy}

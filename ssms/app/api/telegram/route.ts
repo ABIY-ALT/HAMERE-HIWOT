@@ -13,6 +13,9 @@
 //                        everyone linked: 📅 coming events — only this chat's own people
 //   💳 I paid            report a dues payment (one month or several) for Finance to approve (lib/telegram/dues-flow);
 //                        the steps after it, incl. a photo of the receipt, follow telegram_sessions
+//   ✅ I'm here          check in at a program / choir rehearsal: code on the leader's screen
+//                        + optional location (lib/telegram/checkin-flow)
+//   🗂️ My tasks          tasks the member's department gave them; report progress (lib/telegram/tasks-flow)
 //   ✉️ Ask a department  a question to a department, answered on the website (lib/telegram/questions)
 //   ℹ️ About us          topics about the Sunday school written by the office (lib/telegram/about) — for anyone
 //   /stop                stop all messages to this chat (and forget its number)
@@ -43,6 +46,8 @@ import {
 import { activeSession, clearSession, continuePaid, startPaid } from '@/lib/telegram/dues-flow';
 import { refreshChat, savedChat, syncChat, tellUpdated } from '@/lib/telegram/links';
 import { askerOf, continueAsk, startAsk, type AskData } from '@/lib/telegram/questions';
+import { continueTasks, startTasks, type TasksData } from '@/lib/telegram/tasks-flow';
+import { continueCheckin, startCheckin, type CheckinData } from '@/lib/telegram/checkin-flow';
 import { BACK_BUTTON, aboutMenu, isAboutMessage, loadAbout, topicButton, topicText } from '@/lib/telegram/about';
 
 export const dynamic = 'force-dynamic';
@@ -53,6 +58,8 @@ type Update = {
     chat?: { id: number; type?: string };
     from?: { id?: number; first_name?: string; last_name?: string; username?: string };
     contact?: { phone_number?: string; user_id?: number };
+    /** Shared with “📍 Share my location” (check-in) */
+    location?: { latitude: number; longitude: number };
     caption?: string;
     /** The same picture in several sizes, smallest first */
     photo?: { file_id: string }[];
@@ -187,7 +194,12 @@ export async function POST(request: Request) {
     // ── In the middle of "💳 I paid"? ──
     const session = await activeSession(db, chatId);
     if (session && !leavesSession(text)) {
-      if (session.step.startsWith('ASK_')) {
+      if (session.step.startsWith('CHECK_')) {
+        const loc = message?.location ? { lat: message.location.latitude, lng: message.location.longitude } : null;
+        await continueCheckin(db, chatId, session as unknown as { step: string; data: CheckinData }, { text, location: loc }, menu);
+      } else if (session.step.startsWith('TASK_')) {
+        await continueTasks(db, chatId, session as unknown as { step: string; data: TasksData }, text, scope, menu);
+      } else if (session.step.startsWith('ASK_')) {
         await continueAsk(db, chatId, session as unknown as { step: string; data: AskData }, text, await askerOf(db, scope, telegramName), menu);
       } else {
         await continuePaid(db, chatId, session, { text, photoFileId: pictureOf(message!), caption: message?.caption }, menu);
@@ -203,6 +215,8 @@ export async function POST(request: Request) {
     else if (asked(text, 'dues', BUTTONS.dues)) await sendTelegram(chatId, await duesText(db, scope), menu);
     else if (asked(text, 'paid', BUTTONS.paid)) await startPaid(db, chatId, scope);
     else if (asked(text, 'ask', BUTTONS.ask)) await startAsk(db, chatId, scope);
+    else if (asked(text, 'tasks', BUTTONS.mytasks)) await startTasks(db, chatId, scope, menu);
+    else if (asked(text, 'here', BUTTONS.here)) await startCheckin(db, chatId, scope, menu);
     else if (asked(text, 'events', BUTTONS.events)) await sendTelegram(chatId, await eventsText(db, scope), menu);
     else await sendTelegram(chatId, escapeHtml(helpFor(scope)), menu);
   } catch (e) {

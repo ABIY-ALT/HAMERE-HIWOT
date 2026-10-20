@@ -59,6 +59,18 @@ export interface PlanActivity {
   state: ActivityState;
   /** Newest first */
   updates: PlanUpdate[];
+  /** Tasks made to carry it out (migration 035) */
+  tasks: PlanTask[];
+}
+
+/** A task that carries out a plan activity. */
+export interface PlanTask {
+  id: string;
+  task_no: string;
+  title: string;
+  status: string;
+  assignee: string;
+  progress: number;
 }
 
 export interface UnitPlan {
@@ -91,6 +103,8 @@ export interface PlansData {
   editable_units: string[];
   /** May approve / return plans and send reminders (TASK_ASSIGN) */
   can_review: boolean;
+  /** unit id → its people, for making tasks from activities (editable units) */
+  people: Record<string, { id: string; name: string }[]>;
 }
 
 /** The quarter of an Ethiopian month (Pagume counts with Q4). */

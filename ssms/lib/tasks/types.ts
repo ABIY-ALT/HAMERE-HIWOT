@@ -10,7 +10,7 @@ import { ethiopianToIso, isoToEthiopian } from '@/lib/utils/ethiopian-calendar';
 export type TaskStatus = 'ASSIGNED' | 'IN_PROGRESS' | 'SUBMITTED' | 'RETURNED' | 'COMPLETED' | 'CANCELLED';
 export type TaskPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
 export type TaskSource = 'ROUTINE' | 'MEETING';
-export type UpdateKind = 'PROGRESS' | 'SUBMITTED' | 'RETURNED' | 'COMPLETED' | 'CANCELLED' | 'REMINDED';
+export type UpdateKind = 'PROGRESS' | 'SUBMITTED' | 'RETURNED' | 'COMPLETED' | 'CANCELLED' | 'REMINDED' | 'HANDED';
 export type Frequency = 'WEEKLY' | 'MONTHLY' | 'QUARTERLY';
 
 export interface TaskFile {
@@ -76,6 +76,25 @@ export interface Task {
   series_id: string | null;
   /** How often it repeats, while its series is still running. */
   repeats: Frequency | null;
+  /** The person in the department doing it (migration 035) */
+  assignee_id: string | null;
+  assignee: string;
+  /** Given by the department to its own people — the head reviews it */
+  internal: boolean;
+  /** Part of a bigger task */
+  parent_task_id: string | null;
+  parent_task_no: string;
+  /** The plan activity it carries out */
+  plan_activity_id: string | null;
+  plan_activity: string;
+  /** Its parts given to people: how many, how many done */
+  parts: { total: number; done: number };
+}
+
+/** Someone in a department who can be given a task. */
+export interface TaskPerson {
+  id: string;
+  name: string;
 }
 
 export interface TaskUnit {
@@ -89,9 +108,11 @@ export interface TasksData {
   tasks: Task[];
   units: TaskUnit[];
   series: TaskSeries[];
+  /** unit id → its people (members, servants, staff accounts), for the units this user works in */
+  people: Record<string, TaskPerson[]>;
 }
 
-export const EMPTY_TASKS: TasksData = { tasks: [], units: [], series: [] };
+export const EMPTY_TASKS: TasksData = { tasks: [], units: [], series: [], people: {} };
 
 /** Waiting on the department. */
 export const WORK_STATUSES: TaskStatus[] = ['ASSIGNED', 'IN_PROGRESS', 'RETURNED'];
@@ -126,6 +147,7 @@ export const UPDATE_KIND: Record<UpdateKind, [string, string]> = {
   COMPLETED: ['Accepted as completed', 'ተጠናቋል ተብሎ ተቀባይነት አገኘ'],
   CANCELLED: ['Cancelled', 'ተሰርዟል'],
   REMINDED: ['Reminder sent', 'ማስታወሻ ተልኳል'],
+  HANDED: ['Given to', 'ለ… ተሰጠ'],
 };
 
 /** Units that can be given tasks, in the order the form lists them. */
@@ -191,4 +213,26 @@ export const FILE_ACCEPT = Object.entries(FILE_TYPES).flatMap(([mime, ext]) => [
 
 export function fileSize(bytes: number): string {
   return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+// ── My tasks (migration 035) ─────────────────────────────────────────────────
+
+/** A task given to the signed-in person, for "My tasks". */
+export interface MyTask {
+  id: string;
+  task_no: string;
+  title: string;
+  details: string;
+  unit: string;
+  unit_am: string;
+  /** Who gave it: the department head (own task) or the giving body */
+  given_by: string;
+  internal: boolean;
+  plan_activity: string;
+  priority: TaskPriority;
+  due_date: string | null;
+  status: TaskStatus;
+  progress: number;
+  /** Latest first */
+  updates: TaskUpdate[];
 }

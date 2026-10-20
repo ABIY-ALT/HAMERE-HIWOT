@@ -13,6 +13,12 @@
 //             given automatically (lib/tasks/recurring.ts)
 //   files    (anyone who may report)              → private bucket "task-files",
 //             opened through /dashboard/tasks/files/[id]
+// People inside a department (migration 035):
+//   hand     (the unit's head, TASK_ASSIGN)        → the person in the department doing it
+//   own task (the unit's head)                     → a task for its own people (internal):
+//             the head reviews it; it can be part of a bigger task or of a plan activity
+//   report   (the person the task was given to)   → progress; "done" goes to the head
+//             (website "My tasks" or the bot "🗂️ My tasks", lib/tasks/report)
 // Every step is kept in task_updates.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -23,6 +29,8 @@ import type { SessionUser } from '@/lib/auth/session';
 import { notifyLater } from '@/lib/push/send';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import { issueRepeatingTasks } from '@/lib/tasks/recurring';
+import { inUnit, tellPerson, unitPeople } from '@/lib/tasks/people';
+import { applyReport, loadTaskRow, type TaskRow } from '@/lib/tasks/report';
 import {
   ASSIGNEE_TYPES,
   FILE_TYPES,
@@ -32,6 +40,7 @@ import {
   WORK_STATUSES,
   type Frequency,
   type Task,
+  type MyTask,
   type TaskFile,
   type TaskPriority,
   type TaskSeries,
@@ -51,6 +60,7 @@ const optionalDate = z.string().refine((v) => v === '' || /^\d{4}-\d{2}-\d{2}$/.
 const isUuid = (id: string) => /^[0-9a-f-]{36}$/i.test(id);
 const personName = (u: unknown) => (u as ByUser)?.person?.full_name_en ?? '';
 const TASKS_PAGE = '/dashboard/tasks';
+const MY_TASKS_PAGE = '/dashboard/my-tasks';
 
 function missingTables(message: string) {
   if (/task_series|task_files|series_id|[Bb]ucket not found/.test(message)) {
@@ -78,7 +88,7 @@ export async function loadTasks(): Promise<Loaded<TasksData>> {
     const units: TaskUnit[] = unitRows.map((u) => ({ id: u.id, name_en: u.name_en, name_am: u.name_am || u.name_en, type: u.unit_type }));
 
     const mine = me.organizationIds.filter(isUuid);
-    if (!seesAll(me) && mine.length === 0) return { mode: 'live', data: { tasks: [], units, series: [] } };
+    if (!seesAll(me) && mine.length === 0) return { mode: 'live', data: { tasks: [], units, series: [], people: {} } };
 
     await issueRepeatingTasks(db);
 
@@ -127,6 +137,27 @@ export async function loadTasks(): Promise<Loaded<TasksData>> {
       };
     });
     const repeatsOf = new Map(series.map((s) => [s.id, s.frequency]));
+
+    // People (migration 035): who does each task, its plan activity, its parts
+    const assigneeIds = [...new Set(rows.map((r) => r.assignee_person_id as string).filter(Boolean))];
+    const activityIds = [...new Set(rows.map((r) => r.plan_activity_id as string).filter(Boolean))];
+    const peopleUnits = seesAll(me) ? units.filter((u) => ASSIGNEE_TYPES.includes(u.type)).map((u) => u.id) : mine;
+    const [assigneeRows, activityRows, people] = await Promise.all([
+      assigneeIds.length ? db.from('persons').select('id, full_name_en, full_name_am').in('id', assigneeIds) : Promise.resolve({ data: [] }),
+      activityIds.length ? db.from('plan_activities').select('id, title').in('id', activityIds) : Promise.resolve({ data: [] }),
+      unitPeople(db, peopleUnits),
+    ]);
+    const assigneeName = new Map(((assigneeRows.data ?? []) as { id: string; full_name_en: string; full_name_am: string | null }[]).map((x) => [x.id, x.full_name_am || x.full_name_en]));
+    const activityTitle = new Map(((activityRows.data ?? []) as { id: string; title: string }[]).map((x) => [x.id, x.title]));
+    const taskNo = new Map(rows.map((r) => [r.id, r.task_no as string]));
+    const partsOf = new Map<string, { total: number; done: number }>();
+    for (const r of rows) {
+      if (!r.parent_task_id || r.status === 'CANCELLED') continue;
+      const c = partsOf.get(r.parent_task_id as string) ?? { total: 0, done: 0 };
+      c.total += 1;
+      if (r.status === 'COMPLETED') c.done += 1;
+      partsOf.set(r.parent_task_id as string, c);
+    }
     const filesOf = new Map<string, TaskFile[]>();
     for (const f of fileRows) {
       const list = filesOf.get(f.task_id as string) ?? [];
@@ -183,10 +214,18 @@ export async function loadTasks(): Promise<Loaded<TasksData>> {
         files: filesOf.get(r.id) ?? [],
         series_id: (r.series_id as string) ?? null,
         repeats: repeatsOf.get(r.series_id as string) ?? null,
+        assignee_id: (r.assignee_person_id as string) ?? null,
+        assignee: assigneeName.get(r.assignee_person_id as string) ?? '',
+        internal: Boolean(r.internal),
+        parent_task_id: (r.parent_task_id as string) ?? null,
+        parent_task_no: taskNo.get(r.parent_task_id as string) ?? '',
+        plan_activity_id: (r.plan_activity_id as string) ?? null,
+        plan_activity: activityTitle.get(r.plan_activity_id as string) ?? '',
+        parts: partsOf.get(r.id) ?? { total: 0, done: 0 },
       };
     });
 
-    return { mode: 'live', data: { tasks, units, series } };
+    return { mode: 'live', data: { tasks, units, series, people } };
   } catch (e) {
     return { mode: 'error', error: missingTables(errorMessage(e)) };
   }
@@ -287,14 +326,6 @@ export async function assignTasks(
   }
 }
 
-async function loadTask(db: Db, id: string) {
-  return (await db.from('tasks')
-    .select('id, task_no, title, unit_id, status, due_date, created_by')
-    .eq('id', id)
-    .single()
-    .then(check)) as { id: string; task_no: string; title: string; unit_id: string; status: TaskStatus; due_date: string | null; created_by: string };
-}
-
 /** Moves a task from one of the expected statuses; fails if someone else changed it first. */
 async function moveTask(db: Db, id: string, from: TaskStatus[], patch: Record<string, unknown>) {
   const updated = (await db.from('tasks').update(patch).eq('id', id).in('status', from).select('id').then(check)) as { id: string }[];
@@ -315,11 +346,20 @@ function worksOn(me: SessionUser, task: { unit_id: string }) {
   return (me.permissions.includes('TASK_REPORT') && me.organizationIds.includes(task.unit_id)) || me.permissions.includes('TASK_ASSIGN');
 }
 
+/** The person the task was given to (migration 035). */
+const isAssignee = (me: SessionUser, task: Pick<TaskRow, 'assignee_person_id'>) => Boolean(task.assignee_person_id) && task.assignee_person_id === me.person.id;
+
+/** Follows up the task: TASK_ASSIGN for every task; the unit's head for the department's own tasks. */
+const followsUp = (me: SessionUser, task: Pick<TaskRow, 'internal' | 'unit_id'>) =>
+  me.permissions.includes('TASK_ASSIGN') || (task.internal && me.permissions.includes('TASK_REPORT') && me.organizationIds.includes(task.unit_id));
+
 export async function updateTask(id: string, input: TaskInput & { unit_id: string }): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('TASK_ASSIGN');
+    const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT');
     const t = TaskSchema.parse(input);
-    const task = await loadTask(db, id);
+    const task = await loadTaskRow(db, id);
+    if (!followsUp(me, task)) throw new Error('Only the one who gave this task can change it');
+    if (!me.permissions.includes('TASK_ASSIGN') && input.unit_id !== task.unit_id) throw new Error('The department’s own task stays in the department');
     if (!OPEN_STATUSES.includes(task.status)) throw new Error('A finished task cannot be changed');
     if (input.unit_id !== task.unit_id) await checkUnits(db, [input.unit_id]);
     await moveTask(db, id, [task.status], { ...taskFields(t), unit_id: input.unit_id });
@@ -343,28 +383,31 @@ const ReportSchema = z.object({
   submit: z.boolean(),
 });
 
-/** A progress report, or (submit) the final report that asks for the task to be accepted. */
+/**
+ * A progress report, or (submit) the final report. The department's head (or
+ * TASK_ASSIGN) reports for the department; the person the task was given to
+ * reports on their own work (lib/tasks/report decides where "done" goes).
+ */
 export async function reportTask(
   id: string,
   input: z.input<typeof ReportSchema>
 ): Promise<{ ok: true; updateId: string } | { ok: false; error: string }> {
   try {
-    const { me, db } = await authorize('TASK_REPORT', 'TASK_ASSIGN');
+    const { me, db } = await authorize();
     const r = ReportSchema.parse(input);
-    const task = await loadTask(db, id);
-    if (!worksOn(me, task)) throw new Error('Only the department this task was given to can report on it');
-    if (!WORK_STATUSES.includes(task.status)) throw new Error('This task is not waiting for a report');
-
-    const progress = r.submit ? 100 : r.progress;
-    await moveTask(db, id, WORK_STATUSES, { status: r.submit ? 'SUBMITTED' : 'IN_PROGRESS', progress });
-    const updateId = await logUpdate(db, me, id, r.submit ? 'SUBMITTED' : 'PROGRESS', r.note, progress);
-    if (r.submit) {
-      notifyLater(
-        { users: [task.created_by], except: me.systemUser.id },
-        { title: `${task.task_no} ሪፖርት ቀርቧል · Report submitted`, body: `${task.title} — ${r.note.slice(0, 120)}`, url: TASKS_PAGE, tag: `task-${id}` }
-      );
-    }
-    return { ok: true, updateId };
+    const task = await loadTaskRow(db, id);
+    const head = worksOn(me, task);
+    if (!head && !isAssignee(me, task)) throw new Error('Only the department this task was given to can report on it');
+    const res = await applyReport(db, task, {
+      note: r.note,
+      progress: r.progress,
+      done: r.submit,
+      byHead: head,
+      authorUserId: me.systemUser.id,
+      authorPersonId: me.person.id,
+      authorName: me.person.full_name_am || me.person.full_name_en,
+    });
+    return { ok: true, updateId: res.updateId };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
   }
@@ -377,7 +420,7 @@ const BUCKET = 'task-files';
 /** Attach a photo or document to a task, or (update_id) to one of its reports. */
 export async function uploadTaskFile(form: FormData): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('TASK_REPORT', 'TASK_ASSIGN');
+    const { me, db } = await authorize();
     const taskId = String(form.get('task_id') ?? '');
     const updateId = String(form.get('update_id') ?? '') || null;
     const file = form.get('file');
@@ -386,8 +429,8 @@ export async function uploadTaskFile(form: FormData): Promise<ActionResult> {
     const ext = FILE_TYPES[file.type];
     if (!ext) throw new Error(`${file.name}: only photos, PDF, Word and Excel files can be attached`);
 
-    const task = await loadTask(db, taskId);
-    if (!worksOn(me, task)) throw new Error('Only the department this task was given to can attach files');
+    const task = await loadTaskRow(db, taskId);
+    if (!worksOn(me, task) && !isAssignee(me, task)) throw new Error('Only the department this task was given to can attach files');
     if (task.status === 'CANCELLED') throw new Error('This task was cancelled');
     if (updateId) {
       const { data: update } = await db.from('task_updates').select('id').eq('id', updateId).eq('task_id', taskId).maybeSingle();
@@ -454,11 +497,12 @@ export async function stopRepeating(seriesId: string): Promise<ActionResult> {
 
 export async function reviewTask(id: string, decision: 'COMPLETED' | 'RETURNED', note: string): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('TASK_ASSIGN');
+    const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT');
     if (decision !== 'COMPLETED' && decision !== 'RETURNED') throw new Error('Invalid decision');
     const cleanNote = note.trim();
     if (decision === 'RETURNED' && cleanNote.length < 3) throw new Error('Write what still has to be done');
-    const task = await loadTask(db, id);
+    const task = await loadTaskRow(db, id);
+    if (!followsUp(me, task)) throw new Error('Only the one who gave this task can review it');
     if (task.status !== 'SUBMITTED') throw new Error('There is no report waiting for review on this task');
 
     await moveTask(db, id, ['SUBMITTED'], {
@@ -467,6 +511,9 @@ export async function reviewTask(id: string, decision: 'COMPLETED' | 'RETURNED',
     });
     await logUpdate(db, me, id, decision, cleanNote);
     const outcome = decision === 'COMPLETED' ? 'ተቀባይነት አግኝቷል · accepted' : 'ተመልሷል · returned';
+    if (task.assignee_person_id && task.assignee_person_id !== me.person.id) {
+      await tellPerson(db, task.assignee_person_id, { title: `${task.task_no} ${outcome}`, body: cleanNote ? `${task.title} — ${cleanNote}` : task.title, url: MY_TASKS_PAGE, tag: `task-${id}` });
+    }
     notifyLater(
       { units: { ids: [task.unit_id], holding: 'TASK_REPORT' }, except: me.systemUser.id },
       { title: `${task.task_no} ${outcome}`, body: cleanNote ? `${task.title} — ${cleanNote}` : task.title, url: TASKS_PAGE, tag: `task-${id}` }
@@ -479,10 +526,11 @@ export async function reviewTask(id: string, decision: 'COMPLETED' | 'RETURNED',
 
 export async function cancelTask(id: string, reason: string): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('TASK_ASSIGN');
+    const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT');
     const cleanReason = reason.trim();
     if (cleanReason.length < 3) throw new Error('Write why the task is cancelled');
-    const task = await loadTask(db, id);
+    const task = await loadTaskRow(db, id);
+    if (!followsUp(me, task)) throw new Error('Only the one who gave this task can cancel it');
     if (!OPEN_STATUSES.includes(task.status)) throw new Error('This task is already finished');
     await moveTask(db, id, OPEN_STATUSES, { status: 'CANCELLED' });
     await logUpdate(db, me, id, 'CANCELLED', cleanReason);
@@ -498,10 +546,14 @@ export async function cancelTask(id: string, reason: string): Promise<ActionResu
 
 export async function remindTask(id: string, note: string): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('TASK_ASSIGN');
-    const task = await loadTask(db, id);
+    const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT');
+    const task = await loadTaskRow(db, id);
+    if (!followsUp(me, task) && !(task.assignee_person_id && worksOn(me, task))) throw new Error('Only the one who gave this task can send a reminder');
     if (!WORK_STATUSES.includes(task.status)) throw new Error('This task is not waiting on the department');
     await logUpdate(db, me, id, 'REMINDED', note.trim());
+    if (task.assignee_person_id) {
+      await tellPerson(db, task.assignee_person_id, { title: `${task.task_no} ማስታወሻ · Reminder`, body: `${task.title}${dueText(task.due_date)}${note.trim() ? ` — ${note.trim()}` : ''}`, url: MY_TASKS_PAGE, tag: `task-${id}` });
+    }
     notifyLater(
       { units: { ids: [task.unit_id], holding: 'TASK_REPORT' }, except: me.systemUser.id },
       {
@@ -514,5 +566,163 @@ export async function remindTask(id: string, note: string): Promise<ActionResult
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
+  }
+}
+
+// ── People inside a department (migration 035) ───────────────────────────────
+
+const MIGRATION_035 = 'Run database migration 035 (tasks for people in a department) first';
+const missing035 = (m: string) => (/assignee_person_id|parent_task_id|plan_activity_id|HANDED|column tasks\.internal/.test(m) ? MIGRATION_035 : m);
+
+/** Give the task to a person in the department (or take it back: personId ''). The unit's head or TASK_ASSIGN. */
+export async function setTaskAssignee(taskId: string, personId: string): Promise<ActionResult> {
+  try {
+    const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT');
+    const task = await loadTaskRow(db, z.string().min(1).parse(taskId));
+    if (!worksOn(me, task)) throw new Error('Only the department’s head can choose who does it');
+    if (!OPEN_STATUSES.includes(task.status)) throw new Error('This task is already finished');
+    const person = z.string().parse(personId ?? '');
+    if (person && !(await inUnit(db, task.unit_id, person))) throw new Error('That person is not in this department');
+    const { error } = await db.from('tasks').update({ assignee_person_id: person || null }).eq('id', task.id);
+    if (error) throw new Error(missing035(error.message));
+    if (person) {
+      const { data } = await db.from('persons').select('full_name_en, full_name_am').eq('id', person).maybeSingle();
+      const p = data as { full_name_en: string; full_name_am: string | null } | null;
+      await db.from('task_updates').insert({ task_id: task.id, author_id: me.systemUser.id, kind: 'HANDED', note: p?.full_name_am || p?.full_name_en || null });
+      await tellPerson(db, person, {
+        title: 'አዲስ ተግባር ተሰጥዎታል · A task for you',
+        body: `${task.task_no} — ${task.title}${dueText(task.due_date)}`,
+        url: MY_TASKS_PAGE,
+        tag: `task-${task.id}`,
+      });
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: missing035(errorMessage(e)) };
+  }
+}
+
+const OwnTaskSchema = z.object({
+  unit_id: z.string().min(1, 'Choose the department'),
+  title: z.string().trim().min(3, 'Write what has to be done').max(300),
+  details: z.string().trim().max(4000),
+  priority: z.enum(['LOW', 'NORMAL', 'HIGH', 'URGENT']),
+  due_date: optionalDate,
+  assignee_person_id: z.string().min(1, 'Choose who will do it'),
+  parent_task_id: z.string(),
+  plan_activity_id: z.string(),
+});
+export type OwnTaskInput = z.input<typeof OwnTaskSchema>;
+
+/**
+ * The department gives a task to one of its own people: on its own, as part of
+ * a bigger task (parent), or to carry out an activity of its approved plan.
+ * The unit's head (or TASK_ASSIGN); the head reviews it when it is done.
+ */
+export async function createDepartmentTask(input: OwnTaskInput): Promise<{ ok: true; taskNo: string } | { ok: false; error: string }> {
+  try {
+    const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT');
+    const t = OwnTaskSchema.parse(input);
+    if (!worksOn(me, { unit_id: t.unit_id })) throw new Error('You can only give tasks inside your own department');
+    if (!(await inUnit(db, t.unit_id, t.assignee_person_id))) throw new Error('That person is not in this department');
+    if (t.parent_task_id) {
+      const parent = await loadTaskRow(db, t.parent_task_id);
+      if (parent.unit_id !== t.unit_id) throw new Error('The bigger task belongs to another department');
+      if (!OPEN_STATUSES.includes(parent.status)) throw new Error('The bigger task is already finished');
+    }
+    if (t.plan_activity_id) {
+      const { data: act } = await db.from('plan_activities').select('id, plan_id').eq('id', t.plan_activity_id).maybeSingle();
+      const { data: plan } = act ? await db.from('unit_plans').select('unit_id, status').eq('id', (act as { plan_id: string }).plan_id).maybeSingle() : { data: null };
+      const p = plan as { unit_id: string; status: string } | null;
+      if (!p || p.unit_id !== t.unit_id) throw new Error('That plan activity belongs to another department');
+      if (p.status !== 'APPROVED') throw new Error('Tasks are made from an approved plan');
+    }
+    const { data, error } = await db.from('tasks')
+      .insert({
+        title: t.title,
+        details: t.details || null,
+        from_unit_id: t.unit_id,
+        unit_id: t.unit_id,
+        source: 'ROUTINE',
+        priority: t.priority,
+        due_date: t.due_date || null,
+        created_by: me.systemUser.id,
+        internal: true,
+        assignee_person_id: t.assignee_person_id,
+        parent_task_id: t.parent_task_id || null,
+        plan_activity_id: t.plan_activity_id || null,
+      })
+      .select('id, task_no')
+      .single();
+    if (error) throw new Error(missing035(error.message));
+    const row = data as { id: string; task_no: string };
+    await tellPerson(db, t.assignee_person_id, {
+      title: 'አዲስ ተግባር ተሰጥዎታል · A task for you',
+      body: `${row.task_no} — ${t.title}${dueText(t.due_date || null)}`,
+      url: MY_TASKS_PAGE,
+      tag: `task-${row.id}`,
+    });
+    return { ok: true, taskNo: row.task_no };
+  } catch (e) {
+    return { ok: false, error: missing035(errorMessage(e)) };
+  }
+}
+
+/** "My tasks": the tasks given to the signed-in person — open ones first. */
+export async function loadMyTasks(): Promise<Loaded<{ tasks: MyTask[] }>> {
+  if (!isSupabaseEnabled()) return { mode: 'demo' };
+  try {
+    const { me, db } = await authorize();
+    const { data, error } = await db.from('tasks').select('*').eq('assignee_person_id', me.person.id).order('created_at', { ascending: false }).limit(100);
+    if (error) throw new Error(missing035(missingTables(error.message)));
+    const rows = ((data ?? []) as Row[]).filter((r) => r.status !== 'CANCELLED');
+    const ids = rows.map((r) => r.id);
+    const unitIds = [...new Set(rows.flatMap((r) => [r.unit_id as string, r.from_unit_id as string]).filter(Boolean))];
+    const creatorIds = [...new Set(rows.map((r) => r.created_by as string).filter(Boolean))];
+    const activityIds = [...new Set(rows.map((r) => r.plan_activity_id as string).filter(Boolean))];
+    const [units, creators, acts, updates] = await Promise.all([
+      unitIds.length ? db.from('organization_units').select('id, name_en, name_am').in('id', unitIds) : Promise.resolve({ data: [] }),
+      creatorIds.length ? db.from('system_users').select('id, person:persons!system_users_person_id_fkey(full_name_en, full_name_am)').in('id', creatorIds) : Promise.resolve({ data: [] }),
+      activityIds.length ? db.from('plan_activities').select('id, title').in('id', activityIds) : Promise.resolve({ data: [] }),
+      ids.length ? db.from('task_updates').select('id, task_id, kind, note, progress, created_at, author_id').in('task_id', ids).order('created_at', { ascending: false }) : Promise.resolve({ data: [] }),
+    ]);
+    const unitOf = new Map(((units.data ?? []) as Row[]).map((u) => [u.id, u as Row]));
+    const creatorName = new Map(
+      ((creators.data ?? []) as Row[]).map((c) => {
+        const p = (Array.isArray(c.person) ? c.person[0] : c.person) as { full_name_en?: string; full_name_am?: string | null } | null;
+        return [c.id, p?.full_name_am || p?.full_name_en || ''];
+      })
+    );
+    const actTitle = new Map(((acts.data ?? []) as Row[]).map((a) => [a.id, a.title as string]));
+    const updatesOf = new Map<string, Row[]>();
+    for (const u of (updates.data ?? []) as Row[]) updatesOf.set(u.task_id as string, [...(updatesOf.get(u.task_id as string) ?? []), u]);
+    const label = (id: unknown, am: boolean) => {
+      const u = unitOf.get(id as string);
+      return u ? ((am ? (u.name_am as string) || (u.name_en as string) : (u.name_en as string)) ?? '') : '';
+    };
+    const tasks: MyTask[] = rows
+      .map((r) => ({
+        id: r.id,
+        task_no: r.task_no as string,
+        title: r.title as string,
+        details: (r.details as string) ?? '',
+        unit: label(r.unit_id, false),
+        unit_am: label(r.unit_id, true),
+        given_by: r.internal ? creatorName.get(r.created_by as string) ?? '' : label(r.from_unit_id, true),
+        internal: Boolean(r.internal),
+        plan_activity: actTitle.get(r.plan_activity_id as string) ?? '',
+        priority: r.priority as TaskPriority,
+        due_date: (r.due_date as string) ?? null,
+        status: r.status as TaskStatus,
+        progress: Number(r.progress) || 0,
+        updates: (updatesOf.get(r.id) ?? [])
+          .slice(0, 6)
+          .map((u) => ({ id: u.id, kind: u.kind as UpdateKind, note: (u.note as string) ?? '', progress: u.progress === null || u.progress === undefined ? null : Number(u.progress), author: '', at: u.created_at as string })),
+      }))
+      // Open ones first (soonest due first), then finished ones
+      .sort((a, b) => Number(OPEN_STATUSES.includes(b.status)) - Number(OPEN_STATUSES.includes(a.status)) || (a.due_date ?? '9999').localeCompare(b.due_date ?? '9999'));
+    return { mode: 'live', data: { tasks } };
+  } catch (e) {
+    return { mode: 'error', error: errorMessage(e) };
   }
 }

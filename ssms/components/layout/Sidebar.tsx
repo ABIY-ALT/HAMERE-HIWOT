@@ -28,12 +28,19 @@ import {
   Baby,
   Target,
   MessageCircleQuestion,
+  ClipboardCheck,
+  CheckSquare,
+  QrCode,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLang } from '@/contexts/LangContext';
 import { canSeeNavItem } from '@/lib/permissions';
 import type { PermissionCode } from '@/types';
+
+/** Signed in only for the student or parent portal (no staff permissions) */
+const portalOnly = (user: { permissions: Set<PermissionCode> } | null) =>
+  Boolean(user) && [...user!.permissions].every((p) => p === 'STUDENT_PORTAL' || p === 'PARENT_PORTAL');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Navigation Configuration
@@ -45,6 +52,8 @@ interface NavItem {
   href?: string;
   icon?: React.ElementType;
   permissions?: PermissionCode[];
+  /** Hidden for student / parent portal accounts */
+  staffOnly?: boolean;
   children?: NavItem[];
 }
 
@@ -110,6 +119,20 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
           { labelEn: 'Departments', labelAm: 'ክፍሎች', href: '/dashboard/organization/departments', permissions: ['GOVERNANCE_VIEW'] },
           { labelEn: 'Org Structure', labelAm: 'ድርጅታዊ መዋቅር', href: '/dashboard/organization/structure', permissions: ['GOVERNANCE_VIEW'] },
         ],
+      },
+      {
+        labelEn: 'My tasks',
+        labelAm: 'ተግባሮቼ',
+        href: '/dashboard/my-tasks',
+        icon: ClipboardCheck,
+        staffOnly: true,
+      },
+      {
+        labelEn: 'I’m here (check in)',
+        labelAm: 'ተገኝቻለሁ',
+        href: '/dashboard/check-in/me',
+        icon: CheckSquare,
+        staffOnly: true,
       },
       {
         labelEn: 'Tasks & Follow-up',
@@ -184,6 +207,13 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
           { labelEn: 'Assemblies', labelAm: 'ስብሰባዎች', href: '/dashboard/programs/assemblies', permissions: ['PROGRAM_VIEW'] },
           { labelEn: 'Events', labelAm: 'ዝግጅቶች', href: '/dashboard/programs/events', permissions: ['PROGRAM_VIEW'] },
         ],
+      },
+      {
+        labelEn: 'Check-in',
+        labelAm: 'መገኘት መመዝገቢያ',
+        href: '/dashboard/check-in',
+        icon: QrCode,
+        permissions: ['PROGRAM_CREATE', 'PROGRAM_MANAGE', 'CHOIR_MANAGE', 'PROGRAM_VIEW'],
       },
       {
         labelEn: 'Sacred Arts',
@@ -407,8 +437,8 @@ export default function Sidebar({ collapsed, mobileOpen, onToggleCollapse, onClo
         {/* Navigation */}
         <div className="flex-1 py-3">
           {NAV_SECTIONS.map((section) => {
-            const visibleItems = section.items.filter((item) =>
-              canSeeNavItem(user, item.permissions ?? [])
+            const visibleItems = section.items.filter(
+              (item) => canSeeNavItem(user, item.permissions ?? []) && !(item.staffOnly && portalOnly(user))
             );
             if (!visibleItems.length) return null;
 

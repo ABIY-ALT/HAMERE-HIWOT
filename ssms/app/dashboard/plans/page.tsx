@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, BellRing, Check, ChevronLeft, ChevronRight, Pencil, Plus, Send, Target, Trash2, Undo2 } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, BellRing, Check, ChevronLeft, ChevronRight, Pencil, Plus, Search, Send, Target, Trash2, Undo2 } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { Modal } from '@/components/ui/Modal';
 import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
@@ -23,6 +23,8 @@ import {
   type UnitPlan,
 } from '@/lib/plans/types';
 import { deleteActivity, loadPlans, remindPlans, reportActivity, reviewPlan, saveActivity, savePlanGoal, submitPlan } from './actions';
+import { OwnTaskForm } from '@/components/tasks/OwnTaskForm';
+import { STATUS as TASK_STATUS, type TaskStatus } from '@/lib/tasks/types';
 
 const STATUS_STYLE: Record<PlanStatus, string> = {
   DRAFT: 'bg-slate-100 text-slate-700',
@@ -38,6 +40,8 @@ const STATE_STYLE: Record<ActivityState, string> = {
   DROPPED: 'bg-slate-100 text-slate-400 line-through',
 };
 
+type Filter = 'ALL' | 'NONE' | PlanStatus;
+
 /** Department plans: each department's activities for the year, approval, and quarterly progress. */
 export default function PlansPage() {
   const { t, locale } = useLang();
@@ -45,14 +49,21 @@ export default function PlansPage() {
   const [error, setError] = useState('');
   const [data, setData] = useState<PlansData | null>(null);
   const [unitId, setUnitId] = useState('');
+  const [filter, setFilter] = useState<Filter>('ALL');
+  const [search, setSearch] = useState('');
   const [toast, setToast] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const detailRef = useRef<HTMLDivElement>(null);
 
   const apply = useCallback((res: Awaited<ReturnType<typeof loadPlans>>) => {
     if (res.mode === 'live') {
       setData(res.data);
-      // Someone with one department starts on it
-      setUnitId((u) => u || (res.data.units.length === 1 ? res.data.units[0].id : ''));
+      // Start where there is something to do: one's own department, or (reviewers) the first plan waiting for approval
+      setUnitId((u) => {
+        if (u && res.data.units.some((x) => x.id === u)) return u;
+        const waiting = res.data.can_review ? res.data.plans.find((p) => p.status === 'SUBMITTED')?.unit_id : undefined;
+        return waiting ?? res.data.editable_units.find((id) => res.data.units.some((x) => x.id === id)) ?? res.data.units[0]?.id ?? '';
+      });
     }
     if (res.mode === 'error') setError(res.error);
     setMode(res.mode);
@@ -66,11 +77,10 @@ export default function PlansPage() {
     setToast({ kind, text });
     setTimeout(() => setToast(null), 4000);
   };
-  const unitName = (id: string) => {
-    const u = data?.units.find((x) => x.id === id);
-    return u ? (locale === 'am' ? u.name_am : u.name_en) : '';
-  };
+  const name = (u: { name_en: string; name_am: string }) => (locale === 'am' ? u.name_am : u.name_en);
   const now = data ? { year: data.current_year, quarter: data.current_quarter } : undefined;
+  const planOf = (id: string) => data?.plans.find((p) => p.unit_id === id) ?? null;
+  const statusOf = (id: string): Filter => planOf(id)?.status ?? 'NONE';
 
   const remind = async () => {
     if (!data) return;
@@ -81,7 +91,35 @@ export default function PlansPage() {
     notify('success', t(`Reminded: ${res.no_plan} without a sent plan, ${res.no_report} without this quarter’s progress`, `ተስታውሰዋል፦ እቅድ ያልላኩ ${res.no_plan}፣ የዚህን ሩብ ሪፖርት ያላቀረቡ ${res.no_report}`));
   };
 
-  const selectedPlan = data?.plans.find((p) => p.unit_id === unitId) ?? null;
+  const choose = (id: string) => {
+    setUnitId(id);
+    // On a phone the plan is below the list: bring it into view
+    if (window.innerWidth < 1024) setTimeout(() => detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  };
+
+  const counts = useMemo(() => {
+    const c: Record<Filter, number> = { ALL: 0, NONE: 0, DRAFT: 0, SUBMITTED: 0, RETURNED: 0, APPROVED: 0 };
+    for (const u of data?.units ?? []) {
+      c.ALL += 1;
+      c[data?.plans.find((p) => p.unit_id === u.id)?.status ?? 'NONE'] += 1;
+    }
+    return c;
+  }, [data]);
+  const approved = (data?.plans ?? []).filter((p) => p.status === 'APPROVED').map((p) => planSummary(p, now));
+  const overall = approved.length ? Math.round(approved.reduce((s, x) => s + x.progress, 0) / approved.length) : null;
+  const overdueTotal = approved.reduce((s, x) => s + x.overdue, 0);
+
+  const needle = search.trim().toLowerCase();
+  const shown = (data?.units ?? []).filter((u) => (filter === 'ALL' || statusOf(u.id) === filter) && (!needle || `${u.name_en} ${u.name_am}`.toLowerCase().includes(needle)));
+  const selected = data?.units.find((u) => u.id === unitId);
+  const chips: [Filter, string, string][] = [
+    ['ALL', t('All', 'ሁሉም'), 'bg-slate-900 text-white border-slate-900'],
+    ['NONE', t('Not started', 'ያልጀመሩ'), 'bg-slate-600 text-white border-slate-600'],
+    ['DRAFT', t(...STATUS_LABEL.DRAFT), 'bg-slate-700 text-white border-slate-700'],
+    ['SUBMITTED', t(...STATUS_LABEL.SUBMITTED), 'bg-blue-700 text-white border-blue-700'],
+    ['RETURNED', t(...STATUS_LABEL.RETURNED), 'bg-amber-600 text-white border-amber-600'],
+    ['APPROVED', t(...STATUS_LABEL.APPROVED), 'bg-emerald-700 text-white border-emerald-700'],
+  ];
 
   return (
     <div className="space-y-6">
@@ -99,7 +137,7 @@ export default function PlansPage() {
           </p>
         </div>
         {data && (
-          <div className="inline-flex items-center gap-1 self-start">
+          <div className="inline-flex items-center gap-1 self-start rounded-lg border border-slate-200 bg-white px-1">
             <button onClick={() => reload(data.year - 1)} className="p-1.5 rounded hover:bg-slate-100" aria-label={t('Previous year', 'ያለፈው ዓመት')}>
               <ChevronLeft size={18} />
             </button>
@@ -118,69 +156,120 @@ export default function PlansPage() {
         <p className="card p-6 text-sm text-slate-500">{t('You are not assigned to a department yet.', 'ገና በክፍል አልተመደቡም።')}</p>
       )}
 
+      {/* The year at a glance */}
       {data && data.units.length > 1 && (
-        <div className="card overflow-hidden">
-          <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="font-bold text-slate-800 text-sm">{t('All departments', 'ሁሉም ክፍላት')}</h2>
-            {data.can_review && (
-              <button disabled={busy} onClick={remind} className="btn btn-secondary text-xs inline-flex items-center gap-1.5">
-                <BellRing size={14} /> {t('Remind those behind', 'የዘገዩትን አስታውስ')}
-              </button>
-            )}
-          </div>
-          <div className="table-container rounded-none border-0">
-            <table>
-              <thead>
-                <tr>
-                  <th>{t('Department', 'ክፍል')}</th>
-                  <th>{t('Plan', 'እቅድ')}</th>
-                  <th className="text-center">{t('Activities', 'ተግባራት')}</th>
-                  <th>{t('Done', 'አፈጻጸም')}</th>
-                  <th className="text-center">{t('Overdue', 'ያለፈባቸው')}</th>
-                  <th>{t('Budget', 'በጀት')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.units.map((u) => {
-                  const p = data.plans.find((x) => x.unit_id === u.id);
-                  const s = p ? planSummary(p, now) : null;
-                  return (
-                    <tr key={u.id} onClick={() => setUnitId(u.id)} className={`cursor-pointer ${unitId === u.id ? 'bg-rose-50/60' : 'hover:bg-slate-50'}`}>
-                      <td className="font-medium text-slate-900">{locale === 'am' ? u.name_am : u.name_en}</td>
-                      <td>
-                        {p ? (
-                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded ${STATUS_STYLE[p.status]}`}>{t(...STATUS_LABEL[p.status])}</span>
-                        ) : (
-                          <span className="text-xs text-slate-400">{t('Not started', 'አልተጀመረም')}</span>
-                        )}
-                      </td>
-                      <td className="text-center text-sm">{s?.activities ?? '—'}</td>
-                      <td className="min-w-[8rem]">{s && p?.status === 'APPROVED' ? <Bar value={s.progress} /> : <span className="text-xs text-slate-400">—</span>}</td>
-                      <td className={`text-center text-sm font-semibold ${s?.overdue ? 'text-red-600' : 'text-slate-400'}`}>{s && p?.status === 'APPROVED' ? s.overdue : '—'}</td>
-                      <td className="text-sm">{s?.budget ? formatETB(s.budget) : '—'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Stat label={t('Departments', 'ክፍላት')} value={String(counts.ALL)} />
+          <Stat label={t('Waiting for approval', 'ማጽደቅ የሚጠብቁ')} value={String(counts.SUBMITTED)} warn={data.can_review && counts.SUBMITTED > 0} />
+          <Stat label={t('Approved plans', 'የጸደቁ እቅዶች')} value={`${counts.APPROVED} / ${counts.ALL}`} />
+          <Stat
+            label={overdueTotal ? t(`Done overall · ${overdueTotal} overdue`, `አጠቃላይ አፈጻጸም · ${overdueTotal} ጊዜያቸው ያለፈ`) : t('Done overall (approved plans)', 'አጠቃላይ አፈጻጸም (የጸደቁ)')}
+            value={overall === null ? '—' : `${overall}%`}
+            warn={overdueTotal > 0}
+          />
         </div>
       )}
 
-      {data && unitId && (
-        <PlanView
-          key={`${unitId}-${data.year}`}
-          data={data}
-          unitId={unitId}
-          unitName={unitName(unitId)}
-          plan={selectedPlan}
-          editable={data.editable_units.includes(unitId)}
-          onChanged={(msg) => {
-            if (msg) notify('success', msg);
-            reload();
-          }}
-          onError={(msg) => notify('error', msg)}
-        />
+      {data && data.units.length > 0 && (
+        <div className={data.units.length > 1 ? 'grid grid-cols-1 lg:grid-cols-[20rem_minmax(0,1fr)] gap-6 items-start' : ''}>
+          {data.units.length > 1 && (
+            <aside className="card overflow-hidden lg:sticky lg:top-4">
+              <div className="p-3 border-b border-slate-100 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="font-bold text-slate-800 text-sm">{t('Departments', 'ክፍላት')}</h2>
+                  {data.can_review && (
+                    <button disabled={busy} onClick={remind} className="text-xs text-slate-600 hover:text-slate-900 inline-flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-100" title={t('Remind those behind', 'የዘገዩትን አስታውስ')}>
+                      <BellRing size={13} /> {t('Remind', 'አስታውስ')}
+                    </button>
+                  )}
+                </div>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                  <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('Find a department…', 'ክፍል ፈልግ…')} className="form-input text-xs pl-8 py-1.5" />
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {chips
+                    .filter(([f]) => f === 'ALL' || counts[f] > 0)
+                    .map(([f, label, on]) => (
+                      <button
+                        key={f}
+                        onClick={() => setFilter(f)}
+                        className={`text-[11px] px-2 py-0.5 rounded-full border ${filter === f ? on : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        {label} {counts[f]}
+                      </button>
+                    ))}
+                </div>
+              </div>
+              <ul className="divide-y divide-slate-100 max-h-[70vh] overflow-y-auto">
+                {shown.map((u) => {
+                  const p = planOf(u.id);
+                  const s = p ? planSummary(p, now) : null;
+                  const active = unitId === u.id;
+                  return (
+                    <li key={u.id}>
+                      <button
+                        onClick={() => choose(u.id)}
+                        aria-current={active ? 'true' : undefined}
+                        className={`w-full text-left px-3 py-2.5 border-l-4 transition-colors ${active ? 'bg-rose-50/70 border-l-rose-800' : 'border-l-transparent hover:bg-slate-50'}`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <span className={`text-sm leading-snug ${active ? 'font-semibold text-slate-900' : 'text-slate-800'}`}>{name(u)}</span>
+                          {p ? (
+                            <span className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded ${STATUS_STYLE[p.status]}`}>{t(...STATUS_LABEL[p.status])}</span>
+                          ) : (
+                            <span className="shrink-0 text-[10px] text-slate-400">{t('Not started', 'አልተጀመረም')}</span>
+                          )}
+                        </div>
+                        {p?.status === 'APPROVED' && s ? (
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <div className="flex-1">
+                              <Bar value={s.progress} />
+                            </div>
+                            {s.overdue > 0 && (
+                              <span className="text-[10px] font-semibold text-red-600 inline-flex items-center gap-0.5">
+                                <AlertTriangle size={10} /> {s.overdue}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          s &&
+                          s.activities > 0 && (
+                            <div className="text-[11px] text-slate-500 mt-0.5">
+                              {t(`${s.activities} activities`, `${s.activities} ተግባራት`)}
+                              {s.budget > 0 && ` · ${formatETB(s.budget)}`}
+                            </div>
+                          )
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
+                {shown.length === 0 && <li className="p-6 text-center text-xs text-slate-400">{t('No department matches', 'የሚመሳሰል ክፍል የለም')}</li>}
+              </ul>
+            </aside>
+          )}
+
+          <div ref={detailRef} className="scroll-mt-4 min-w-0">
+            {selected ? (
+              <PlanView
+                key={`${unitId}-${data.year}`}
+                data={data}
+                unitId={unitId}
+                unitName={name(selected)}
+                plan={planOf(unitId)}
+                editable={data.editable_units.includes(unitId)}
+                onChanged={(msg) => {
+                  if (msg) notify('success', msg);
+                  reload();
+                }}
+                onError={(msg) => notify('error', msg)}
+              />
+            ) : (
+              <p className="card p-10 text-center text-sm text-slate-500">{t('Choose a department on the left.', 'በግራ በኩል ክፍል ይምረጡ።')}</p>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -209,6 +298,7 @@ function PlanView({
   const [editing, setEditing] = useState<PlanActivity | 'NEW' | null>(null);
   const [reporting, setReporting] = useState<PlanActivity | null>(null);
   const [returning, setReturning] = useState(false);
+  const [makingTask, setMakingTask] = useState<PlanActivity | null>(null);
   const open = !plan || plan.status === 'DRAFT' || plan.status === 'RETURNED';
   const canChange = editable && open;
   const now = { year: data.current_year, quarter: data.current_quarter };
@@ -375,6 +465,33 @@ function PlanView({
                     <span className={`text-[11px] font-semibold px-2 py-0.5 rounded ${STATE_STYLE[a.state]}`}>{t(...STATE_LABEL[a.state])}</span>
                   </div>
                 )}
+                {/* Tasks that carry it out */}
+                {plan.status === 'APPROVED' && (a.tasks.length > 0 || editable) && (
+                  <div className="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2 space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-slate-600">
+                        🗂️{' '}
+                        {a.tasks.length
+                          ? t(`Tasks: ${a.tasks.filter((x) => x.status === 'COMPLETED').length} of ${a.tasks.length} done`, `ተግባራት፦ ${a.tasks.length} ውስጥ ${a.tasks.filter((x) => x.status === 'COMPLETED').length} ተጠናቀዋል`)
+                          : t('Give it to someone as a task, to follow it up.', 'ለመከታተል ለአንድ ሰው እንደ ተግባር ይስጡ።')}
+                      </span>
+                      {editable && (
+                        <button onClick={() => setMakingTask(a)} className="text-xs text-blue-600 hover:bg-blue-50 font-semibold px-2 py-0.5 rounded inline-flex items-center gap-1">
+                          <Plus size={12} /> {t('Task', 'ተግባር')}
+                        </button>
+                      )}
+                    </div>
+                    {a.tasks.map((x) => (
+                      <a key={x.id} href={`/dashboard/tasks?open=${x.id}`} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs hover:bg-white rounded px-1 py-0.5">
+                        <span className="font-mono text-slate-400">{x.task_no}</span>
+                        <span className="text-slate-800 flex-1 min-w-[8rem] truncate">{x.title}</span>
+                        {x.assignee && <span className="text-slate-500">👤 {x.assignee}</span>}
+                        <span className={`${TASK_STATUS[x.status as TaskStatus]?.cls ?? 'badge'} text-[10px]`}>{TASK_STATUS[x.status as TaskStatus] ? t(...TASK_STATUS[x.status as TaskStatus].label) : x.status}</span>
+                        <span className="text-slate-500 w-9 text-right">{x.progress}%</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
                 {a.updates.length > 0 && (
                   <details className="text-xs text-slate-600">
                     <summary className="cursor-pointer text-slate-500">
@@ -424,6 +541,19 @@ function PlanView({
             setReporting(null);
             onChanged(t('Progress reported', 'አፈጻጸሙ ተመዝግቧል'));
             return null;
+          }}
+        />
+      )}
+      {makingTask && plan && (
+        <OwnTaskForm
+          units={[{ id: unitId, name: unitName, people: data.people[unitId] ?? [] }]}
+          unitId={unitId}
+          activity={{ id: makingTask.id, label: makingTask.title }}
+          defaultTitle={makingTask.title}
+          onClose={() => setMakingTask(null)}
+          onDone={(msg) => {
+            setMakingTask(null);
+            onChanged(msg);
           }}
         />
       )}
