@@ -18,7 +18,7 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { botUsername, chatsOf, escapeHtml, newLinkCode, sendTelegram, telegramApi, telegramConfigured, telegramToChats, webhookSecret } from '@/lib/telegram/bot';
 import { refreshChat, tellUpdated } from '@/lib/telegram/links';
 import { nonMemberIds } from '@/lib/members/membership';
-import { ABOUT_KEY, MAX_TOPICS, type AboutTopic } from '@/lib/telegram/about';
+import { ABOUT_KEY, MAX_TOPICS, type AboutTopic } from '@/lib/telegram/about-topics';
 
 const MIGRATION_024 = 'Run database migration 024 (Telegram) first';
 const missing = (m: string) => (/telegram_/.test(m) && /does not exist|schema cache/.test(m) ? MIGRATION_024 : m);

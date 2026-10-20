@@ -8,29 +8,12 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { escapeHtml, siteUrl } from '@/lib/telegram/bot';
+import { ABOUT_KEY, MAX_TOPICS, type AboutTopic } from '@/lib/telegram/about-topics';
 
-export const ABOUT_KEY = 'bot_about';
+export { ABOUT_KEY, MAX_TOPICS, SUGGESTED_TOPICS, type AboutTopic } from '@/lib/telegram/about-topics';
+
 export const ABOUT_BUTTON = 'ℹ️ ስለ እኛ · About us';
 export const BACK_BUTTON = '⬅️ ተመለስ · Back';
-export const MAX_TOPICS = 12;
-
-export interface AboutTopic {
-  id: string;
-  title_am: string;
-  title_en: string;
-  body_am: string;
-  body_en: string;
-}
-
-/** Topics the office may start from (titles only). */
-export const SUGGESTED_TOPICS: Omit<AboutTopic, 'id'>[] = [
-  { title_am: 'ታሪካችን', title_en: 'Our history', body_am: '', body_en: '' },
-  { title_am: 'የትምህርት ጊዜያት', title_en: 'Class times', body_am: '', body_en: '' },
-  { title_am: 'ክፍላት', title_en: 'Departments', body_am: '', body_en: '' },
-  { title_am: 'አባል ለመሆን', title_en: 'Becoming a member', body_am: '', body_en: '' },
-  { title_am: 'ወርሃዊ መዋጮ', title_en: 'Monthly dues', body_am: '', body_en: '' },
-  { title_am: 'አድራሻና ስልክ', title_en: 'Address & contact', body_am: '', body_en: '' },
-];
 
 export async function loadAbout(db: SupabaseClient): Promise<AboutTopic[]> {
   const { data } = await db.from('system_settings').select('value').eq('key', ABOUT_KEY).maybeSingle();

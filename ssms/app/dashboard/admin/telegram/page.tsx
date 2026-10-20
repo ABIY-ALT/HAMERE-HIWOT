@@ -6,7 +6,7 @@ import { useLang } from '@/contexts/LangContext';
 import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
 import type { LoadMode } from '@/lib/admin/types';
 import { formatEthiopianDate } from '@/lib/utils/ethiopian-calendar';
-import { MAX_TOPICS, SUGGESTED_TOPICS, type AboutTopic } from '@/lib/telegram/about';
+import { MAX_TOPICS, SUGGESTED_TOPICS, type AboutTopic } from '@/lib/telegram/about-topics';
 import {
   connectBot,
   countAudience,
