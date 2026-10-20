@@ -21,6 +21,17 @@ export const MAX_OPTIONS = 6;
 export const MAX_QUESTIONS = 100;
 /** Answers saved this long after the time is up still count (slow phones, poor network). */
 export const GRACE_SECONDS = 30;
+/**
+ * Answers written on the phone while it had no network, before the time was up,
+ * still count when they arrive up to this long after it (migration 031).
+ */
+export const OFFLINE_SECONDS = 10 * 60;
+
+/** Answers kept on the phone while it had no network, and when (server time) they were last changed. */
+export interface OfflineAnswers {
+  answers: Record<string, string>;
+  written_at: string;
+}
 
 export interface Exam {
   id: string;
@@ -82,6 +93,8 @@ export interface ExamAttempt {
   /** Times this student's phone tried another student's code */
   tried_other_codes: number;
   away_seconds: number;
+  /** The phone lost the network: its answers arrived this long after the time was up (031) */
+  late_sync_seconds: number;
   /** Set while the student is away from the exam page */
   left_at: string | null;
   ended_reason: EndedReason | null;

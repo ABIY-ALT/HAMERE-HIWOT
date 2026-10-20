@@ -5,11 +5,15 @@ import Image from 'next/image';
 import { AlertTriangle, CheckCircle2, Clock, Cloud, CloudOff, EyeOff, KeyRound, Languages, Loader2, Send, TimerReset } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { EXAM_TICKET_KEY as TICKET_KEY, formatTicket, normalizeTicket, type StudentQuestion } from '@/lib/exams/types';
+import { dropLocal, loadLocal, markSynced, pendingAnswers, saveLocal } from '@/lib/exams/offline';
 import { examClock, openTicket, reportBack, reportLeft, saveAnswers, startExam, submitExam, type TicketInfo, type TicketResult } from './actions';
 
 const LETTERS = 'ABCDEF';
 
 type Exam = { questions: StudentQuestion[]; deadline: number };
+
+/** The server's time, from the phone's clock and the difference measured with the server */
+const serverNow = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString();
 
 export default function ExamPage() {
   const { t, locale, setLocale } = useLang();
@@ -38,6 +42,8 @@ export default function ExamPage() {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handingIn = useRef(false);
   const checkingTime = useRef(false);
+  /** Handed in / time up with no network: answers are final, waiting to be sent */
+  const [locked, setLocked] = useState(false);
 
   const errorText = useCallback(
     (code: string) =>
@@ -87,11 +93,25 @@ export default function ExamPage() {
         setAnswers(res.answers);
         answersRef.current = res.answers;
         setLeft(res.left);
+        setLocked(false);
         setStage('exam');
+        // Kept on the phone so the exam goes on if the network drops (lib/exams/offline)
+        saveLocal(code, {
+          answers: res.answers,
+          written_at: res.now,
+          synced: true,
+          hand_in: false,
+          questions: res.questions,
+          deadline: deadlineAt.current,
+          offset: offset.current,
+          info: res.info,
+        });
       }
       if (res.state === 'SUBMITTED') {
         setResult(res.result);
+        setLocked(false);
         setStage('done');
+        dropLocal(code);
         try {
           sessionStorage.removeItem(TICKET_KEY);
         } catch {}
@@ -100,29 +120,81 @@ export default function ExamPage() {
     [errorText]
   );
 
+  /** No network: go on with the exam kept on this phone (after a reload, or a phone that lost the connection). */
+  const resumeOffline = useCallback((code: string) => {
+    const rec = loadLocal(code);
+    if (!rec?.questions || !rec.deadline || !rec.info) return false;
+    offset.current = rec.offset ?? 0;
+    deadlineAt.current = rec.deadline;
+    setTicket(code);
+    setInfo(rec.info);
+    setExam({ questions: rec.questions, deadline: rec.deadline });
+    setAnswers(rec.answers);
+    answersRef.current = rec.answers;
+    setLocked(rec.hand_in);
+    setSaving('offline');
+    setError('');
+    setStage('exam');
+    return true;
+  }, []);
+
+  /** The answer to opening a code; with no network, go on offline if the exam was started on this phone. */
+  const opened = useCallback(
+    (res: TicketResult, code: string) => {
+      if (!res.ok && res.error === 'UNAVAILABLE' && resumeOffline(code)) return;
+      show(res, code);
+    },
+    [show, resumeOffline]
+  );
+  const unreachable = useCallback(
+    (code: string) => {
+      if (!resumeOffline(code)) setError(errorText('UNAVAILABLE'));
+    },
+    [resumeOffline, errorText]
+  );
+
+  /** Open a code — answers kept on the phone go first. */
+  const open = (code: string) => openTicket(code, pendingAnswers(code)).then((res) => opened(res, code), () => unreachable(code));
+
   // Coming back to the page (reload, phone locked) continues the same exam
   useEffect(() => {
     let saved = '';
     try {
       saved = sessionStorage.getItem(TICKET_KEY) ?? '';
     } catch {}
-    if (saved) openTicket(saved).then((res) => show(res, saved));
-  }, [show]);
+    if (saved) openTicket(saved, pendingAnswers(saved)).then((res) => opened(res, saved), () => unreachable(saved));
+  }, [opened, unreachable]);
 
   const lookUp = async (e: React.FormEvent) => {
     e.preventDefault();
     const code = normalizeTicket(typed);
     if (code.length !== 8) return setError(t('The code has 8 letters and numbers, like ABCD-2345.', 'ኮዱ 8 ፊደሎችና ቁጥሮች አሉት፤ ለምሳሌ ABCD-2345።'));
     setBusy(true);
-    show(await openTicket(code), code);
+    await open(code);
     setBusy(false);
   };
 
+  // Starting needs the network: the server starts the clock and checks the phone and the room key
   const begin = async () => {
     setBusy(true);
-    show(await startExam(ticket, key), ticket);
+    try {
+      show(await startExam(ticket, key), ticket);
+    } catch {
+      setError(errorText('UNAVAILABLE'));
+    }
     setBusy(false);
   };
+
+  /** No network when handing in (or at 0:00): the answers are final and wait on the phone. */
+  const keepForLater = useCallback(
+    (final: Record<string, string>) => {
+      saveLocal(ticket, { answers: final, hand_in: true, synced: false });
+      setLocked(true);
+      setSaving('offline');
+      setConfirming(false);
+    },
+    [ticket]
+  );
 
   const handIn = useCallback(
     async (final: Record<string, string>) => {
@@ -130,14 +202,21 @@ export default function ExamPage() {
       handingIn.current = true;
       setBusy(true);
       if (saveTimer.current) clearTimeout(saveTimer.current);
-      const res = await submitExam(ticket, final);
-      setBusy(false);
-      setConfirming(false);
-      handingIn.current = false;
-      show(res, ticket);
+      try {
+        const res = await submitExam(ticket, final, pendingAnswers(ticket)?.written_at);
+        if (!res.ok && res.error === 'UNAVAILABLE') keepForLater(final);
+        else show(res, ticket);
+      } catch {
+        keepForLater(final);
+      } finally {
+        setBusy(false);
+        setConfirming(false);
+        handingIn.current = false;
+      }
     },
-    [ticket, show]
+    [ticket, show, keepForLater]
   );
+
 
   /** Follow the server's deadline — the teacher may have given this student extra time. */
   const applyClock = useCallback((deadlineIso: string, nowIso: string) => {
@@ -152,6 +231,34 @@ export default function ExamPage() {
     setExam((e) => (e ? { ...e, deadline: next } : e));
   }, []);
 
+  // While answers wait on the phone: send them when the network is back (and every 15 s)
+  useEffect(() => {
+    if (stage !== 'exam' || (saving !== 'offline' && !locked)) return;
+    const trySend = async () => {
+      if (!navigator.onLine) return;
+      const rec = loadLocal(ticket);
+      try {
+        if (rec?.hand_in) return show(await submitExam(ticket, rec.answers, rec.written_at), ticket);
+        const sent = answersRef.current;
+        const res = await saveAnswers(ticket, sent);
+        if (res.closed) return show(await openTicket(ticket, pendingAnswers(ticket)), ticket);
+        if (res.ok) {
+          markSynced(ticket, sent);
+          setSaving('saved');
+          if (res.deadline && res.now) applyClock(res.deadline, res.now);
+        }
+      } catch {
+        // Still no network
+      }
+    };
+    window.addEventListener('online', trySend);
+    const id = setInterval(trySend, 15_000);
+    return () => {
+      window.removeEventListener('online', trySend);
+      clearInterval(id);
+    };
+  }, [stage, saving, locked, ticket, show, applyClock]);
+
   // Clock: the server's deadline, corrected for the phone's own time
   useEffect(() => {
     if (stage !== 'exam') return;
@@ -163,9 +270,13 @@ export default function ExamPage() {
   useEffect(() => {
     if (stage !== 'exam') return;
     const id = setInterval(async () => {
-      const clock = await examClock(ticket);
-      if (clock?.state === 'IN_PROGRESS') applyClock(clock.deadline, clock.now);
-      if (clock?.state === 'OVER') show(await openTicket(ticket), ticket);
+      try {
+        const clock = await examClock(ticket);
+        if (clock?.state === 'IN_PROGRESS') applyClock(clock.deadline, clock.now);
+        if (clock?.state === 'OVER') show(await openTicket(ticket, pendingAnswers(ticket)), ticket);
+      } catch {
+        setSaving('offline'); // no network: the phone's clock goes on
+      }
     }, 60_000);
     return () => clearInterval(id);
   }, [stage, ticket, applyClock, show]);
@@ -173,14 +284,20 @@ export default function ExamPage() {
   // At 0:00 check once more — extra time may have just been given — then hand in
   const remaining = exam ? Math.max(0, Math.floor((exam.deadline - now) / 1000)) : 0;
   useEffect(() => {
-    if (stage !== 'exam' || !exam || remaining > 0 || checkingTime.current) return;
+    if (stage !== 'exam' || !exam || remaining > 0 || checkingTime.current || locked) return;
     checkingTime.current = true;
-    examClock(ticket).then((clock) => {
-      checkingTime.current = false;
-      if (clock?.state === 'IN_PROGRESS' && new Date(clock.deadline) > new Date(clock.now)) applyClock(clock.deadline, clock.now);
-      else handIn(answers);
-    });
-  }, [stage, exam, remaining, answers, handIn, ticket, applyClock]);
+    examClock(ticket)
+      .then((clock) => {
+        checkingTime.current = false;
+        if (clock?.state === 'IN_PROGRESS' && new Date(clock.deadline) > new Date(clock.now)) applyClock(clock.deadline, clock.now);
+        else handIn(answers);
+      })
+      .catch(() => {
+        // No network at the end: the answers are final and handed in when it is back
+        checkingTime.current = false;
+        keepForLater(answersRef.current);
+      });
+  }, [stage, exam, remaining, answers, handIn, ticket, applyClock, locked, keepForLater]);
 
   const flash = useCallback((text: string) => {
     setNotice(text);
@@ -196,7 +313,7 @@ export default function ExamPage() {
     const away = () => {
       if (awaySince.current !== null) return;
       awaySince.current = Date.now();
-      reportLeft(ticket);
+      reportLeft(ticket).catch(() => {});
     };
     const back = async () => {
       if (blurTimer) clearTimeout(blurTimer);
@@ -204,7 +321,7 @@ export default function ExamPage() {
       if (awaySince.current === null) return;
       const seconds = (Date.now() - awaySince.current) / 1000;
       awaySince.current = null;
-      const res = await reportBack(ticket, seconds, answersRef.current);
+      const res = await reportBack(ticket, seconds, answersRef.current).catch(() => null);
       if (!res) return;
       if (res.result) return show(res.result, ticket);
       setLeft(res.left);
@@ -236,16 +353,20 @@ export default function ExamPage() {
   const block = (e: React.SyntheticEvent) => e.preventDefault();
 
   const answer = (questionId: string, value: string) => {
+    if (locked) return;
     const next = { ...answers, [questionId]: value };
     setAnswers(next);
     answersRef.current = next;
+    // On the phone first, so nothing is lost if the network or the page goes
+    saveLocal(ticket, { answers: next, written_at: serverNow(offset.current), synced: false });
     setSaving('saving');
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       try {
         const res = await saveAnswers(ticket, next);
-        if (res.closed) return show(await openTicket(ticket), ticket);
+        if (res.closed) return show(await openTicket(ticket, pendingAnswers(ticket)), ticket);
         if (res.deadline && res.now) applyClock(res.deadline, res.now);
+        if (res.ok) markSynced(ticket, next);
         setSaving(res.ok ? 'saved' : 'offline');
       } catch {
         setSaving('offline');
@@ -291,7 +412,7 @@ export default function ExamPage() {
             <span>{t(`${answered} of ${exam.questions.length} answered`, `${exam.questions.length} ውስጥ ${answered} ተመልሷል`)}</span>
             <span className="inline-flex items-center gap-1">
               {saving === 'offline' ? <CloudOff size={12} className="text-red-500" /> : <Cloud size={12} className={saving === 'saving' ? 'text-slate-300' : 'text-emerald-600'} />}
-              {saving === 'saving' ? t('Saving…', 'በማስቀመጥ ላይ…') : saving === 'offline' ? t('Not saved', 'አልተቀመጠም') : t('Saved', 'ተቀምጧል')}
+              {saving === 'saving' ? t('Saving…', 'በማስቀመጥ ላይ…') : saving === 'offline' ? t('On this phone', 'በስልኩ ላይ') : t('Saved', 'ተቀምጧል')}
             </span>
             {left > 0 && (
               <span className="inline-flex items-center gap-1 text-amber-700 font-semibold" title={t('Times you left the exam page', 'ከፈተናው ገጽ የወጡበት ብዛት')}>
@@ -396,8 +517,23 @@ export default function ExamPage() {
           </div>
         )}
 
+        {stage === 'exam' && (saving === 'offline' || locked) && (
+          <div className={`p-3 rounded-xl border text-sm flex items-start gap-2 ${locked ? 'bg-blue-50 border-blue-200 text-blue-900' : 'bg-amber-50 border-amber-300 text-amber-900'}`} role="status">
+            <CloudOff size={16} className="mt-0.5 shrink-0" />
+            {locked
+              ? t(
+                  'No network — your answers are final and kept on this phone. They are handed in by themselves when the network is back. Connect within 10 minutes after the end; you may reopen this page.',
+                  'ኔትወርክ የለም — መልሶችዎ ተጠናቀዋል፤ በዚህ ስልክ ተቀምጠዋል። ኔትወርክ ሲመለስ በራሳቸው ይገባሉ። ፈተናው ካለቀ በ10 ደቂቃ ውስጥ ይገናኙ፤ ይህን ገጽ እንደገና መክፈት ይችላሉ።'
+                )
+              : t(
+                  'No network — keep answering. Your answers are kept on this phone and sent when the network is back.',
+                  'ኔትወርክ የለም — መመለስዎን ይቀጥሉ። መልሶችዎ በዚህ ስልክ ተቀምጠው ኔትወርክ ሲመለስ ይላካሉ።'
+                )}
+          </div>
+        )}
+
         {stage === 'exam' && exam && (
-          <div onCopy={block} onCut={block} onContextMenu={block} onDragStart={block} className="space-y-4 select-none">
+          <div onCopy={block} onCut={block} onContextMenu={block} onDragStart={block} className={`space-y-4 select-none ${locked ? 'pointer-events-none opacity-60' : ''}`}>
             {exam.questions.map((q, n) => (
               <section key={q.id} className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
                 <div className="flex items-start gap-3">

@@ -666,13 +666,13 @@ export async function saveGrade(input: z.input<typeof GradeSchema>): Promise<Act
     const total = Math.round(parts.reduce((sum, p) => sum + p.score, 0) * 100) / 100;
 
     const existing = (await db.from('grades')
-      .select('id')
+      .select('id, entered_by, status')
       .eq('student_id', g.student_id)
       .eq('subject_id', g.subject_id)
       .eq('academic_year_id', year.id)
       .eq('term', g.term)
       .maybeSingle()
-      .then(check)) as { id: string } | null;
+      .then(check)) as { id: string; entered_by: string | null; status: string } | null;
 
     const scores = {
       scores: parts,
@@ -685,7 +685,9 @@ export async function saveGrade(input: z.input<typeof GradeSchema>): Promise<Act
 
     let saved: { error: { message: string } | null };
     if (existing) {
-      if (!me.permissions.includes('GRADE_UPDATE')) {
+      // Teachers may correct their own grade while it waits for approval (also a save sent again from the offline outbox)
+      const ownPending = existing.entered_by === me.systemUser.id && existing.status === 'PENDING';
+      if (!me.permissions.includes('GRADE_UPDATE') && !ownPending) {
         throw new Error('A grade already exists for this student, subject and term');
       }
       saved = await db.from('grades').update(scores).eq('id', existing.id);

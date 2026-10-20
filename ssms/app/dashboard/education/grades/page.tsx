@@ -148,7 +148,9 @@ export default function GradesPage() {
     setIsAddModalOpen(false);
     showToast(
       'success',
-      t(`Grade saved for ${student?.name_en ?? ''} — waiting for approval`, `ለ${student?.name_am ?? ''} ውጤት ተመዝግቧል — ማጽደቅ ይጠብቃል`)
+      res.queued
+        ? t(`No network — ${student?.name_en ?? ''}'s grade is saved on this phone and sent when the network is back`, `ኔትወርክ የለም — የ${student?.name_am ?? ''} ውጤት በዚህ ስልክ ተቀምጧል፤ ኔትወርክ ሲመለስ ይላካል`)
+        : t(`Grade saved for ${student?.name_en ?? ''} — waiting for approval`, `ለ${student?.name_am ?? ''} ውጤት ተመዝግቧል — ማጽደቅ ይጠብቃል`)
     );
     setStudentId('');
     setScoreInputs({});

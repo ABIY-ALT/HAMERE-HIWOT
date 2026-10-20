@@ -18,6 +18,7 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { botUsername, chatsOf, escapeHtml, newLinkCode, sendTelegram, telegramApi, telegramConfigured, telegramToChats, webhookSecret } from '@/lib/telegram/bot';
 import { refreshChat, tellUpdated } from '@/lib/telegram/links';
 import { nonMemberIds } from '@/lib/members/membership';
+import { ABOUT_KEY, MAX_TOPICS, type AboutTopic } from '@/lib/telegram/about';
 
 const MIGRATION_024 = 'Run database migration 024 (Telegram) first';
 const missing = (m: string) => (/telegram_/.test(m) && /does not exist|schema cache/.test(m) ? MIGRATION_024 : m);
@@ -166,6 +167,8 @@ export async function connectBot(): Promise<ActionResult> {
         { command: 'exams', description: 'Online exams · ፈተና' },
         { command: 'membership', description: 'My membership · አባልነቴ' },
         { command: 'events', description: 'Coming events · መርሐ ግብር' },
+        { command: 'about', description: 'About the Sunday school · ስለ እኛ' },
+        { command: 'ask', description: 'Ask a department · ጥያቄ' },
         { command: 'dues', description: 'Monthly dues · መዋጮ' },
         { command: 'paid', description: 'I paid my dues · ከፍያለሁ' },
         { command: 'menu', description: 'Menu · ምናሌ' },
@@ -377,5 +380,44 @@ export async function disconnectTelegramChat(chatId: number): Promise<ActionResu
     return { ok: true };
   } catch (e) {
     return { ok: false, error: missing(errorMessage(e)) };
+  }
+}
+
+// ── ℹ️ About us (what the bot tells anyone about the Sunday school) ──────────
+
+const TopicSchema = z
+  .object({
+    id: z.string().min(1).max(40),
+    title_am: z.string().trim().max(60),
+    title_en: z.string().trim().max(60),
+    body_am: z.string().trim().max(3000),
+    body_en: z.string().trim().max(3000),
+  })
+  .refine((t) => t.title_am || t.title_en, 'Every topic needs a title');
+
+export async function loadBotAbout(): Promise<Loaded<{ topics: AboutTopic[]; can_edit: boolean }>> {
+  if (!isSupabaseEnabled()) return { mode: 'demo' };
+  try {
+    const { db } = await authorize(...BROADCASTERS);
+    const { data, error } = await db.from('system_settings').select('value').eq('key', ABOUT_KEY).maybeSingle();
+    if (error) throw new Error(error.message);
+    const topics = ((data as { value?: { topics?: AboutTopic[] } } | null)?.value?.topics ?? []) as AboutTopic[];
+    return { mode: 'live', data: { topics, can_edit: true } };
+  } catch (e) {
+    return { mode: 'error', error: errorMessage(e) };
+  }
+}
+
+/** Save the topics (in this order). A topic without text is kept here but not shown in the bot. */
+export async function saveBotAbout(topics: z.input<typeof TopicSchema>[]): Promise<ActionResult> {
+  try {
+    const { me, db } = await authorize(...BROADCASTERS);
+    const clean = z.array(TopicSchema).max(MAX_TOPICS, `At most ${MAX_TOPICS} topics`).parse(topics);
+    await db.from('system_settings')
+      .upsert({ key: ABOUT_KEY, value: { topics: clean }, updated_by: me.systemUser.id, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+      .then(check);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) };
   }
 }

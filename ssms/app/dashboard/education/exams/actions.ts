@@ -141,6 +141,7 @@ function toAttempt(r: Record<string, unknown>): ExamAttempt {
     blocked_tries: Number(r.blocked_tries ?? 0),
     tried_other_codes: Number(r.tried_other_codes ?? 0),
     away_seconds: Number(r.away_seconds ?? 0),
+    late_sync_seconds: Number(r.late_sync_seconds ?? 0),
     left_at: (r.left_at as string) ?? null,
     ended_reason: (r.ended_reason as EndedReason) ?? null,
   };
@@ -563,7 +564,7 @@ export async function giveNewCode(attemptId: string): Promise<ActionResult> {
     const attempt = toAttempt((await db.from('exam_attempts').select('*').eq('id', attemptId).single().then(check)) as Record<string, unknown>);
     const exam = await getExam(db, attempt.exam_id);
     if (exam.status !== 'OPEN') throw new Error('Open the exam first');
-    const fresh = {
+    const fresh: Record<string, unknown> = {
       started_at: null,
       submitted_at: null,
       answers: {},
@@ -575,12 +576,18 @@ export async function giveNewCode(attemptId: string): Promise<ActionResult> {
       extra_minutes: 0,
       focus_lost: 0,
       away_seconds: 0,
+      late_sync_seconds: 0,
       left_at: null,
       ended_reason: null,
     };
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
       const { error } = await db.from('exam_attempts').update({ ...fresh, ticket: newTicket() }).eq('id', attemptId);
       if (!error) return { ok: true };
+      // Before migration 031
+      if (/late_sync_seconds/.test(error.message)) {
+        delete fresh.late_sync_seconds;
+        continue;
+      }
       if (error.code !== '23505') throw new Error(error.message);
     }
     throw new Error('Could not make a new code — try again');

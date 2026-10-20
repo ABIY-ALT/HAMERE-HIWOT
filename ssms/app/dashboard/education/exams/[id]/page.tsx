@@ -171,6 +171,14 @@ export default function ExamDetailPage() {
       notes.push({ text: t(`their phone tried another student's code ${a.tried_other_codes}×`, `ስልካቸው የሌላ ተማሪ ኮድ ${a.tried_other_codes} ጊዜ ሞክሯል`), level: 'bad' });
     if (a.new_device_allowed) notes.push({ text: t('waiting for the new phone', 'አዲሱን ስልክ በመጠባበቅ ላይ'), level: 'info' });
     if (a.device_changes) notes.push({ text: t(`moved to a new phone ${a.device_changes}× (allowed)`, `ወደ አዲስ ስልክ ${a.device_changes} ጊዜ ተዛውሯል (በፈቃድ)`), level: 'info' });
+    if (a.late_sync_seconds)
+      notes.push({
+        text: t(
+          `no network at the end: answers arrived ${awayText(a.late_sync_seconds)} after the time (written before it, the phone says)`,
+          `በመጨረሻ ኔትወርክ አልነበረም፦ መልሶቹ ጊዜው ካለቀ ${awayText(a.late_sync_seconds)} በኋላ ደረሱ (ስልኩ እንደሚለው ከዚያ በፊት የተጻፉ)`
+        ),
+        level: a.late_sync_seconds > 180 ? 'warn' : 'info',
+      });
     if (a.ended_reason === 'LEFT_PAGE') notes.push({ text: t('handed in automatically: left the page too often', 'ገጹን ብዙ ጊዜ በመልቀቁ በራሱ ገብቷል'), level: 'bad' });
     return notes;
   };

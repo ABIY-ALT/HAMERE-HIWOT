@@ -63,6 +63,37 @@ async function loadSupabaseUser(): Promise<SessionUser | null> {
   if (!authUser) return null;
 
   const db = createAdminClient();
+  // The account, its person, its unit assignments and their permissions in ONE
+  // round trip — this runs on every page load and every save (5 queries one
+  // after another took ~0.9 s; this ~0.16 s). The step-by-step way below
+  // stays as a fallback.
+  const { data: all, error: allError } = await db
+    .from('system_users')
+    .select(
+      '*, person:persons!system_users_person_id_fkey(*), assignments:user_unit_assignments!user_unit_assignments_system_user_id_fkey(*, role:roles(role_permissions(permission:permissions(code, is_active))))'
+    )
+    .eq('auth_user_id', authUser.id)
+    .maybeSingle();
+  if (!allError) {
+    if (!all || !all.is_active || !all.person) return null;
+    const { person, assignments: rows, ...account } = all as Record<string, unknown> & {
+      person: Person;
+      assignments: (UserUnitAssignment & { role?: { role_permissions?: { permission?: { code: string; is_active: boolean } | null }[] } | null })[];
+    };
+    const now = Date.now();
+    const live = (rows ?? []).filter((a) => a.is_active && (!a.expires_at || new Date(a.expires_at).getTime() > now));
+    const codes = new Set<PermissionCode>();
+    for (const a of live) for (const rp of a.role?.role_permissions ?? []) if (rp.permission?.is_active) codes.add(rp.permission.code as PermissionCode);
+    const assignments = live.map(({ role: _role, ...a }) => (void _role, a as UserUnitAssignment));
+    return {
+      systemUser: account as unknown as SystemUser,
+      person,
+      assignments,
+      permissions: [...codes],
+      organizationIds: [...new Set(assignments.map((a) => a.organization_unit_id))],
+    };
+  }
+
   const { data: systemUser } = await db
     .from('system_users')
     .select('*')

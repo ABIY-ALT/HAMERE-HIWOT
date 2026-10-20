@@ -26,6 +26,8 @@ import {
   CalendarCheck,
   UserCircle,
   Baby,
+  Target,
+  MessageCircleQuestion,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -114,6 +116,20 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
         labelAm: 'ተግባራትና ክትትል',
         href: '/dashboard/tasks',
         icon: ClipboardList,
+        permissions: ['TASK_ASSIGN', 'TASK_REPORT', 'AUDIT_VIEW_ALL'],
+      },
+      {
+        labelEn: 'Department plans',
+        labelAm: 'የክፍላት እቅድ',
+        href: '/dashboard/plans',
+        icon: Target,
+        permissions: ['TASK_ASSIGN', 'TASK_REPORT', 'AUDIT_VIEW_ALL'],
+      },
+      {
+        labelEn: 'Members’ questions',
+        labelAm: 'የአባላት ጥያቄዎች',
+        href: '/dashboard/questions',
+        icon: MessageCircleQuestion,
         permissions: ['TASK_ASSIGN', 'TASK_REPORT', 'AUDIT_VIEW_ALL'],
       },
     ],

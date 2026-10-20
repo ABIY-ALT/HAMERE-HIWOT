@@ -186,6 +186,15 @@ try {
   const { error: chatsTable } = await db.from('telegram_chats').select('chat_id').limit(1);
   if (chatsTable) problem(`Telegram links kept up to date missing — run migration 030_telegram_chats.sql (${chatsTable.message})`);
   else ok('Migration 030 (Telegram links kept up to date) applied');
+  const { error: lateColumn } = await db.from('exam_attempts').select('late_sync_seconds').limit(1);
+  if (lateColumn) problem(`Exams that survive a dropped network missing — run migration 031_exam_offline.sql (${lateColumn.message})`);
+  else ok('Migration 031 (exams that survive a dropped network) applied');
+  const { error: plansTable } = await db.from('unit_plans').select('id').limit(1);
+  if (plansTable) problem(`Department plans missing — run migration 032_department_plans.sql (${plansTable.message})`);
+  else ok('Migration 032 (department plans) applied');
+  const { error: questionsTable } = await db.from('member_questions').select('id').limit(1);
+  if (questionsTable) problem(`Questions to departments missing — run migration 033_member_questions.sql (${questionsTable.message})`);
+  else ok('Migration 033 (questions to departments) applied');
   if (process.env.TELEGRAM_BOT_TOKEN) ok('Telegram bot token is set (add the same TELEGRAM_BOT_TOKEN on Render)');
   else problem('Telegram bot token missing — optional; see Administration → Telegram bot');
   const { error: pushTable } = await db.from('push_subscriptions').select('id').limit(1);

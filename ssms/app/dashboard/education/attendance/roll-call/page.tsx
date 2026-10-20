@@ -123,7 +123,11 @@ function RollCallSheet() {
     });
     setBusy(false);
     if (res.ok) {
-      setMessage({ kind: 'ok', text: t('Attendance saved.', 'ክትትሉ ተቀምጧል።') });
+      setMessage(
+        res.queued
+          ? { kind: 'ok', text: t('No network — saved on this phone. It is sent by itself when the network is back.', 'ኔትወርክ የለም — በዚህ ስልክ ተቀምጧል። ኔትወርክ ሲመለስ በራሱ ይላካል።') }
+          : { kind: 'ok', text: t('Attendance saved.', 'ክትትሉ ተቀምጧል።') }
+      );
     } else {
       setMessage({ kind: 'error', text: res.error });
     }

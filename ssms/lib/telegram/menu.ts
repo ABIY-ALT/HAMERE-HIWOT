@@ -18,6 +18,7 @@ import { MEMBERSHIP_TYPES, choiceLabel } from '@/lib/members/form';
 import { escapeHtml, siteUrl } from '@/lib/telegram/bot';
 import { nonMemberIds } from '@/lib/members/membership';
 import { openPeriods } from '@/lib/telegram/dues-flow';
+import { ABOUT_BUTTON } from '@/lib/telegram/about';
 
 export const BUTTONS = {
   membership: '🪪 አባልነቴ · My membership',
@@ -27,7 +28,9 @@ export const BUTTONS = {
   results: '📊 ውጤት · Results',
   exams: '🖊️ ፈተና · Exams',
   events: '📅 መርሐ ግብር · Events',
-  help: 'ℹ️ እርዳታ · Help',
+  about: ABOUT_BUTTON,
+  ask: '✉️ ጥያቄ · Ask a department',
+  help: '❓ እርዳታ · Help',
 } as const;
 
 // ── Who is this chat? ────────────────────────────────────────────────────────
@@ -88,7 +91,7 @@ export async function chatScope(db: SupabaseClient, chatId: number): Promise<Cha
  * The buttons under the message box, by what this chat is:
  *   member   🪪 membership · 🧾 dues · 💳 I paid · 📋 attendance (service, choir)
  *   student / parent   📋 attendance · 📊 results · 🖊️ exams
- *   everyone linked    📅 events · ℹ️ help
+ *   everyone linked    📅 events · ℹ️ about us · ❓ help
  */
 export function menuFor(scope: ChatScope) {
   const rows: string[][] = [];
@@ -98,14 +101,14 @@ export function menuFor(scope: ChatScope) {
   if (scope.memberPersonIds.length || scope.studentIds.length) middle.push(BUTTONS.attendance);
   if (middle.length) rows.push(middle);
   if (scope.studentIds.length) rows.push([BUTTONS.results, BUTTONS.exams]);
-  rows.push([BUTTONS.events, BUTTONS.help]);
+  rows.push([BUTTONS.events, BUTTONS.about], [BUTTONS.ask, BUTTONS.help]);
   return { reply_markup: { keyboard: rows.map((r) => r.map((text) => ({ text }))), resize_keyboard: true, is_persistent: true } };
 }
 
 /** One button that sends the account's own phone number (Telegram allows nothing else with it). */
 export const PHONE_KEYBOARD = {
   reply_markup: {
-    keyboard: [[{ text: '📱 ስልኬን አጋራ · Share my phone number', request_contact: true }]],
+    keyboard: [[{ text: '📱 ስልኬን አጋራ · Share my phone number', request_contact: true }], [{ text: ABOUT_BUTTON }]],
     resize_keyboard: true,
     one_time_keyboard: true,
   },
@@ -168,8 +171,8 @@ export function helpFor(scope: ChatScope): string {
     am.push('ይህ ቻት ገና ከአባል ወይም ከተማሪ ጋር አልተያያዘም — ጽ/ቤቱን ይጠይቁ።');
     en.push('This chat is not linked to a member or a student yet — ask the office.');
   }
-  am.push('📅 መርሐ ግብር — የሚመጡ የትምህርት ቤቱ መርሐ ግብሮች');
-  en.push('📅 Events — the school’s coming programs');
+  am.push('📅 መርሐ ግብር — የሚመጡ የትምህርት ቤቱ መርሐ ግብሮች', 'ℹ️ ስለ እኛ — ስለ ሰንበት ትምህርት ቤቱ ማወቅ የሚፈልጉት', '✉️ ጥያቄ — ለአንድ ክፍል ጥያቄ ይላኩ፤ መልሱ እዚህ ይደርስዎታል');
+  en.push('📅 Events — the school’s coming programs', 'ℹ️ About us — what you want to know about the Sunday school', '✉️ Ask a department — send a question; the answer comes here');
   am.push('መልእክት ለማቆም /stop');
   en.push('To stop messages: /stop');
   return `${am.join('\n')}\n\n${en.join('\n')}`;

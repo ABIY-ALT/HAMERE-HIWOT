@@ -38,6 +38,20 @@ export function EducationNotice({
 
   if (edu.mode !== 'live') return <AdminModeNotice mode={edu.mode} error={edu.error} />;
 
+  if (edu.offline) {
+    return (
+      <div className="p-3 rounded-xl border border-amber-200 bg-amber-50 flex items-start gap-2 text-sm text-amber-800">
+        <Info size={16} className="mt-0.5 shrink-0" />
+        <span>
+          {t(
+            'No network — showing the classes and students kept on this phone from the last time it was online. Roll calls and grades you save are sent when the network is back.',
+            'ኔትወርክ የለም — ስልኩ ለመጨረሻ ጊዜ ኦንላይን በነበረበት የተቀመጡ ክፍሎችና ተማሪዎች ይታያሉ። የሚያስቀምጧቸው ክትትልና ውጤቶች ኔትወርክ ሲመለስ ይላካሉ።'
+          )}
+        </span>
+      </div>
+    );
+  }
+
   if (needs && !edu.activeYearId) {
     return (
       <SetupHint

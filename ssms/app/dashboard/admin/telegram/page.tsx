@@ -1,18 +1,21 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, Link2, RefreshCw, Search, Send, Users, XCircle } from 'lucide-react';
+import { ArrowDown, ArrowUp, CheckCircle2, Info, Link2, Plus, RefreshCw, Search, Send, Trash2, Users, XCircle } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
 import type { LoadMode } from '@/lib/admin/types';
 import { formatEthiopianDate } from '@/lib/utils/ethiopian-calendar';
+import { MAX_TOPICS, SUGGESTED_TOPICS, type AboutTopic } from '@/lib/telegram/about';
 import {
   connectBot,
   countAudience,
   disconnectTelegramChat,
+  loadBotAbout,
   loadBotStatus,
   loadTelegramChats,
   refreshTelegramChat,
+  saveBotAbout,
   sendBroadcast,
   type BotStatus,
   type TelegramChatRow,
@@ -127,6 +130,8 @@ export default function TelegramAdminPage() {
         </div>
       )}
 
+      {status && <AboutEditor notify={notify} />}
+
       {status?.configured && (
         <form onSubmit={send} className="card p-5 space-y-3">
           <h2 className="font-bold text-slate-800 text-sm inline-flex items-center gap-2">
@@ -175,6 +180,105 @@ export default function TelegramAdminPage() {
       )}
 
       {status?.configured && <ConnectedChats notify={notify} />}
+    </div>
+  );
+}
+
+/** ℹ️ About us: the topics anyone sees in the bot. */
+function AboutEditor({ notify }: { notify: (kind: 'success' | 'error', text: string) => void }) {
+  const { t } = useLang();
+  const [topics, setTopics] = useState<AboutTopic[] | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  const apply = useCallback((res: Awaited<ReturnType<typeof loadBotAbout>>) => {
+    if (res.mode === 'live') setTopics(res.data.topics);
+  }, []);
+  useEffect(() => {
+    loadBotAbout().then(apply);
+  }, [apply]);
+  if (!topics) return null;
+
+  const newId = () => `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const change = (next: AboutTopic[]) => {
+    setTopics(next);
+    setDirty(true);
+  };
+  const edit = (id: string, key: keyof AboutTopic, value: string) => change(topics.map((x) => (x.id === id ? { ...x, [key]: value } : x)));
+  const move = (i: number, by: number) => {
+    const next = [...topics];
+    const [item] = next.splice(i, 1);
+    next.splice(i + by, 0, item);
+    change(next);
+  };
+  const add = () => {
+    const topic = { id: newId(), title_am: '', title_en: '', body_am: '', body_en: '' };
+    change([...topics, topic]);
+    setOpen(topic.id);
+  };
+  const save = async () => {
+    setBusy(true);
+    const res = await saveBotAbout(topics);
+    setBusy(false);
+    if (!res.ok) return notify('error', res.error);
+    setDirty(false);
+    notify('success', t('Saved — the bot shows it now', 'ተቀምጧል — ቦቱ አሁኑኑ ያሳያል'));
+  };
+
+  return (
+    <div className="card p-5 space-y-3">
+      <div>
+        <h2 className="font-bold text-slate-800 text-sm inline-flex items-center gap-2">
+          <Info size={16} /> {t('“About us” in the bot', 'በቦቱ «ስለ እኛ»')}
+        </h2>
+        <p className="text-xs text-slate-500 mt-0.5">
+          {t(
+            'Anyone who finds the bot can read these — connected or not. Each topic is a button. A topic without text is not shown.',
+            'ቦቱን ያገኘ ማንኛውም ሰው ያነባቸዋል — የተገናኘም ያልተገናኘም። እያንዳንዱ ርዕስ አዝራር ነው። ጽሑፍ የሌለው ርዕስ አይታይም።'
+          )}
+        </p>
+      </div>
+      {topics.length === 0 && (
+        <button
+          type="button"
+          onClick={() => change(SUGGESTED_TOPICS.map((x) => ({ ...x, id: newId() })))}
+          className="btn btn-secondary text-xs"
+        >
+          {t('Start from suggested topics', 'ከተጠቆሙ ርዕሶች ጀምር')}
+        </button>
+      )}
+      <ul className="divide-y divide-slate-100 border border-slate-100 rounded-lg">
+        {topics.map((x, i) => (
+          <li key={x.id} className="p-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => setOpen(open === x.id ? null : x.id)} className="flex-1 text-left text-sm font-medium text-slate-800">
+                📖 {[x.title_am, x.title_en].filter(Boolean).join(' · ') || t('(no title)', '(ርዕስ የለውም)')}
+                {!x.body_am && !x.body_en && <span className="ml-2 text-[11px] text-amber-700">{t('no text yet — not shown', 'ጽሑፍ የለውም — አይታይም')}</span>}
+              </button>
+              <button type="button" disabled={i === 0} onClick={() => move(i, -1)} className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30" aria-label={t('Up', 'ወደ ላይ')}><ArrowUp size={14} /></button>
+              <button type="button" disabled={i === topics.length - 1} onClick={() => move(i, 1)} className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30" aria-label={t('Down', 'ወደ ታች')}><ArrowDown size={14} /></button>
+              <button type="button" onClick={() => change(topics.filter((y) => y.id !== x.id))} className="p-1 text-slate-400 hover:text-red-600" aria-label={t('Remove', 'አስወግድ')}><Trash2 size={14} /></button>
+            </div>
+            {open === x.id && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <input value={x.title_am} maxLength={60} onChange={(e) => edit(x.id, 'title_am', e.target.value)} placeholder="ርዕስ (አማርኛ)" className="form-input text-sm" />
+                <input value={x.title_en} maxLength={60} onChange={(e) => edit(x.id, 'title_en', e.target.value)} placeholder="Title (English)" className="form-input text-sm" />
+                <textarea value={x.body_am} maxLength={3000} rows={5} onChange={(e) => edit(x.id, 'body_am', e.target.value)} placeholder="ጽሑፍ (አማርኛ)" className="form-input text-sm" />
+                <textarea value={x.body_en} maxLength={3000} rows={5} onChange={(e) => edit(x.id, 'body_en', e.target.value)} placeholder="Text (English)" className="form-input text-sm" />
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="flex justify-between gap-2">
+        <button type="button" disabled={topics.length >= MAX_TOPICS} onClick={add} className="btn btn-secondary text-xs inline-flex items-center gap-1.5 disabled:opacity-50">
+          <Plus size={14} /> {t('Add a topic', 'ርዕስ ጨምር')}
+        </button>
+        <button type="button" disabled={busy || !dirty} onClick={save} className="btn btn-primary text-xs disabled:opacity-50">
+          {busy ? t('Saving…', 'በማስቀመጥ ላይ…') : t('Save', 'አስቀምጥ')}
+        </button>
+      </div>
     </div>
   );
 }

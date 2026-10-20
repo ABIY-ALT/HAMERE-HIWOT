@@ -1,8 +1,17 @@
-// Service worker — shows push notifications and an offline page.
-// Data is never cached: every page is loaded fresh from the server.
+// Service worker — push notifications, an offline page, and the few pages that
+// work without a network: roll call and grade entry for teachers, and the
+// exam page (an exam that loses its connection keeps going). Those pages are
+// always loaded from the network when there is one; the copy kept here is
+// used only when there is not. Their data is kept by the pages themselves
+// (lib/education/client, app/exam). Other pages are never kept.
 
-const CACHE = 'hamere-hiwot-shell-v1';
+const CACHE = 'hamere-hiwot-shell-v2';
+/** Pages that open offline — dropped on sign-out (lib/education/client resetEducation) */
+const PAGES = 'hamere-hiwot-pages-v1';
+/** The app's own JavaScript, CSS and fonts (file names change with every version) */
+const STATIC = 'hamere-hiwot-static-v1';
 const OFFLINE_URL = '/offline.html';
+const OFFLINE_PAGES = ['/dashboard/education/attendance/roll-call', '/dashboard/education/grades', '/dashboard/education/attendance', '/exam'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll([OFFLINE_URL, '/icons/icon-192.png'])));
@@ -13,15 +22,48 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => ![CACHE, PAGES, STATIC].includes(k)).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
 
-// Page loads go to the network; only when that fails is the offline page shown
 self.addEventListener('fetch', (event) => {
-  if (event.request.mode !== 'navigate') return;
-  event.respondWith(fetch(event.request).catch(() => caches.match(OFFLINE_URL)));
+  const request = event.request;
+  if (request.method !== 'GET') return;
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) return;
+
+  // The app's files: kept once loaded (their names change when they change)
+  if (url.pathname.startsWith('/_next/static/')) {
+    event.respondWith(
+      caches.open(STATIC).then((cache) =>
+        cache.match(request).then(
+          (hit) =>
+            hit ||
+            fetch(request).then((res) => {
+              if (res.ok) cache.put(request, res.clone());
+              return res;
+            })
+        )
+      )
+    );
+    return;
+  }
+
+  if (request.mode !== 'navigate') return;
+  const offlinePage = OFFLINE_PAGES.includes(url.pathname.replace(/\/$/, ''));
+  event.respondWith(
+    fetch(request)
+      .then((res) => {
+        // Keep a fresh copy of the offline pages (not a redirect to the sign-in page)
+        if (offlinePage && res.ok && !res.redirected) {
+          const copy = res.clone();
+          caches.open(PAGES).then((cache) => cache.put(url.pathname, copy));
+        }
+        return res;
+      })
+      .catch(async () => (offlinePage && (await caches.open(PAGES).then((c) => c.match(url.pathname)))) || caches.match(OFFLINE_URL))
+  );
 });
 
 self.addEventListener('push', (event) => {

@@ -19,6 +19,8 @@ import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { createAdminClient } from '@/lib/supabase/server';
 import {
   GRACE_SECONDS,
+  OFFLINE_SECONDS,
+  type OfflineAnswers,
   deadline,
   examTotal,
   isTimeUp,
@@ -230,6 +232,28 @@ function cleanAnswers(questions: ExamQuestion[], answers: Record<string, unknown
   );
 }
 
+/**
+ * Answers the phone kept while it had no network. They count when they were
+ * written before the time was up (+ grace) and arrive within OFFLINE_SECONDS
+ * after it; if they arrive late, how late is kept for the teacher (031). Only
+ * for the exam's own phone, while the exam is open and not handed in.
+ */
+async function acceptOffline(found: Found, local: OfflineAnswers | null | undefined): Promise<void> {
+  const { attempt, exam, db } = found;
+  if (!local || !attempt.started_at || attempt.submitted_at || exam.status !== 'OPEN') return;
+  const end = new Date(deadline(attempt, exam)!).getTime();
+  const written = new Date(local.written_at).getTime();
+  const now = Date.now();
+  if (!Number.isFinite(written) || written < new Date(attempt.started_at).getTime() || written > now + 60_000) return;
+  if (written > end + GRACE_SECONDS * 1000 || now > end + (GRACE_SECONDS + OFFLINE_SECONDS) * 1000) return;
+  const answers = cleanAnswers(found.questions, local.answers ?? {});
+  const late = Math.round((now - end) / 1000);
+  const update: Record<string, unknown> = { answers, ...(late > GRACE_SECONDS ? { late_sync_seconds: late } : {}) };
+  let { error } = await db.from('exam_attempts').update(update).eq('id', attempt.id).is('submitted_at', null);
+  if (error && /late_sync_seconds/.test(error.message)) ({ error } = await db.from('exam_attempts').update({ answers }).eq('id', attempt.id).is('submitted_at', null));
+  if (!error) attempt.answers = answers;
+}
+
 /** Hand in: mark what can be marked automatically and stop the clock. */
 async function handIn(found: Found, answers: Record<string, string>, reason: EndedReason) {
   const m = markAttempt(found.questions, answers);
@@ -300,8 +324,11 @@ function inProgress(found: Found): TicketResult {
   };
 }
 
-/** What the student sees after typing the ticket — and, once started, the exam itself. */
-export async function openTicket(ticket: string): Promise<TicketResult> {
+/**
+ * What the student sees after typing the ticket — and, once started, the exam itself.
+ * `local`: answers the phone kept while it had no network, sent first (acceptOffline).
+ */
+export async function openTicket(ticket: string, local?: OfflineAnswers | null): Promise<TicketResult> {
   if (!isSupabaseEnabled()) return { ok: false, error: 'UNAVAILABLE' };
   try {
     const found = await findAttempt(ticket);
@@ -309,6 +336,7 @@ export async function openTicket(ticket: string): Promise<TicketResult> {
     const device = await deviceId();
     const { attempt, exam } = found;
     if (!(await phoneAllowed(found, device, true))) return { ok: false, error: 'OTHER_PHONE' };
+    await acceptOffline(found, local);
     if (attempt.submitted_at) return submitted(found, attempt);
     if (attempt.started_at && exam.status !== 'OPEN') return submitted(found, await handIn(found, attempt.answers, 'CLOSED'));
     if (attempt.started_at && isTimeUp(attempt, exam, Date.now(), GRACE_SECONDS)) return submitted(found, await handIn(found, attempt.answers, 'TIME'));
@@ -396,13 +424,18 @@ export async function saveAnswers(
   }
 }
 
-/** Hand in the exam (also when the time runs out on the student's phone). */
-export async function submitExam(ticket: string, answers: Record<string, string>): Promise<TicketResult> {
+/**
+ * Hand in the exam (also when the time runs out on the student's phone).
+ * `writtenAt` (server time of the last change): sent by a phone that had no
+ * network, so answers written in time still count when they arrive late.
+ */
+export async function submitExam(ticket: string, answers: Record<string, string>, writtenAt?: string): Promise<TicketResult> {
   if (!isSupabaseEnabled()) return { ok: false, error: 'UNAVAILABLE' };
   try {
     const found = await findAttempt(ticket);
     if (!found) return { ok: false, error: 'NOT_FOUND' };
     if (!(await phoneAllowed(found, await deviceId(), true))) return { ok: false, error: 'OTHER_PHONE' };
+    if (writtenAt) await acceptOffline(found, { answers, written_at: writtenAt });
     const { attempt, exam } = found;
     if (attempt.submitted_at) return submitted(found, attempt);
     if (!attempt.started_at) return { ok: false, error: 'NOT_OPEN' };

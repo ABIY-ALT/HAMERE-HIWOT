@@ -13,6 +13,8 @@
 //                        everyone linked: 📅 coming events — only this chat's own people
 //   💳 I paid            report a dues payment (one month or several) for Finance to approve (lib/telegram/dues-flow);
 //                        the steps after it, incl. a photo of the receipt, follow telegram_sessions
+//   ✉️ Ask a department  a question to a department, answered on the website (lib/telegram/questions)
+//   ℹ️ About us          topics about the Sunday school written by the office (lib/telegram/about) — for anyone
 //   /stop                stop all messages to this chat (and forget its number)
 // Always answers 200, so Telegram does not resend.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -40,6 +42,8 @@ import {
 } from '@/lib/telegram/menu';
 import { activeSession, clearSession, continuePaid, startPaid } from '@/lib/telegram/dues-flow';
 import { refreshChat, savedChat, syncChat, tellUpdated } from '@/lib/telegram/links';
+import { askerOf, continueAsk, startAsk, type AskData } from '@/lib/telegram/questions';
+import { BACK_BUTTON, aboutMenu, isAboutMessage, loadAbout, topicButton, topicText } from '@/lib/telegram/about';
 
 export const dynamic = 'force-dynamic';
 
@@ -151,6 +155,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
 
+    // ── ℹ️ About us: for anyone, connected or not ──
+    if (isAboutMessage(text)) {
+      if (text === BACK_BUTTON) {
+        const scope = await chatScope(db, chatId);
+        await sendTelegram(chatId, escapeHtml(scope.linked ? helpFor(scope) : WELCOME), scope.linked ? menuFor(scope) : PHONE_KEYBOARD);
+        return NextResponse.json({ ok: true });
+      }
+      const topics = await loadAbout(db);
+      const topic = topics.find((t) => topicButton(t) === text);
+      const list = aboutMenu(topics);
+      await sendTelegram(chatId, topic ? topicText(topic) : list.text, list.keyboard);
+      return NextResponse.json({ ok: true });
+    }
+
     // ── Links still right? Checked by the saved number every few hours, at once on /start and Help ──
     const force = /^\/(start|menu|help)(@\w+)?$/i.test(text) || text === BUTTONS.help;
     const refreshed = await refreshChat(db, chatId, force);
@@ -169,7 +187,11 @@ export async function POST(request: Request) {
     // ── In the middle of "💳 I paid"? ──
     const session = await activeSession(db, chatId);
     if (session && !leavesSession(text)) {
-      await continuePaid(db, chatId, session, { text, photoFileId: pictureOf(message!), caption: message?.caption }, menu);
+      if (session.step.startsWith('ASK_')) {
+        await continueAsk(db, chatId, session as unknown as { step: string; data: AskData }, text, await askerOf(db, scope, telegramName), menu);
+      } else {
+        await continuePaid(db, chatId, session, { text, photoFileId: pictureOf(message!), caption: message?.caption }, menu);
+      }
       return NextResponse.json({ ok: true });
     }
     if (session) await clearSession(db, chatId);
@@ -180,6 +202,7 @@ export async function POST(request: Request) {
     else if (asked(text, 'exams', BUTTONS.exams)) await sendTelegram(chatId, await examsText(db, scope), menu);
     else if (asked(text, 'dues', BUTTONS.dues)) await sendTelegram(chatId, await duesText(db, scope), menu);
     else if (asked(text, 'paid', BUTTONS.paid)) await startPaid(db, chatId, scope);
+    else if (asked(text, 'ask', BUTTONS.ask)) await startAsk(db, chatId, scope);
     else if (asked(text, 'events', BUTTONS.events)) await sendTelegram(chatId, await eventsText(db, scope), menu);
     else await sendTelegram(chatId, escapeHtml(helpFor(scope)), menu);
   } catch (e) {

@@ -24,6 +24,8 @@ import { loadNotifications, type Notice } from '@/app/dashboard/actions';
 import { DEMO_NOTICES } from '@/lib/notices';
 import { forgetThisDevice } from '@/components/pwa/NotificationPrompt';
 import { resetEducation } from '@/lib/education/client';
+import { outboxItems } from '@/lib/education/outbox';
+import { SyncStatus } from '@/components/education/SyncStatus';
 import { resetFinance } from '@/lib/finance/client';
 import { resetProperty } from '@/lib/property/client';
 import { resetChoir } from '@/lib/choir/client';
@@ -117,6 +119,9 @@ export default function Header({
   };
 
   const handleLogout = async () => {
+    // Roll calls / grades saved offline and not sent yet are deleted on sign-out (the next person must not send them)
+    const waiting = outboxItems().filter((i) => !i.error).length;
+    if (waiting && !window.confirm(t(`${waiting} save(s) made offline have not been sent yet. Signing out deletes them. Sign out anyway?`, `ከኔትወርክ ውጭ የተቀመጡ ${waiting} ገና አልተላኩም። መውጣት ያጠፋቸዋል። ቢሆንም ልውጣ?`))) return;
     await forgetThisDevice();
     await signOut();
     resetEducation();
@@ -137,6 +142,7 @@ export default function Header({
 
   return (
     <header className="header">
+      <SyncStatus />
       {/* Mobile menu toggle (desktop uses the sidebar's own collapse button) */}
       <div className="md:hidden">
         <button
