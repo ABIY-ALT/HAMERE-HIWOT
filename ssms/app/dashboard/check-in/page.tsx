@@ -6,6 +6,8 @@ import { useLang } from '@/contexts/LangContext';
 import { Modal } from '@/components/ui/Modal';
 import { EthiopianDateInput } from '@/components/ui/EthiopianDateInput';
 import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
+import { ExportButton } from '@/components/ui/ExportButton';
+import { exportTable, type ExportCell, type ExportFormat } from '@/lib/export/table';
 import type { LoadMode } from '@/lib/admin/types';
 import { formatEthiopianDate, todayIso } from '@/lib/utils/ethiopian-calendar';
 import { CODE_SECONDS, FLAG_LABEL, KIND_LABEL, OPENS_BEFORE_MIN, addisDate, addisTime, checkinOpen, type CheckinEvent, type EventKind } from '@/lib/checkin/types';
@@ -16,11 +18,32 @@ import {
   liveCode,
   loadCheckinDetail,
   loadCheckinEvents,
+  loadCheckinExport,
   markPresent,
   reviewCheckin,
   type CheckinDetail,
   type CheckinEventsData,
+  type CheckinExportRow,
 } from './actions';
+
+type T = (en: string, am: string) => string;
+const STATUS_TEXT: Record<string, [string, string]> = { PRESENT: ['Present', 'ተገኝቷል'], FLAGGED: ['To check', 'ለማረጋገጥ'], REMOVED: ['Removed', 'ተወግዷል'] };
+
+/** The columns of a check-in export (Excel / CSV) */
+function exportHeader(t: T) {
+  return [
+    t('Date (E.C.)', 'ቀን (ዓ.ም)'), t('Date', 'ቀን (G.C.)'), t('Event', 'መርሐ ግብር'), t('Kind', 'ዓይነት'), t('Name', 'ስም'), t('ID', 'መለያ'),
+    t('Status', 'ሁኔታ'), t('How', 'እንዴት'), t('Reason flagged', 'የተጠረጠረበት ምክንያት'), t('Distance (m)', 'ርቀት (ሜ)'), t('Time', 'ሰዓት'),
+  ];
+}
+function exportRow(t: T, locale: 'en' | 'am', r: Omit<CheckinExportRow, 'starts_at'>): ExportCell[] {
+  return [
+    formatEthiopianDate(r.date, locale), r.date, r.event, t(...KIND_LABEL[r.kind]), r.name, r.code,
+    t(...STATUS_TEXT[r.status]), r.method === 'LEADER' ? t('Marked by leader', 'በመሪ') : t('Code', 'በኮድ'),
+    r.flag ? t(...FLAG_LABEL[r.flag]) : '', r.distance_m, addisTime(r.checked_at),
+  ];
+}
+const WIDTHS = [14, 12, 34, 16, 28, 16, 12, 16, 22, 12, 8];
 
 const KIND_STYLE: Record<EventKind, string> = {
   PROGRAM: 'bg-rose-50 text-rose-800',
@@ -58,6 +81,14 @@ export default function CheckinPage() {
   };
 
   const canRun = Boolean(data && (data.can_program || data.can_choir));
+  const [period, setPeriod] = useState(90);
+  const exportAll = async (format: ExportFormat) => {
+    const from = new Date(Date.now() - period * 86_400_000).toISOString().slice(0, 10);
+    const res = await loadCheckinExport(from);
+    if (!res.ok) return notify('error', res.error);
+    if (!res.rows.length) return notify('error', t('No check-ins in this period', 'በዚህ ጊዜ ውስጥ መገኘት አልተመዘገበም'));
+    await exportTable(`checkins_${todayIso()}`, exportHeader(t), res.rows.map((r) => exportRow(t, locale, r)), format, { sheet: 'Check-ins', widths: WIDTHS });
+  };
   const live = (data?.events ?? []).filter((e) => checkinOpen(e, now));
   const coming = (data?.events ?? []).filter((e) => e.status === 'OPEN' && !checkinOpen(e, now) && new Date(e.ends_at).getTime() > now);
   const past = (data?.events ?? []).filter((e) => !live.includes(e) && !coming.includes(e));
@@ -77,11 +108,24 @@ export default function CheckinPage() {
             )}
           </p>
         </div>
-        {canRun && (
-          <button onClick={() => setCreating(true)} className="btn btn-primary text-xs inline-flex items-center gap-1.5 self-start">
-            <Plus size={14} /> {t('Open check-in', 'መመዝገቢያ ክፈት')}
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2 self-start">
+          {data && data.events.length > 0 && (
+            <>
+              <select value={period} onChange={(e) => setPeriod(Number(e.target.value))} className="form-input text-xs py-1.5 w-auto" aria-label={t('Period to export', 'የሚላከው ጊዜ')}>
+                <option value={30}>{t('Last 30 days', 'ያለፉት 30 ቀናት')}</option>
+                <option value={90}>{t('Last 3 months', 'ያለፉት 3 ወራት')}</option>
+                <option value={365}>{t('Last 12 months', 'ያለፉት 12 ወራት')}</option>
+                <option value={3650}>{t('Everything', 'ሁሉም')}</option>
+              </select>
+              <ExportButton onExport={exportAll} label={t('Export check-ins', 'መገኘቶችን ላክ')} />
+            </>
+          )}
+          {canRun && (
+            <button onClick={() => setCreating(true)} className="btn btn-primary text-xs inline-flex items-center gap-1.5">
+              <Plus size={14} /> {t('Open check-in', 'መመዝገቢያ ክፈት')}
+            </button>
+          )}
+        </div>
       </div>
       <AdminModeNotice mode={mode} error={error} />
 
@@ -392,7 +436,23 @@ function EventDialog({ eventId, onClose, notify }: { eventId: string; onClose: (
               </button>
             </div>
           )}
-          {!isOpen && <p className="text-sm text-slate-500 inline-flex items-center gap-1.5"><Lock size={14} /> {t('Check-in is closed.', 'መመዝገቢያው ተዘግቷል።')}</p>}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {!isOpen ? <p className="text-sm text-slate-500 inline-flex items-center gap-1.5"><Lock size={14} /> {t('Check-in is closed.', 'መመዝገቢያው ተዘግቷል።')}</p> : <span />}
+            {rows.length > 0 && ev && (
+              <ExportButton
+                label={t('Export this list', 'ዝርዝሩን ላክ')}
+                onExport={(format) =>
+                  exportTable(
+                    `checkin_${addisDate(ev.starts_at)}_${ev.title}`,
+                    exportHeader(t),
+                    rows.map((r) => exportRow(t, locale, { ...r, date: addisDate(ev.starts_at), event: ev.title, kind: ev.kind })),
+                    format,
+                    { sheet: 'Check-in', widths: WIDTHS }
+                  )
+                }
+              />
+            )}
+          </div>
 
           <div className="grid grid-cols-3 gap-3">
             <Stat value={present.length} label={t('Present', 'ተገኝተዋል')} tone="text-emerald-700" />

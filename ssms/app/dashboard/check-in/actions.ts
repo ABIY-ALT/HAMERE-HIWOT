@@ -353,3 +353,68 @@ export async function checkInMe(
     return { ok: false, error: missing(errorMessage(e)) };
   }
 }
+
+// ── Export (Excel / CSV) ─────────────────────────────────────────────────────
+
+export interface CheckinExportRow {
+  date: string;
+  event: string;
+  kind: EventKind;
+  starts_at: string;
+  name: string;
+  code: string;
+  status: CheckinStatus;
+  method: 'CODE' | 'LEADER';
+  flag: CheckinFlag | null;
+  distance_m: number | null;
+  checked_at: string;
+}
+
+/** Every check-in of the events since `from` (YYYY-MM-DD), one row each — for Excel / CSV. */
+export async function loadCheckinExport(from: string): Promise<{ ok: true; rows: CheckinExportRow[] } | { ok: false; error: string }> {
+  try {
+    const { db } = await authorize(...RUNNERS, 'PROGRAM_VIEW', 'AUDIT_VIEW_ALL');
+    const since = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).parse(from);
+    const events = await selectAll<Row>((a, b) => db.from('checkin_events').select('id, title, kind, starts_at').gte('starts_at', `${since}T00:00:00+03:00`).order('starts_at').range(a, b));
+    if (!events.length) return { ok: true, rows: [] };
+    const eventOf = new Map(events.map((e) => [e.id as string, e]));
+    const marks: Row[] = [];
+    for (let i = 0; i < events.length; i += 100) {
+      const ids = events.slice(i, i + 100).map((e) => e.id as string);
+      marks.push(...(await selectAll<Row>((a, b) => db.from('checkins').select('*').in('event_id', ids).order('checked_at').range(a, b))));
+    }
+    const personIds = [...new Set(marks.map((m) => m.person_id as string))];
+    const people = new Map<string, Row>();
+    const regs = new Map<string, string>();
+    for (let i = 0; i < personIds.length; i += 150) {
+      const part = personIds.slice(i, i + 150);
+      const [{ data: ps }, { data: ss }] = await Promise.all([
+        db.from('persons').select('id, full_name_en, full_name_am, membership_code').in('id', part),
+        db.from('students').select('person_id, reg_no').in('person_id', part),
+      ]);
+      for (const p of (ps ?? []) as Row[]) people.set(p.id as string, p);
+      for (const s of (ss ?? []) as Row[]) regs.set(s.person_id as string, s.reg_no as string);
+    }
+    const rows: CheckinExportRow[] = marks.map((m) => {
+      const e = eventOf.get(m.event_id as string)!;
+      const p = people.get(m.person_id as string);
+      const memberCode = (p?.membership_code as string) ?? '';
+      return {
+        date: new Date(new Date(e.starts_at as string).getTime() + 3 * 3600_000).toISOString().slice(0, 10),
+        event: e.title as string,
+        kind: e.kind as EventKind,
+        starts_at: e.starts_at as string,
+        name: (p?.full_name_am as string) || (p?.full_name_en as string) || '—',
+        code: memberCode.startsWith('MBR') ? memberCode : regs.get(m.person_id as string) ?? memberCode,
+        status: m.status as CheckinStatus,
+        method: m.method as CheckinExportRow['method'],
+        flag: (m.flag as CheckinFlag) ?? null,
+        distance_m: m.distance_m === null || m.distance_m === undefined ? null : Number(m.distance_m),
+        checked_at: m.checked_at as string,
+      };
+    });
+    return { ok: true, rows };
+  } catch (e) {
+    return { ok: false, error: missing(errorMessage(e)) };
+  }
+}

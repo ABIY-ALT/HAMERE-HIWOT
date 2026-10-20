@@ -5,6 +5,8 @@ import { AlertTriangle, BellRing, Check, ChevronLeft, ChevronRight, Pencil, Plus
 import { useLang } from '@/contexts/LangContext';
 import { Modal } from '@/components/ui/Modal';
 import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
+import { ExportButton } from '@/components/ui/ExportButton';
+import { exportTable, type ExportFormat } from '@/lib/export/table';
 import type { LoadMode } from '@/lib/admin/types';
 import { formatETB } from '@/lib/finance/types';
 import { formatEthiopianDate } from '@/lib/utils/ethiopian-calendar';
@@ -82,6 +84,38 @@ export default function PlansPage() {
   const planOf = (id: string) => data?.plans.find((p) => p.unit_id === id) ?? null;
   const statusOf = (id: string): Filter => planOf(id)?.status ?? 'NONE';
 
+  /** Every activity of the departments shown, for the year — Excel / CSV */
+  const exportPlans = async (format: ExportFormat) => {
+    if (!data) return;
+    const header = [
+      t('Department', 'ክፍል'), t('Plan', 'እቅድ'), t('Main goal', 'ዋና ግብ'), t('No.', 'ተ.ቁ'), t('Activity', 'ተግባር'), t('Measure', 'መለኪያ'),
+      t('Target', 'ግብ'), t('Achieved', 'የተሳካ'), t('Quarters', 'ሩብ ዓመታት'), t('Budget (birr)', 'በጀት (ብር)'), t('Responsible', 'ኃላፊ'),
+      t('Done %', 'አፈጻጸም %'), t('State', 'ሁኔታ'), t('Overdue', 'ጊዜው ያለፈ'), t('Tasks done', 'የተጠናቀቁ ተግባራት'),
+      t('Latest report', 'የመጨረሻ ሪፖርት'), t('Reported on', 'የቀረበበት'),
+    ];
+    const rows: (string | number | null)[][] = [];
+    for (const u of data.units) {
+      const plan = data.plans.find((x) => x.unit_id === u.id);
+      const unitName = locale === 'am' ? u.name_am : u.name_en;
+      if (!plan || plan.activities.length === 0) {
+        rows.push([unitName, plan ? t(...STATUS_LABEL[plan.status]) : t('Not started', 'አልተጀመረም'), plan?.goal ?? '', null, '', '', null, null, '', null, '', null, '', '', '', '', '']);
+        continue;
+      }
+      plan.activities.forEach((a, i) => {
+        const latest = a.updates[0];
+        rows.push([
+          unitName, t(...STATUS_LABEL[plan.status]), i === 0 ? plan.goal : '', i + 1, a.title, a.measure, a.target, a.achieved,
+          a.quarters.map((q) => `Q${q}`).join(', '), a.budget, a.responsible,
+          plan.status === 'APPROVED' ? a.progress : null, plan.status === 'APPROVED' ? t(...STATE_LABEL[a.state]) : '',
+          plan.status === 'APPROVED' && isOverdue(a, plan.year, now) ? t('Yes', 'አዎ') : '',
+          a.tasks.length ? `${a.tasks.filter((x) => x.status === 'COMPLETED').length}/${a.tasks.length}` : '',
+          latest?.note ?? '', latest ? formatEthiopianDate(latest.created_at.slice(0, 10), locale) : '',
+        ]);
+      });
+    }
+    await exportTable(`plans_${data.year}`, header, rows, format, { sheet: `Plans ${data.year}`, widths: [26, 18, 34, 5, 40, 22, 9, 9, 12, 12, 20, 9, 14, 9, 10, 40, 14] });
+  };
+
   const remind = async () => {
     if (!data) return;
     setBusy(true);
@@ -137,7 +171,9 @@ export default function PlansPage() {
           </p>
         </div>
         {data && (
-          <div className="inline-flex items-center gap-1 self-start rounded-lg border border-slate-200 bg-white px-1">
+          <div className="flex flex-wrap items-center gap-2 self-start">
+          <ExportButton onExport={exportPlans} disabled={data.units.length === 0} />
+          <div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-1">
             <button onClick={() => reload(data.year - 1)} className="p-1.5 rounded hover:bg-slate-100" aria-label={t('Previous year', 'ያለፈው ዓመት')}>
               <ChevronLeft size={18} />
             </button>
@@ -145,6 +181,7 @@ export default function PlansPage() {
             <button onClick={() => reload(data.year + 1)} className="p-1.5 rounded hover:bg-slate-100" aria-label={t('Next year', 'ቀጣዩ ዓመት')}>
               <ChevronRight size={18} />
             </button>
+          </div>
           </div>
         )}
       </div>

@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { ClipboardList, Download, Plus, Repeat, Search, UserPlus } from 'lucide-react';
+import { ClipboardList, Plus, Repeat, Search, UserPlus } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
@@ -22,7 +22,8 @@ import {
   WORK_STATUSES,
   type Task,
 } from '@/lib/tasks/types';
-import { cell, downloadXlsx, headerCell } from '@/lib/export/xlsx';
+import { ExportButton } from '@/components/ui/ExportButton';
+import { exportTable, type ExportFormat } from '@/lib/export/table';
 import { formatEthiopianDate, todayIso } from '@/lib/utils/ethiopian-calendar';
 
 type Show = 'OPEN' | 'REVIEW' | 'OVERDUE' | 'DONE' | 'ALL';
@@ -128,26 +129,28 @@ export default function TasksPage() {
     .filter((u) => u.total > 0)
     .sort((a, b) => b.overdue - a.overdue || b.working - a.working || a.name.localeCompare(b.name));
 
-  const exportExcel = async () => {
+  const exportExcel = async (format: ExportFormat) => {
     const header = [
       t('No.', 'ቁጥር'), t('Task', 'ተግባር'), t('Given by', 'የሰጠው አካል'), t('Department', 'ክፍል'), t('Comes from', 'ምንጭ'),
       t('Meeting', 'ስብሰባ'), t('Meeting date', 'የስብሰባው ቀን'), t('Decision no.', 'የውሳኔ ቁጥር'), t('Priority', 'ቅድሚያ'),
       t('Given on', 'የተሰጠበት'), t('Due', 'የማጠናቀቂያ ቀን'), t('Status', 'ሁኔታ'), t('Progress %', 'ሂደት %'),
       t('Latest report', 'የመጨረሻ ሪፖርት'), t('Completed on', 'የተጠናቀቀበት'),
-    ].map(headerCell);
+      t('Who does it', 'የሚሠራው'), t('Own task', 'የውስጥ ተግባር'), t('Plan activity', 'የእቅድ ተግባር'), t('Part of', 'የ… አካል'),
+    ];
     const body = rows.map((x) => {
       const latest = [...x.updates].reverse().find((u) => u.kind === 'PROGRESS' || u.kind === 'SUBMITTED');
       return [
-        x.task_no, cell(x.title), cell(locale === 'am' ? x.from_unit_am : x.from_unit), cell(unitLabel(x)), t(...SOURCE[x.source]),
-        cell(x.meeting_title), x.meeting_date ? date(x.meeting_date) : '', cell(x.decision_ref), t(...PRIORITY[x.priority].label),
+        x.task_no, x.title, locale === 'am' ? x.from_unit_am : x.from_unit, unitLabel(x), t(...SOURCE[x.source]),
+        x.meeting_title, x.meeting_date ? date(x.meeting_date) : '', x.decision_ref, t(...PRIORITY[x.priority].label),
         date(x.created_at), x.due_date ? date(x.due_date) : '',
         `${t(...STATUS[x.status].label)}${isOverdue(x, today) ? ` (${t('overdue', 'ጊዜው አልፏል')})` : ''}`,
-        x.progress, cell(latest?.note ?? ''), x.completed_at ? date(x.completed_at) : '',
+        x.progress, latest?.note ?? '', x.completed_at ? date(x.completed_at) : '',
+        x.assignee, x.internal ? t('Yes', 'አዎ') : '', x.plan_activity, x.parent_task_no,
       ];
     });
-    await downloadXlsx(`tasks_${today}`, [header, ...body], {
+    await exportTable(`tasks_${today}`, header, body, format, {
       sheet: 'Tasks',
-      widths: [14, 40, 24, 30, 16, 30, 16, 14, 10, 16, 16, 24, 10, 50, 16],
+      widths: [14, 40, 24, 30, 16, 30, 16, 14, 10, 16, 16, 24, 10, 50, 16, 24, 10, 30, 14],
     });
   };
 
@@ -177,9 +180,7 @@ export default function TasksPage() {
           </p>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
-          <button onClick={exportExcel} disabled={rows.length === 0} className="btn btn-secondary text-xs inline-flex items-center gap-1.5 disabled:opacity-50">
-            <Download size={14} /> {t('Export Excel', 'ወደ ኤክሴል')}
-          </button>
+          <ExportButton onExport={exportExcel} disabled={rows.length === 0} />
           {isHead && ownUnits.length > 0 && (
             <button
               onClick={() => setDialog({ kind: 'own' })}

@@ -7,6 +7,8 @@ import { useLang } from '@/contexts/LangContext';
 import { Modal } from '@/components/ui/Modal';
 import { EthiopianDateInput } from '@/components/ui/EthiopianDateInput';
 import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
+import { ExportButton } from '@/components/ui/ExportButton';
+import { exportTable, type ExportFormat } from '@/lib/export/table';
 import type { LoadMode } from '@/lib/admin/types';
 import { formatETB } from '@/lib/finance/types';
 import { DUES_MONTHS, claimPlan, firstOwedMonth, periodsLabel, unpaidMonths } from '@/lib/finance/dues';
@@ -97,6 +99,37 @@ export default function DuesPage() {
     }
     return { collected, paidUp, behind: behindMembers, owed: data.rate === null ? 0 : behindMonths * data.rate };
   }, [data]);
+
+  /** The month grid of the members shown (search / filter applied) — Excel / CSV */
+  const exportGrid = async (format: ExportFormat) => {
+    if (!data) return;
+    const header = [
+      t('Member', 'አባል'), t('Member ID', 'መለያ'), t('Phone', 'ስልክ'),
+      ...MONTHS.map((m) => monthName(m)),
+      t('Months paid', 'የተከፈሉ ወራት'), t('Behind', 'ዘግይቷል'), t('Paid (birr)', 'የተከፈለ (ብር)'),
+    ];
+    const body = rows.map((m) => {
+      const from = firstOwedMonth(m.joined, data.year);
+      const paid = Object.values(m.paid);
+      return [
+        name(m), m.code, m.phone,
+        ...MONTHS.map((month) => (m.paid[month] ? m.paid[month].amount : m.pending.includes(month) ? t('waiting', 'በመጠባበቅ') : month < from ? '–' : '')),
+        paid.length, m.behind, paid.reduce((sum, x) => sum + x.amount, 0),
+      ];
+    });
+    await exportTable(`dues_${data.year}`, header, body, format, { sheet: `Dues ${data.year}`, widths: [28, 16, 14, ...MONTHS.map(() => 9), 11, 9, 12] });
+  };
+  /** Payment reports from the bot, waiting for approval — Excel / CSV */
+  const exportClaims = async (format: ExportFormat) => {
+    if (!data) return;
+    await exportTable(
+      `dues_payment_reports_${todayIso()}`,
+      [t('Member', 'አባል'), t('Member ID', 'መለያ'), t('Months', 'ወራት'), t('Amount (birr)', 'መጠን (ብር)'), t('Expected (birr)', 'የሚጠበቅ (ብር)'), t('How', 'በምን'), t('Transaction no.', 'የግብይት ቁጥር'), t('Receipt photo', 'የደረሰኝ ፎቶ'), t('Reported on', 'የተላከበት')],
+      data.claims.map((c) => [name(c), c.code, periodsLabel(c.periods, locale === 'am' ? 'am' : 'en'), c.amount, c.expected, t(...METHOD[c.method]), c.reference, c.has_proof ? t('Yes', 'አለ') : '', formatEthiopianDate(c.created_at.slice(0, 10), locale)]),
+      format,
+      { sheet: 'Payment reports', widths: [28, 16, 34, 12, 12, 12, 20, 10, 14] }
+    );
+  };
 
   const saveRate = async () => {
     if (!data) return;
@@ -194,6 +227,7 @@ export default function DuesPage() {
                   <Hourglass size={16} className="text-amber-600" />
                   {t(`Payment reports (${data.claims.length} waiting)`, `የክፍያ ሪፖርቶች (${data.claims.length} ይጠብቃሉ)`)}
                 </h2>
+                <div className="float-right"><ExportButton onExport={exportClaims} /></div>
                 <p className="text-xs text-slate-500 mt-0.5">
                   {t(
                     'Members said in the Telegram bot that they paid. Check the money arrived, then approve (it is recorded with a receipt) or reject.',
@@ -261,6 +295,7 @@ export default function DuesPage() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                 <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('Search member…', 'አባል ፈልግ…')} className="form-input pl-9 text-sm" />
               </div>
+              <ExportButton onExport={exportGrid} disabled={rows.length === 0} />
               <select value={filter} onChange={(e) => setFilter(e.target.value as typeof filter)} className="form-input text-sm w-auto">
                 <option value="ALL">{t('All members', 'ሁሉም አባላት')}</option>
                 <option value="BEHIND">{t('Behind', 'የዘገዩ')}</option>

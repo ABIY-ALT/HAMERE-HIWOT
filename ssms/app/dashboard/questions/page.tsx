@@ -4,6 +4,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, MessageCircleQuestion, Send, XCircle } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
+import { ExportButton } from '@/components/ui/ExportButton';
+import { exportTable, type ExportFormat } from '@/lib/export/table';
+import { todayIso } from '@/lib/utils/ethiopian-calendar';
 import type { LoadMode } from '@/lib/admin/types';
 import { formatEthiopianDate } from '@/lib/utils/ethiopian-calendar';
 import { answerQuestion, closeQuestion, loadQuestions, type MemberQuestion, type QuestionsData } from './actions';
@@ -37,6 +40,24 @@ export default function QuestionsPage() {
     return u ? (locale === 'am' ? u.name_am : u.name_en) : '';
   };
   const shown = (data?.questions ?? []).filter((q) => (filter === 'ALL' || q.status === filter) && (unit === 'ALL' || q.unit_id === unit));
+  /** The questions shown (filters applied) — Excel / CSV */
+  const exportQuestions = (format: ExportFormat) =>
+    exportTable(
+      `questions_${todayIso()}`,
+      [t('Date', 'ቀን'), t('Department', 'ክፍል'), t('Asked by', 'ጠያቂ'), t('Question', 'ጥያቄ'), t('Status', 'ሁኔታ'), t('Answer', 'መልስ'), t('Answered by', 'የመለሰው'), t('Answered on', 'የተመለሰበት')],
+      shown.map((q) => [
+        formatEthiopianDate(q.created_at.slice(0, 10), locale),
+        unitName(q.unit_id),
+        q.asker,
+        q.question,
+        { OPEN: t('Waiting', 'መልስ የሚጠብቅ'), ANSWERED: t('Answered', 'ተመልሷል'), CLOSED: t('Closed', 'ተዘግቷል') }[q.status],
+        q.answer,
+        q.answered_by,
+        q.answered_at ? formatEthiopianDate(q.answered_at.slice(0, 10), locale) : '',
+      ]),
+      format,
+      { sheet: 'Questions', widths: [14, 24, 28, 50, 12, 50, 22, 14] }
+    );
   const count = (f: Filter) => (data?.questions ?? []).filter((q) => (f === 'ALL' || q.status === f) && (unit === 'ALL' || q.unit_id === unit)).length;
 
   return (
@@ -63,8 +84,9 @@ export default function QuestionsPage() {
               {{ OPEN: t('Waiting', 'መልስ የሚጠብቁ'), ANSWERED: t('Answered', 'የተመለሱ'), CLOSED: t('Closed', 'የተዘጉ'), ALL: t('All', 'ሁሉም') }[f]} · {count(f)}
             </button>
           ))}
+          <ExportButton onExport={exportQuestions} disabled={shown.length === 0} className="ml-auto" />
           {data.units.length > 1 && (
-            <select value={unit} onChange={(e) => setUnit(e.target.value)} className="form-input text-xs w-auto ml-auto">
+            <select value={unit} onChange={(e) => setUnit(e.target.value)} className="form-input text-xs w-auto">
               <option value="ALL">{t('All departments', 'ሁሉም ክፍላት')}</option>
               {data.units.map((u) => <option key={u.id} value={u.id}>{locale === 'am' ? u.name_am : u.name_en}</option>)}
             </select>
