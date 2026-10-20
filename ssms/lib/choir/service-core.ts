@@ -154,8 +154,8 @@ export function assignedText(s: { title: string; date: string; time: string; loc
     e(`📅 ${when(s.date, s.time)}${s.location ? ` · 📍 ${s.location}` : ''}`),
     role ? e(`🎯 ድርሻዎ · Your part: ${role}`) : '',
     '',
-    e('እባክዎ ይመጡ እንደሆነ ያሳውቁ፦ በቦቱ «🎵 አገልግሎቴ» ይጫኑ።'),
-    e('Please confirm: tap “🎵 My service” in the bot.'),
+    e('እባክዎ ይመጡ እንደሆነ ያሳውቁ፦ በቦቱ «🎵 ምደባዬ» ይጫኑ።'),
+    e('Please confirm: tap “🎵 My roster” in the bot.'),
     '',
     `<b>${e('የተመደቡ · On the roster')}</b> (${roster.length})`,
     ...rosterLines(roster),
@@ -201,9 +201,9 @@ export function vestmentReminderText(items: { vestment: string; due_on: string }
   ].join('\n');
 }
 
-/** "🎵 My service" in the bot: the same view as the website. */
+/** "🎵 My roster" in the bot: the same view as the website. */
 export function myServiceText(s: MyService): string {
-  const lines = [`🎵 <b>${e('አገልግሎቴ · My service')}</b>${s.name ? ` — ${e(s.name)}` : ''}`, ''];
+  const lines = [`🎵 <b>${e('ምደባዬ · My roster')}</b>${s.name ? ` — ${e(s.name)}` : ''}`, ''];
   if (s.in_choir) {
     const r = s.rehearsals;
     lines.push(e(`📊 ጥናት (ያለፉት ${WEEKS} ሳምንታት) · Rehearsals (last ${WEEKS} weeks): ${r.rate === null ? '—' : `${r.rate}%`} · ${r.came}/${r.counted}`), '');

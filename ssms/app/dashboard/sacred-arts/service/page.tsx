@@ -87,7 +87,7 @@ export default function ServiceRosterPage() {
       `የተመደቡ · On the roster (${list.length}):`,
       ...list,
       '',
-      'ምደባዎን በቦቱ «🎵 አገልግሎቴ» ያረጋግጡ · Confirm in the bot: “🎵 My service”',
+      'ምደባዎን በቦቱ «🎵 ምደባዬ» ያረጋግጡ · Confirm in the bot: “🎵 My roster”',
     ].filter((l, i, all) => l !== '' || all[i - 1] !== '').join('\n');
   };
   const copy = async (s: ChoirSession) => {

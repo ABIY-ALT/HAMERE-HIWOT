@@ -128,8 +128,8 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
         staffOnly: true,
       },
       {
-        labelEn: 'My service',
-        labelAm: 'አገልግሎቴ',
+        labelEn: 'My roster',
+        labelAm: 'ምደባዬ',
         href: '/dashboard/my-service',
         icon: Music,
         staffOnly: true,

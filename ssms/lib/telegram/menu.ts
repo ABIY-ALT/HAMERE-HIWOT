@@ -32,7 +32,7 @@ export const BUTTONS = {
   ask: '✉️ ጥያቄ · Ask a department',
   mytasks: '🗂️ ተግባሮቼ · My tasks',
   here: '✅ ተገኝቻለሁ · I’m here',
-  service: '🎵 አገልግሎቴ · My service',
+  service: '🎵 ምደባዬ · My roster',
   help: '❓ እርዳታ · Help',
 } as const;
 
@@ -160,14 +160,14 @@ export function helpFor(scope: ChatScope): string {
       '📋 ክትትል — የአገልግሎትና የመዘምራን ክትትልዎ ታሪክ',
       '🗂️ ተግባሮቼ — ክፍልዎ የሰጠዎት ተግባራት፤ ሂደቱን ያሳውቁ'
     );
-    if (scope.inChoir) am.push('🎵 አገልግሎቴ — የአገልግሎት ምደባ (መመደብዎን)፣ የጥናት ተገኝነትና የክብር ልብስ');
+    if (scope.inChoir) am.push('🎵 ምደባዬ — የአገልግሎት ምደባ (መመደብዎን)፣ የጥናት ተገኝነትና የክብር ልብስ');
     en.push(
       '🪪 My membership — member details, department, service, choir and committees',
       '🧾 Dues — paid, unpaid and waiting months',
       '📋 Attendance — your service and choir attendance history',
       '🗂️ My tasks — tasks your department gave you; report progress'
     );
-    if (scope.inChoir) en.push('🎵 My service — service rosters (are you on it?), rehearsal attendance and vestments');
+    if (scope.inChoir) en.push('🎵 My roster — service rosters (are you on it?), rehearsal attendance and vestments');
     if (scope.duesPersonIds.length) {
       am.push('💳 ከፍያለሁ — የከፈሉትን (አንድ ወይም ብዙ ወር) ለፋይናንስ ያሳውቁ');
       en.push('💳 I paid — tell Finance you paid (one month or several)');

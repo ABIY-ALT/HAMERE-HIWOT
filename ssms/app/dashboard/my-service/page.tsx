@@ -37,7 +37,7 @@ export default function MyServicePage() {
     <div className="space-y-6 max-w-2xl">
       <AdminToast toast={toast} />
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900 inline-flex items-center gap-2"><Music size={22} /> {t('My service', 'አገልግሎቴ')}</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900 inline-flex items-center gap-2"><Music size={22} /> {t('My roster', 'ምደባዬ')}</h1>
         <p className="text-sm text-slate-500 mt-1">{t('Your place on the service rosters, your rehearsal attendance and the vestments you hold.', 'በአገልግሎት ምደባ ያለዎት ቦታ፣ የጥናት ተገኝነትዎና በእጅዎ ያለ የክብር ልብስ።')}</p>
       </div>
       <AdminModeNotice mode={mode} error={error} />

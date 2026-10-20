@@ -171,7 +171,7 @@ export async function connectBot(): Promise<ActionResult> {
         { command: 'ask', description: 'Ask a department · ጥያቄ' },
         { command: 'tasks', description: 'My tasks · ተግባሮቼ' },
         { command: 'here', description: 'I am here (check in) · ተገኝቻለሁ' },
-        { command: 'service', description: 'My service roster · አገልግሎቴ' },
+        { command: 'service', description: 'My roster · ምደባዬ' },
         { command: 'dues', description: 'Monthly dues · መዋጮ' },
         { command: 'paid', description: 'I paid my dues · ከፍያለሁ' },
         { command: 'menu', description: 'Menu · ምናሌ' },
