@@ -6,12 +6,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { authorize, check, errorMessage } from '@/lib/auth/authorize';
+import { authorizeIn, check, errorMessage } from '@/lib/auth/authorize';
 import type { Loaded } from '@/lib/admin/types';
 import type { AuditActionType, AuditEntry, AuditFilter, AuditPage } from '@/lib/audit/types';
 
 type Row = Record<string, unknown> & { id: string };
-type Db = Awaited<ReturnType<typeof authorize>>['db'];
+type Db = Awaited<ReturnType<typeof authorizeIn>>['db'];
 
 const PAGE_SIZE = 100;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -62,7 +62,7 @@ async function recordLabels(db: Db, rows: Row[]): Promise<Map<string, string>> {
 export async function loadAudit(filter: AuditFilter = {}): Promise<Loaded<AuditPage>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
-    const { db } = await authorize('AUDIT_VIEW_ALL');
+    const { db } = await authorizeIn('audit', 'AUDIT_VIEW_ALL');
 
     let q = db.from('system_audit_logs')
       .select('*, actor:system_users!system_audit_logs_user_id_fkey(id, person:persons!system_users_person_id_fkey(full_name_en)), unit:organization_units(name_en)')

@@ -6,13 +6,18 @@
 // phone number instead). The department sees it on Members' questions and
 // calls back. Against misuse: a hidden field people never fill, at most
 // MAX_PER_PHONE a day from one number and MAX_PER_ADDRESS an hour from one
-// address, and only the departments the form offers.
+// address, and only the departments the form offers. The Sunday school is the
+// one whose website the form is on (hidden field "site" = its slug, empty for
+// the default one); the department must belong to it.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { headers } from 'next/headers';
 import { z } from 'zod';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { createAdminClient } from '@/lib/supabase/server';
+import { tenantClient } from '@/lib/tenant/db';
+import { defaultTenant, loadTenantAccess, tenantBySlug } from '@/lib/tenant/context';
+import { runInTenant } from '@/lib/tenant/scope';
+import { rateLimit } from '@/lib/security/rate-limit';
 import { isValidPhone, normalizePhone } from '@/lib/auth/phone';
 import { notifyLater } from '@/lib/push/send';
 
@@ -21,19 +26,6 @@ export type ContactState = { status: 'idle' } | { status: 'sent' } | { status: '
 const MAX_PER_PHONE = 3;
 const MAX_PER_ADDRESS = 5;
 const MAX_LENGTH = 1500;
-
-/** Recent sends per address (this server only; resets on restart — the per-phone limit is in the database) */
-const recent = new Map<string, number[]>();
-
-function tooMany(address: string): boolean {
-  const hourAgo = Date.now() - 3_600_000;
-  const times = (recent.get(address) ?? []).filter((t) => t > hourAgo);
-  if (times.length >= MAX_PER_ADDRESS) return true;
-  times.push(Date.now());
-  recent.set(address, times);
-  if (recent.size > 5000) recent.clear();
-  return false;
-}
 
 const fail = (am: string, en: string): ContactState => ({ status: 'error', am, en });
 
@@ -65,11 +57,20 @@ export async function sendContact(_prev: ContactState, form: FormData): Promise<
 
   const h = await headers();
   const address = h.get('x-forwarded-for')?.split(',')[0]?.trim() || h.get('x-real-ip') || 'unknown';
-  if (tooMany(address)) return fail('ብዙ መልእክቶች ተልከዋል፤ ትንሽ ቆይተው ይሞክሩ።', 'Too many messages — please try again a little later.');
+  if (!(await rateLimit(`contact-ip:${address}`, MAX_PER_ADDRESS, 3600))) {
+    return fail('ብዙ መልእክቶች ተልከዋል፤ ትንሽ ቆይተው ይሞክሩ።', 'Too many messages — please try again a little later.');
+  }
 
   const { name, phone, unit_id, message } = parsed.data;
   try {
-    const db = createAdminClient();
+    const slug = String(form.get('site') ?? '');
+    const tenant = slug ? await tenantBySlug(slug) : await defaultTenant();
+    if (!tenant) return fail('ይቅርታ፣ መልእክቱ አልተላከም።', 'Sorry, the message could not be sent.');
+    const access = await loadTenantAccess(tenant.id);
+    if (access.mode !== 'full' || !access.modules.includes('website')) {
+      return fail('የመልእክት መላኪያው ለጊዜው ተዘግቷል።', 'Messages are closed for now.');
+    }
+    const db = tenantClient(tenant.id);
     const { data: unit } = await db.from('organization_units')
       .select('id, name_en')
       .eq('id', unit_id)
@@ -97,9 +98,11 @@ export async function sendContact(_prev: ContactState, form: FormData): Promise<
       console.error('contact form not saved:', error.message);
       return fail('ይቅርታ፣ መልእክቱ አልተላከም። ትንሽ ቆይተው ይሞክሩ።', 'Sorry, the message could not be sent. Please try again later.');
     }
-    notifyLater(
-      { units: { ids: [unit_id], holding: 'TASK_REPORT' } },
-      { title: 'አዲስ ጥያቄ ከድረ-ገጽ · A question from the website', body: `${name} (${phone}): ${message.slice(0, 120)}`, url: '/dashboard/questions', tag: 'member-questions' }
+    runInTenant(tenant.id, () =>
+      notifyLater(
+        { units: { ids: [unit_id], holding: 'TASK_REPORT' } },
+        { title: 'አዲስ ጥያቄ ከድረ-ገጽ · A question from the website', body: `${name} (${phone}): ${message.slice(0, 120)}`, url: '/dashboard/questions', tag: 'member-questions' }
+      )
     );
     return { status: 'sent' };
   } catch (e) {

@@ -12,8 +12,11 @@ export type SiteLang = 'am' | 'en';
 
 export const langOf = (value: string | string[] | undefined): SiteLang => (value === 'en' ? 'en' : 'am');
 
-/** A link to a public page in this language */
-export const hrefFor = (path: string, lang: SiteLang) => (lang === 'en' ? `${path}?lang=en` : path);
+/** A link to a public page in this language; `base` is the Sunday school's address (PublicSite.base) */
+export const hrefFor = (path: string, lang: SiteLang, base = '') => {
+  const p = base && path === '/' ? base : `${base}${path}`;
+  return lang === 'en' ? `${p}?lang=en` : p;
+};
 
 /** Amharic or English */
 export const pick = (lang: SiteLang, am: string, en: string) => (lang === 'am' ? am : en);
@@ -37,20 +40,26 @@ export function SiteShell({ lang, path, site, children }: { lang: SiteLang; path
     <div lang={lang} className="min-h-screen flex flex-col bg-white text-slate-900">
       <header className="sticky top-0 z-30 bg-[#1e2770] text-white shadow">
         <div className="mx-auto max-w-6xl px-4 h-16 flex items-center gap-3">
-          <Link href={hrefFor('/', lang)} className="flex items-center gap-2.5 min-w-0">
-            <span className="w-10 h-10 rounded-full overflow-hidden ring-2 ring-amber-400 shrink-0 bg-slate-900">
-              <Image src="/logo.png" alt="" width={40} height={40} className="w-full h-full object-cover" priority />
+          <Link href={hrefFor('/', lang, site.base)} className="flex items-center gap-2.5 min-w-0">
+            <span className="w-10 h-10 rounded-full overflow-hidden ring-2 ring-amber-400 shrink-0 bg-slate-900 flex items-center justify-center">
+              {site.brand.logo ? (
+                <Image src={site.brand.logo} alt="" width={40} height={40} className="w-full h-full object-cover" priority />
+              ) : (
+                <span className="font-bold text-amber-300">{t(site.brand.name_am, site.brand.name_en).slice(0, 1)}</span>
+              )}
             </span>
             <span className="min-w-0 leading-tight">
-              <span className="block font-bold text-sm sm:text-base truncate">{t('ሐመረ ሕይወት ሰንበት ት/ቤት', 'Hamere Hiwot Sunday School')}</span>
-              <span className="hidden sm:block text-[11px] text-indigo-200 truncate">{t('ሳሎ ደብረ ፀሐይ ቅዱስ ጊዮርጊስ ቤተክርስቲያን', 'Sallo Debre Tsehay Saint George Church')}</span>
+              <span className="block font-bold text-sm sm:text-base truncate">{t(site.brand.name_am, site.brand.name_en)}</span>
+              {(site.brand.church_am || site.brand.church_en) && (
+                <span className="hidden sm:block text-[11px] text-indigo-200 truncate">{t(site.brand.church_am, site.brand.church_en)}</span>
+              )}
             </span>
           </Link>
           <nav className="ml-auto hidden lg:flex items-center gap-1 text-sm">
             {PAGES.map((p) => (
               <Link
                 key={p.path}
-                href={hrefFor(p.path, lang)}
+                href={hrefFor(p.path, lang, site.base)}
                 className={`px-3 py-2 rounded-lg transition-colors ${isCurrent(path, p.path) ? 'bg-white/15 text-amber-300 font-semibold' : 'text-indigo-100 hover:bg-white/10'}`}
               >
                 {t(p.am, p.en)}
@@ -58,7 +67,7 @@ export function SiteShell({ lang, path, site, children }: { lang: SiteLang; path
             ))}
           </nav>
           <Link
-            href={hrefFor(path, lang === 'am' ? 'en' : 'am')}
+            href={hrefFor(path, lang === 'am' ? 'en' : 'am', site.base)}
             className="ml-auto lg:ml-2 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-white/25 hover:bg-white/10 shrink-0"
             hrefLang={lang === 'am' ? 'en' : 'am'}
           >
@@ -71,7 +80,7 @@ export function SiteShell({ lang, path, site, children }: { lang: SiteLang; path
             {PAGES.map((p) => (
               <Link
                 key={p.path}
-                href={hrefFor(p.path, lang)}
+                href={hrefFor(p.path, lang, site.base)}
                 className={`flex-1 shrink-0 text-center px-3 py-2 ${isCurrent(path, p.path) ? 'text-amber-300 font-semibold border-b-2 border-amber-400' : 'text-indigo-100'}`}
               >
                 {t(p.am, p.en)}
@@ -95,7 +104,7 @@ export function SiteShell({ lang, path, site, children }: { lang: SiteLang; path
             <ul className="space-y-1">
               {PAGES.map((p) => (
                 <li key={p.path}>
-                  <Link href={hrefFor(p.path, lang)} className="hover:text-amber-300">{t(p.am, p.en)}</Link>
+                  <Link href={hrefFor(p.path, lang, site.base)} className="hover:text-amber-300">{t(p.am, p.en)}</Link>
                 </li>
               ))}
             </ul>
@@ -115,7 +124,7 @@ export function SiteShell({ lang, path, site, children }: { lang: SiteLang; path
           </div>
         </div>
         <div className="border-t border-white/10 text-center text-[11px] text-indigo-300 py-4 px-4">
-          © {new Date().getFullYear()} {t('ሐመረ ሕይወት ሰንበት ትምህርት ቤት', 'Hamere Hiwot Sunday School')}
+          © {new Date().getFullYear()} {t(site.brand.name_am, site.brand.name_en)}
           {site.parish.motto && <> · {site.parish.motto}</>}
         </div>
       </footer>

@@ -8,7 +8,7 @@ import { headers } from 'next/headers';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 /** First public client address from the proxy headers, if it is a valid IP. */
-function clientIp(h: Headers): string | null {
+export function clientIp(h: Headers): string | null {
   const raw = h.get('x-forwarded-for')?.split(',')[0]?.trim() || h.get('x-real-ip')?.trim() || '';
   const ipv4 = /^(\d{1,3}\.){3}\d{1,3}$/;
   const ipv6 = /^[0-9a-f:]+$/i;

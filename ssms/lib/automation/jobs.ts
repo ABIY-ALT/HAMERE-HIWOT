@@ -15,7 +15,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { selectAll } from '@/lib/auth/authorize';
 import { notifyLater } from '@/lib/push/send';
-import { escapeHtml, siteUrl, telegramConfigured, telegramToChats, telegramToPersons } from '@/lib/telegram/bot';
+import { escapeHtml, publicUrl, telegramConfigured, telegramToChats, telegramToPersons } from '@/lib/telegram/bot';
 import { openPeriods } from '@/lib/telegram/dues-flow';
 import { nonMemberIds } from '@/lib/members/membership';
 import { expectedTotal, periodsLabel, toPeriod } from '@/lib/finance/dues';
@@ -94,7 +94,7 @@ async function eventReminders(db: SupabaseClient, today: string): Promise<number
     '',
     ...due.map((p) => e(`• ${p.start_time ? `${p.start_time.slice(0, 5)} — ` : ''}${p.title_am || p.title_en}${p.title_am && p.title_am !== p.title_en ? ` · ${p.title_en}` : ''}${p.location ? ` (${p.location})` : ''}`)),
     '',
-    `${siteUrl()}/events`,
+    await publicUrl('/events'),
   ].join('\n');
   return (await telegramToChats(db, chats, html)).delivered;
 }
@@ -238,7 +238,7 @@ export async function runDaily(db: SupabaseClient, trigger: LastRun['trigger']):
   const results: JobResult[] = [];
   const run = async (job: JobName, enabled: boolean, work: () => Promise<number | JobResult>, needsBot = true) => {
     if (!enabled) return results.push({ job, count: 0, note: 'Turned off' });
-    if (needsBot && !telegramConfigured()) return results.push({ job, count: 0, note: 'The Telegram bot is not set up' });
+    if (needsBot && !(await telegramConfigured())) return results.push({ job, count: 0, note: 'The Telegram bot is not set up' });
     try {
       const out = await work();
       results.push(typeof out === 'number' ? { job, count: out } : out);

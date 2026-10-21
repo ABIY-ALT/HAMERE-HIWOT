@@ -2,16 +2,23 @@
 
 import { cookies } from 'next/headers';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { createAdminClient, createSessionClient } from '@/lib/supabase/server';
+import { createSessionClient } from '@/lib/supabase/server';
 import { isValidPhone, normalizePhone, phoneToAuthEmail } from '@/lib/auth/phone';
 import { normalizeRegNo, regNoToAuthEmail } from '@/lib/auth/student-login';
 import { DEMO_COOKIE, findDemoAccount } from '@/lib/auth/demo';
-import { getCurrentUser } from '@/lib/auth/session';
+import { TENANT_COOKIE, accountsOfLogin, getCurrentUser } from '@/lib/auth/session';
 import { logAuthEvent } from '@/lib/audit/log';
+import { platformClient, tenantClient } from '@/lib/tenant/db';
+import { rateLimit, requestIp } from '@/lib/security/rate-limit';
+import { isPlatformAdmin } from '@/lib/platform/auth';
 
 export type SignInResult =
-  | { ok: true }
-  | { ok: false; error: 'INVALID' | 'INACTIVE' | 'SERVER' };
+  | { ok: true; to: string }
+  | { ok: false; error: 'INVALID' | 'INACTIVE' | 'SERVER' | 'RATE_LIMITED' };
+
+/** Wrong passwords allowed per login and per address in 15 minutes */
+const LOGIN_TRIES = 10;
+const IP_TRIES = 40;
 
 export async function signIn(login: string, password: string): Promise<SignInResult> {
   if (!login.trim() || !password) return { ok: false, error: 'INVALID' };
@@ -27,7 +34,7 @@ export async function signIn(login: string, password: string): Promise<SignInRes
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
     });
-    return { ok: true };
+    return { ok: true, to: '/dashboard' };
   }
 
   // Staff sign in with their phone number, students with their registration number
@@ -37,36 +44,54 @@ export async function signIn(login: string, password: string): Promise<SignInRes
   const username = regNo ?? phone;
 
   try {
-    const db = createAdminClient();
+    const ip = await requestIp();
+    const [loginOk, ipOk] = await Promise.all([
+      rateLimit(`login:${username}`, LOGIN_TRIES, 900),
+      rateLimit(`login-ip:${ip}`, IP_TRIES, 900),
+    ]);
+    if (!loginOk || !ipOk) return { ok: false, error: 'RATE_LIMITED' };
+
     const supabase = await createSessionClient();
     const { data, error } = await supabase.auth.signInWithPassword({
       email: regNo ? regNoToAuthEmail(regNo) : phoneToAuthEmail(phone),
       password,
     });
     if (error || !data.user) {
-      // Failed attempts are recorded so repeated guessing is visible in the audit trail.
-      const { data: known } = await db.from('system_users').select('id').eq('username', username).maybeSingle();
-      await logAuthEvent(db, { action: 'LOGIN', systemUserId: known?.id ?? null, login: username, result: 'FAILED' });
+      // Failed attempts are recorded (in each Sunday school using this login) so repeated guessing is visible
+      const { data: known } = await platformClient().from('system_users').select('id, tenant_id').eq('username', username).limit(5);
+      for (const k of known ?? []) {
+        await logAuthEvent(tenantClient(k.tenant_id as string), { action: 'LOGIN', systemUserId: k.id as string, login: username, result: 'FAILED' });
+      }
       return { ok: false, error: 'INVALID' };
     }
 
-    const { data: systemUser } = await db
-      .from('system_users')
-      .select('id, is_active')
-      .eq('auth_user_id', data.user.id)
-      .maybeSingle();
-    if (!systemUser?.is_active) {
+    const accounts = await accountsOfLogin(data.user.id);
+    if (accounts.length === 0) {
+      if (await isPlatformAdmin(data.user.id)) return { ok: true, to: '/platform' };
       await supabase.auth.signOut();
-      await logAuthEvent(db, { action: 'LOGIN', systemUserId: systemUser?.id ?? null, login: username, result: 'DISABLED' });
+      const { data: disabled } = await platformClient().from('system_users').select('id, tenant_id').eq('auth_user_id', data.user.id).limit(5);
+      for (const d of disabled ?? []) {
+        await logAuthEvent(tenantClient(d.tenant_id as string), { action: 'LOGIN', systemUserId: d.id as string, login: username, result: 'DISABLED' });
+      }
       return { ok: false, error: 'INACTIVE' };
     }
 
-    await db
-      .from('system_users')
-      .update({ last_login_at: new Date().toISOString() })
-      .eq('id', systemUser.id);
-    await logAuthEvent(db, { action: 'LOGIN', systemUserId: systemUser.id, login: username, result: 'SUCCESS' });
-    return { ok: true };
+    // Keep the Sunday school chosen last time, if this login still belongs to it
+    const jar = await cookies();
+    const account = accounts.find((a) => a.tenant_id === jar.get(TENANT_COOKIE)?.value) ?? accounts[0];
+    jar.set(TENANT_COOKIE, account.tenant_id, {
+      path: '/',
+      maxAge: 60 * 60 * 24 * 365,
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+    });
+
+    const db = tenantClient(account.tenant_id, { actorId: account.id });
+    await db.from('system_users').update({ last_login_at: new Date().toISOString() }).eq('id', account.id);
+    await logAuthEvent(db, { action: 'LOGIN', systemUserId: account.id, login: username, result: 'SUCCESS' });
+    // A temporary PIN / password (lib/auth/temp-password): choose their own first
+    return { ok: true, to: data.user.app_metadata?.temp_password === true ? '/set-password' : '/dashboard' };
   } catch (e) {
     console.error('signIn failed', e);
     return { ok: false, error: 'SERVER' };
@@ -77,7 +102,7 @@ export async function signOut(): Promise<void> {
   if (isSupabaseEnabled()) {
     const me = await getCurrentUser();
     if (me) {
-      await logAuthEvent(createAdminClient(), {
+      await logAuthEvent(tenantClient(me.tenant.id, { actorId: me.systemUser.id }), {
         action: 'LOGOUT',
         systemUserId: me.systemUser.id,
         login: me.systemUser.username,
@@ -88,4 +113,19 @@ export async function signOut(): Promise<void> {
     await supabase.auth.signOut();
   }
   (await cookies()).delete(DEMO_COOKIE);
+}
+
+/** Work in another Sunday school this login belongs to (checked here, not trusted from the browser). */
+export async function switchTenant(tenantId: string): Promise<{ ok: boolean }> {
+  if (!isSupabaseEnabled()) return { ok: false };
+  const me = await getCurrentUser();
+  if (!me || !me.memberships.some((m) => m.tenantId === tenantId)) return { ok: false };
+  (await cookies()).set(TENANT_COOKIE, tenantId, {
+    path: '/',
+    maxAge: 60 * 60 * 24 * 365,
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+  });
+  return { ok: true };
 }

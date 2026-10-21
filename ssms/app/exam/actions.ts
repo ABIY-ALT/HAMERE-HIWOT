@@ -16,7 +16,8 @@
 
 import { cookies } from 'next/headers';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { createAdminClient } from '@/lib/supabase/server';
+import { platformClient, tenantClient } from '@/lib/tenant/db';
+import { loadTenantAccess } from '@/lib/tenant/context';
 import {
   GRACE_SECONDS,
   OFFLINE_SECONDS,
@@ -102,7 +103,17 @@ async function deviceId(): Promise<string> {
 async function findAttempt(ticket: string) {
   const code = normalizeTicket(ticket);
   if (!/^[A-Z0-9]{8}$/.test(code)) return null;
-  const db = createAdminClient();
+  // Tickets are unique across all Sunday schools: the ticket says whose exam it is
+  const { data: owner, error: ownerError } = await platformClient().from('exam_attempts').select('tenant_id').eq('ticket', code).maybeSingle();
+  if (ownerError) {
+    console.error('exam ticket lookup failed:', ownerError.message);
+    throw new Error(ownerError.message);
+  }
+  if (!owner) return null;
+  const tenantId = owner.tenant_id as string;
+  const access = await loadTenantAccess(tenantId);
+  if (access.mode === 'blocked' || !access.modules.includes('online_exams')) return null;
+  const db = tenantClient(tenantId, { readOnly: access.mode !== 'full' });
   const { data, error } = await db.from('exam_attempts')
     .select('*, student:students(person:persons!students_person_id_fkey(full_name_en, full_name_am)), exam:exams(*, class:classes(name_en, name_am), subject:subjects(name_en, name_am))')
     .eq('ticket', code)

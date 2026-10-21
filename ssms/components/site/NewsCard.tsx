@@ -11,9 +11,9 @@ import { hrefFor, type SiteLang } from './SiteShell';
 export const postTitle = (p: SitePost, lang: SiteLang) => (lang === 'en' && p.title_en) || p.title_am;
 export const postBody = (p: SitePost, lang: SiteLang) => (lang === 'en' && p.body_en) || p.body_am;
 
-export function NewsCard({ post, lang }: { post: SitePost; lang: SiteLang }) {
+export function NewsCard({ post, lang, base = '' }: { post: SitePost; lang: SiteLang; base?: string }) {
   return (
-    <Link href={hrefFor(`/news/${post.id}`, lang)} className="group flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-md hover:border-[#2f43c8] transition">
+    <Link href={hrefFor(`/news/${post.id}`, lang, base)} className="group flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-md hover:border-[#2f43c8] transition">
       <div className="relative aspect-[16/9] bg-gradient-to-br from-[#1e2770] to-[#2f43c8]">
         {post.cover_path ? (
           <Image src={mediaUrl(post.cover_path)} alt="" fill unoptimized sizes="(min-width: 768px) 33vw, 100vw" className="object-cover" />

@@ -1,10 +1,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Create the first Super Administrator account in Supabase.
+// Create a Super Administrator account for a Sunday school in Supabase.
 //
-// Run from the ssms folder after applying migrations 001–006:
-//   npm run create-admin -- <phone> <password> "<Full Name>"
+// Run from the ssms folder after applying the migrations:
+//   npm run create-admin -- <phone> <password> "<Full Name>" [MALE|FEMALE] [sunday-school-slug]
 // e.g.
 //   npm run create-admin -- 0912345678 "a-strong-password" "Yohannes Tesfaye"
+// Without a slug the account is made in the default Sunday school (Hamere Hiwot).
+// If the phone already signs in somewhere else, the account is linked to that
+// login and the password given here is not used.
 //
 // Reads NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY from .env.local.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -18,10 +21,10 @@ function fail(message) {
   process.exit(1);
 }
 
-const [phoneArg, password, fullName = 'System Administrator', genderArg = 'MALE'] =
+const [phoneArg, password, fullName = 'System Administrator', genderArg = 'MALE', slug = ''] =
   process.argv.slice(2);
 if (!phoneArg || !password) {
-  fail('Usage: npm run create-admin -- <phone> <password> "<Full Name>" [MALE|FEMALE]');
+  fail('Usage: npm run create-admin -- <phone> <password> "<Full Name>" [MALE|FEMALE] [sunday-school-slug]');
 }
 const gender = genderArg.toUpperCase();
 if (gender !== 'MALE' && gender !== 'FEMALE') fail('Gender must be MALE or FEMALE');
@@ -36,35 +39,47 @@ if (!url || url.includes('placeholder') || !serviceKey) {
   fail('Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.local first');
 }
 
+const platform = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+
+const tenantQuery = platform.from('tenants').select('id, name_en');
+const { data: tenant, error: tenantError } = await (slug ? tenantQuery.eq('slug', slug) : tenantQuery.eq('is_default', true)).maybeSingle();
+if (tenantError) fail(`${tenantError.message} — apply database/migrations/040_multi_tenancy.sql first`);
+if (!tenant) fail(slug ? `No Sunday school with the address "${slug}"` : 'No default Sunday school found');
+
+// Everything below is written as this Sunday school (the database checks every row)
 const db = createClient(url, serviceKey, {
   auth: { persistSession: false, autoRefreshToken: false },
+  global: { headers: { 'x-ssms-tenant': tenant.id } },
 });
 
 const { data: role, error: roleError } = await db
   .from('roles')
   .select('id')
+  .eq('tenant_id', tenant.id)
   .eq('code', 'SUPER_ADMIN')
   .maybeSingle();
 if (roleError) fail(roleError.message);
-if (!role) fail('SUPER_ADMIN role not found — run database/migrations/006_admin_settings.sql first');
+if (!role) fail('SUPER_ADMIN role not found for this Sunday school');
 
 let { data: unit } = await db
   .from('organization_units')
   .select('id')
+  .eq('tenant_id', tenant.id)
   .eq('code', 'GENERAL_ASSEMBLY')
   .maybeSingle();
 if (!unit) {
   ({ data: unit } = await db
     .from('organization_units')
     .select('id')
+    .eq('tenant_id', tenant.id)
     .order('sort_order')
     .limit(1)
     .maybeSingle());
 }
-if (!unit) fail('No organization units found — run database/migrations/004_seed_data.sql first');
+if (!unit) fail('No organization units found for this Sunday school');
 
 try {
-  const id = await provisionSystemUser(db, {
+  const result = await provisionSystemUser(db, {
     phone,
     email: phoneToAuthEmail(phone),
     password,
@@ -74,9 +89,15 @@ try {
     roleId: role.id,
     unitId: unit.id,
     assignedBy: null,
+    existingLogin: async (p) => {
+      const { data } = await platform.from('system_users').select('auth_user_id').eq('username', p).limit(1).maybeSingle();
+      return data?.auth_user_id ?? null;
+    },
   });
-  console.log(`\n✔ Super Administrator created (system user ${id}).`);
-  console.log(`  Sign in with phone ${phone} and the password you chose.\n`);
+  console.log(`\n✔ Super Administrator created in ${tenant.name_en} (system user ${result.id}).`);
+  console.log(result.linked
+    ? `  ${phone} already had a login: they sign in with their existing password.\n`
+    : `  Sign in with phone ${phone} and the password you chose.\n`);
 } catch (e) {
   fail(e instanceof Error ? e.message : String(e));
 }

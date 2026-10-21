@@ -33,6 +33,7 @@ export const BUTTONS = {
   mytasks: '🗂️ ተግባሮቼ · My tasks',
   here: '✅ ተገኝቻለሁ · I’m here',
   service: '🎵 ምደባዬ · My roster',
+  pin: '🔑 ሚስጥር ቁጥሬን ረሳሁ · Forgot my PIN',
   help: '❓ እርዳታ · Help',
 } as const;
 
@@ -98,7 +99,7 @@ export async function chatScope(db: SupabaseClient, chatId: number): Promise<Cha
  * The buttons under the message box, by what this chat is:
  *   member   🪪 membership · 🧾 dues · 💳 I paid · 📋 attendance (service, choir)
  *   student / parent   📋 attendance · 📊 results · 🖊️ exams
- *   everyone linked    📅 events · ℹ️ about us · ❓ help
+ *   everyone linked    📅 events · ℹ️ about us · 🔑 forgot my PIN · ❓ help
  */
 export function menuFor(scope: ChatScope) {
   const rows: string[][] = [];
@@ -110,8 +111,8 @@ export function menuFor(scope: ChatScope) {
   if (scope.memberPersonIds.length || scope.studentIds.length) middle.push(BUTTONS.attendance);
   if (middle.length) rows.push(middle);
   if (scope.studentIds.length) rows.push([BUTTONS.results, BUTTONS.exams]);
-  if (scope.memberPersonIds.length) rows.push([BUTTONS.mytasks, BUTTONS.ask], [BUTTONS.events, BUTTONS.about], [BUTTONS.help]);
-  else rows.push([BUTTONS.events, BUTTONS.about], [BUTTONS.ask, BUTTONS.help]);
+  if (scope.memberPersonIds.length) rows.push([BUTTONS.mytasks, BUTTONS.ask], [BUTTONS.events, BUTTONS.about], [BUTTONS.pin, BUTTONS.help]);
+  else rows.push([BUTTONS.events, BUTTONS.about], [BUTTONS.ask, BUTTONS.pin], [BUTTONS.help]);
   return { reply_markup: { keyboard: rows.map((r) => r.map((text) => ({ text }))), resize_keyboard: true, is_persistent: true } };
 }
 
@@ -191,6 +192,8 @@ export function helpFor(scope: ChatScope): string {
   }
   am.push('📅 መርሐ ግብር — የሚመጡ የትምህርት ቤቱ መርሐ ግብሮች', 'ℹ️ ስለ እኛ — ስለ ሰንበት ትምህርት ቤቱ ማወቅ የሚፈልጉት', '✉️ ጥያቄ — ለአንድ ክፍል ጥያቄ ይላኩ፤ መልሱ እዚህ ይደርስዎታል');
   en.push('📅 Events — the school’s coming programs', 'ℹ️ About us — what you want to know about the Sunday school', '✉️ Ask a department — send a question; the answer comes here');
+  am.push('🔑 ሚስጥር ቁጥሬን ረሳሁ — ለድረ-ገጹ መግቢያ አዲስ ጊዜያዊ ሚስጥር ቁጥር (የእርስዎ ወይም የልጅዎ)');
+  en.push('🔑 Forgot my PIN — a new temporary PIN for the website (yours or your child’s)');
   am.push('መልእክት ለማቆም /stop');
   en.push('To stop messages: /stop');
   return `${am.join('\n')}\n\n${en.join('\n')}`;

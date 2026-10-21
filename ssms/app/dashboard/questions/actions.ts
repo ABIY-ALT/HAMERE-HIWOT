@@ -12,7 +12,7 @@
 
 import { z } from 'zod';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { authorizeIn, check, errorMessage, selectAll } from '@/lib/auth/authorize';
 import type { SessionUser } from '@/lib/auth/session';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import { escapeHtml, sendTelegram, telegramConfigured } from '@/lib/telegram/bot';
@@ -51,7 +51,7 @@ const canAnswer = (me: SessionUser, unitId: string) =>
 export async function loadQuestions(): Promise<Loaded<QuestionsData>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
-    const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT', 'AUDIT_VIEW_ALL');
+    const { me, db } = await authorizeIn('tasks', 'TASK_ASSIGN', 'TASK_REPORT', 'AUDIT_VIEW_ALL');
     const unitRows = (await db.from('organization_units').select('id, name_en, name_am').eq('is_active', true).order('sort_order').then(check)) as Row[];
     const mine = me.organizationIds.filter(isUuid);
     const units = unitRows
@@ -92,7 +92,7 @@ export async function loadQuestions(): Promise<Loaded<QuestionsData>> {
   }
 }
 
-async function question(db: Awaited<ReturnType<typeof authorize>>['db'], me: SessionUser, id: string) {
+async function question(db: Awaited<ReturnType<typeof authorizeIn>>['db'], me: SessionUser, id: string) {
   const q = (await db.from('member_questions').select('*').eq('id', z.string().min(1).parse(id)).maybeSingle().then(check)) as Row | null;
   if (!q) throw new Error('This question was not found — reload the page');
   if (!canAnswer(me, q.unit_id as string)) throw new Error('Only the department’s heads can answer it');
@@ -102,7 +102,7 @@ async function question(db: Awaited<ReturnType<typeof authorize>>['db'], me: Ses
 /** Answer (or correct an answer); the answer is sent to the asker in the bot (website questions: kept only — call them back). */
 export async function answerQuestion(id: string, answer: string): Promise<{ ok: true; delivered: boolean; web: boolean } | { ok: false; error: string }> {
   try {
-    const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT');
+    const { me, db } = await authorizeIn('tasks', 'TASK_ASSIGN', 'TASK_REPORT');
     const text = z.string().trim().min(2, 'Write the answer').max(3000).parse(answer);
     const q = await question(db, me, id);
     await db.from('member_questions')
@@ -111,7 +111,7 @@ export async function answerQuestion(id: string, answer: string): Promise<{ ok: 
       .then(check);
     let delivered = false;
     const web = !q.chat_id;
-    if (telegramConfigured() && !web) {
+    if ((await telegramConfigured()) && !web) {
       const { data: unit } = await db.from('organization_units').select('name_en, name_am').eq('id', q.unit_id as string).maybeSingle();
       const u = unit as { name_en: string; name_am: string | null } | null;
       const html =
@@ -129,7 +129,7 @@ export async function answerQuestion(id: string, answer: string): Promise<{ ok: 
 /** Close without an answer (e.g. not a real question). */
 export async function closeQuestion(id: string): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT');
+    const { me, db } = await authorizeIn('tasks', 'TASK_ASSIGN', 'TASK_REPORT');
     const q = await question(db, me, id);
     await db.from('member_questions').update({ status: 'CLOSED' }).eq('id', q.id as string).then(check);
     return { ok: true };

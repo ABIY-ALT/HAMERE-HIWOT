@@ -8,7 +8,7 @@
 
 import { NextResponse } from 'next/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { createAdminClient } from '@/lib/supabase/server';
+import { tenantClient } from '@/lib/tenant/db';
 import { getCurrentUser } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
@@ -22,7 +22,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   }
 
   const { id } = await params;
-  const db = createAdminClient(me.systemUser.id);
+  const db = tenantClient(me.tenant.id, { actorId: me.systemUser.id });
   const { data: person } = await db.from('persons').select('profile_photo_url').eq('id', id).maybeSingle();
   const photo = person?.profile_photo_url as string | null | undefined;
   if (!photo) return new NextResponse('No photo', { status: 404 });

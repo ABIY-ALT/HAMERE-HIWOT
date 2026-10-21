@@ -7,7 +7,7 @@ import { CheckCircle2, Send } from 'lucide-react';
 import { sendContact, type ContactState } from '@/app/(site)/contact/actions';
 import type { SiteLang } from './SiteShell';
 
-export function ContactForm({ lang, departments }: { lang: SiteLang; departments: { id: string; name_en: string; name_am: string }[] }) {
+export function ContactForm({ lang, departments, site }: { lang: SiteLang; departments: { id: string; name_en: string; name_am: string }[]; /** Sunday school slug ('' = default) */ site: string }) {
   const [state, action, pending] = useActionState<ContactState, FormData>(sendContact, { status: 'idle' });
   const t = (am: string, en: string) => (lang === 'am' ? am : en);
 
@@ -24,6 +24,7 @@ export function ContactForm({ lang, departments }: { lang: SiteLang; departments
   const label = 'block text-sm font-semibold text-slate-700 mb-1';
   return (
     <form action={action} className="space-y-4">
+      <input type="hidden" name="site" value={site} />
       {state.status === 'error' && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{t(state.am, state.en)}</p>}
       <div className="grid gap-4 sm:grid-cols-2">
         <div>

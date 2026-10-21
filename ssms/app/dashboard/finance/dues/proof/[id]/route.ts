@@ -7,7 +7,7 @@
 
 import { NextResponse } from 'next/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { createAdminClient } from '@/lib/supabase/server';
+import { tenantClient } from '@/lib/tenant/db';
 import { getCurrentUser } from '@/lib/auth/session';
 import { telegramFile } from '@/lib/telegram/bot';
 
@@ -22,7 +22,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   }
 
   const { id } = await params;
-  const db = createAdminClient(me.systemUser.id);
+  const db = tenantClient(me.tenant.id, { actorId: me.systemUser.id });
   const { data: claim } = await db.from('dues_claims').select('proof_file_id').eq('id', id).maybeSingle();
   const fileId = claim?.proof_file_id as string | null | undefined;
   if (!fileId) return new NextResponse('No receipt photo', { status: 404 });

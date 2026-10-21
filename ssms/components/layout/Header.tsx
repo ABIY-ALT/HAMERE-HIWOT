@@ -14,12 +14,13 @@ import {
   AlertCircle,
   CheckCircle,
   Check,
+  Building2,
 } from 'lucide-react';
 import { cn, getInitials } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLang } from '@/contexts/LangContext';
 import type { Locale } from '@/types';
-import { signOut } from '@/app/login/actions';
+import { signOut, switchTenant } from '@/app/login/actions';
 import { loadNotifications, type Notice } from '@/app/dashboard/actions';
 import { DEMO_NOTICES } from '@/lib/notices';
 import { forgetThisDevice } from '@/components/pwa/NotificationPrompt';
@@ -133,6 +134,26 @@ export default function Header({
     logout();
     router.push('/login');
     router.refresh();
+  };
+
+  // Work in another Sunday school this login belongs to: everything loaded so far is dropped
+  const handleSwitch = async (tenantId: string) => {
+    const waiting = outboxItems().filter((i) => !i.error).length;
+    if (waiting) {
+      window.alert(t(`${waiting} save(s) made offline have not been sent yet. Wait until they are sent, then switch.`, `ከኔትወርክ ውጭ የተቀመጡ ${waiting} ገና አልተላኩም። እስኪላኩ ቆይተው ይቀይሩ።`));
+      return;
+    }
+    const res = await switchTenant(tenantId);
+    if (!res.ok) return;
+    resetEducation();
+    resetFinance();
+    resetProperty();
+    resetChoir();
+    resetHr();
+    resetTasks();
+    // A full reload on purpose: the signed-in user (AuthProvider) is kept from the first render
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+    window.location.assign('/dashboard');
   };
 
   const toggleLang = () => {
@@ -326,7 +347,31 @@ export default function Header({
               <div className="text-xs text-slate-400 font-mono mt-0.5">
                 {user?.person.membership_code ?? ''}
               </div>
+              {user?.tenant && (
+                <div className="text-xs text-slate-500 mt-1 truncate">
+                  {t(user.tenant.name_en, user.tenant.name_am || user.tenant.name_en)}
+                </div>
+              )}
             </div>
+            {(user?.memberships?.length ?? 0) > 1 && (
+              <div className="border-b border-slate-100 py-1">
+                <div className="px-4 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                  {t('Switch Sunday school', 'ሰንበት ት/ቤት ቀይር')}
+                </div>
+                {user!.memberships!
+                  .filter((m) => m.tenantId !== user!.tenant?.id)
+                  .map((m) => (
+                    <button
+                      key={m.tenantId}
+                      onClick={() => handleSwitch(m.tenantId)}
+                      className="flex items-center gap-3 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 w-full text-left transition-colors"
+                    >
+                      <Building2 size={15} className="text-slate-500 shrink-0" />
+                      <span className="truncate">{t(m.name_en, m.name_am || m.name_en)}</span>
+                    </button>
+                  ))}
+              </div>
+            )}
             <Link
               href="/dashboard/profile"
               onClick={() => setUserMenuOpen(false)}

@@ -21,6 +21,11 @@ export default async function DashboardRootLayout({
     const { redirect } = await import('next/navigation');
     redirect('/login');
   }
+  // Signed in with a temporary PIN / password: choose their own first
+  if (user?.mustChangePassword) {
+    const { redirect } = await import('next/navigation');
+    redirect('/set-password');
+  }
 
   return (
     <LangProvider defaultLocale="en">

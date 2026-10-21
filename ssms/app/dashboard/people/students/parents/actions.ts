@@ -12,10 +12,12 @@
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { authorizeIn, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { existingLoginForPhone, setLoginBanned } from '@/lib/tenant/accounts';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import { isValidPhone, normalizePhone, phoneToAuthEmail } from '@/lib/auth/phone';
 import { newPin } from '@/lib/auth/student-login';
+import { NOT_DELIVERED, TEMP_FLAG, isPrivileged, loginPowers, logReset, officeTargets, sendTemporary, setTemporaryPassword } from '@/lib/auth/temp-password';
 import { studentOnlyIds } from '@/lib/members/membership';
 
 type Row = Record<string, unknown>;
@@ -96,7 +98,7 @@ async function roleIds(db: SupabaseClient) {
 export async function loadFamilies(): Promise<Loaded<{ families: FamilyRow[]; classes: { id: string; name_en: string; name_am: string }[] }>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
-    const { db } = await authorize('STUDENT_CREATE', 'USER_MANAGE');
+    const { db } = await authorizeIn('portals', 'STUDENT_CREATE', 'USER_MANAGE');
     const year = await currentYear(db);
     const fams = await families(db);
     const phones = [...fams.keys()];
@@ -160,7 +162,7 @@ async function linkChildren(db: SupabaseClient, personId: string, studentIds: st
 /** Create the parent's login (or add the parent role to their existing account) and link their children. */
 export async function createParentLogin(input: z.input<typeof ParentSchema>): Promise<{ ok: true; slip: ParentSlip } | { ok: false; error: string }> {
   try {
-    const { me, db } = await authorize('STUDENT_CREATE', 'USER_MANAGE');
+    const { me, db } = await authorizeIn('portals', 'STUDENT_CREATE', 'USER_MANAGE');
     const p = ParentSchema.parse(input);
     const family = (await families(db)).get(p.phone);
     if (!family) throw new Error('No student of this year has this guardian phone');
@@ -188,18 +190,26 @@ export async function createParentLogin(input: z.input<typeof ParentSchema>): Pr
       const same = sameIds.map((id) => ({ id })).find((x) => !studentOnly.has(x.id));
       personId = same?.id ?? (await insertParentPerson(db, p));
 
-      pin = newPin();
-      const { data: created, error: authError } = await db.auth.admin.createUser({
-        email: phoneToAuthEmail(p.phone),
-        password: pin,
-        email_confirm: true,
-        user_metadata: { phone: p.phone, full_name: p.name, parent: true },
-      });
-      if (authError || !created.user) throw new Error(authError?.message ?? 'Could not create the login');
+      // Already signs in for another Sunday school: same login and PIN/password, no new PIN
+      const sharedLogin = await existingLoginForPhone(p.phone);
+      let authUserId = sharedLogin;
+      if (!authUserId) {
+        pin = newPin();
+        const { data: created, error: authError } = await db.auth.admin.createUser({
+          email: phoneToAuthEmail(p.phone),
+          password: pin,
+          email_confirm: true,
+          user_metadata: { phone: p.phone, full_name: p.name, parent: true },
+          // The slip's PIN is temporary: the parent chooses their own at the first sign-in
+          app_metadata: { [TEMP_FLAG]: true },
+        });
+        if (authError || !created.user) throw new Error(authError?.message ?? 'Could not create the login');
+        authUserId = created.user.id;
+      }
       let systemUserId: string | null = null;
       try {
         const su = (await db.from('system_users')
-          .insert({ auth_user_id: created.user.id, person_id: personId, username: p.phone, is_active: true })
+          .insert({ auth_user_id: authUserId, person_id: personId, username: p.phone, is_active: true })
           .select('id')
           .single()
           .then(check)) as { id: string };
@@ -209,7 +219,7 @@ export async function createParentLogin(input: z.input<typeof ParentSchema>): Pr
           .then(check);
       } catch (e) {
         if (systemUserId) await db.from('system_users').delete().eq('id', systemUserId);
-        await db.auth.admin.deleteUser(created.user.id);
+        if (!sharedLogin) await db.auth.admin.deleteUser(authUserId);
         throw e;
       }
     }
@@ -237,7 +247,7 @@ async function insertParentPerson(db: SupabaseClient, p: z.output<typeof ParentS
 /** Link children who joined after the login was made (a new sibling with the same guardian phone). */
 export async function relinkFamily(phone: string): Promise<ActionResult> {
   try {
-    const { db } = await authorize('STUDENT_CREATE', 'USER_MANAGE');
+    const { db } = await authorizeIn('portals', 'STUDENT_CREATE', 'USER_MANAGE');
     const key = normalizePhone(phone);
     const family = (await families(db)).get(key);
     const user = (await db.from('system_users').select('person_id').eq('username', key).maybeSingle().then(check)) as { person_id: string } | null;
@@ -253,8 +263,8 @@ export async function relinkFamily(phone: string): Promise<ActionResult> {
 /** Parent-only accounts: a new PIN, or turn the login off / on. Staff accounts are managed under Administration → Users. */
 async function parentOnlyAccount(db: SupabaseClient, phone: string) {
   const { parent } = await roleIds(db);
-  const user = (await db.from('system_users').select('id, auth_user_id').eq('username', normalizePhone(phone)).maybeSingle().then(check)) as {
-    id: string; auth_user_id: string;
+  const user = (await db.from('system_users').select('id, auth_user_id, person_id, username').eq('username', normalizePhone(phone)).maybeSingle().then(check)) as {
+    id: string; auth_user_id: string; person_id: string; username: string;
   } | null;
   if (!user) throw new Error('This family has no parent login yet');
   const roles = ((await db.from('user_unit_assignments').select('role_id').eq('system_user_id', user.id).eq('is_active', true).then(check)) as { role_id: string }[]).map((r) => r.role_id);
@@ -262,14 +272,40 @@ async function parentOnlyAccount(db: SupabaseClient, phone: string) {
   return user;
 }
 
+/** A shared login may be an administrator in another Sunday school: not the office's to reset. */
+async function resettable(authUserId: string) {
+  if (isPrivileged(await loginPowers(authUserId))) throw new Error('This login has administrator rights in another Sunday school — only its own administrators can reset it');
+}
+
 export async function resetParentPin(phone: string): Promise<{ ok: true; pin: string } | { ok: false; error: string }> {
   try {
-    const { db } = await authorize('STUDENT_CREATE', 'USER_MANAGE');
+    const { me, db } = await authorizeIn('portals', 'STUDENT_CREATE', 'USER_MANAGE');
     const user = await parentOnlyAccount(db, phone);
+    await resettable(user.auth_user_id);
     const pin = newPin();
-    const { error } = await db.auth.admin.updateUserById(user.auth_user_id, { password: pin });
-    if (error) throw new Error(error.message);
+    await setTemporaryPassword(user.auth_user_id, pin);
+    await logReset(db, { systemUserId: user.id, actorId: me.systemUser.id, via: 'office' });
     return { ok: true, pin };
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) };
+  }
+}
+
+/** A new PIN sent to the parent's own Telegram chat, instead of a slip. */
+export async function sendParentPinByTelegram(phone: string): Promise<{ ok: true; delivered: number } | { ok: false; error: string }> {
+  try {
+    const { me, db } = await authorizeIn('portals', 'STUDENT_CREATE', 'USER_MANAGE');
+    const user = await parentOnlyAccount(db, phone);
+    await resettable(user.auth_user_id);
+    const chats = await officeTargets(db, user);
+    const { data: person } = await db.from('persons').select('full_name_en, full_name_am').eq('id', user.person_id).maybeSingle();
+    const named = person as { full_name_en: string; full_name_am: string | null } | null;
+    const pin = newPin();
+    await setTemporaryPassword(user.auth_user_id, pin);
+    const delivered = await sendTemporary(chats, { name: named?.full_name_am || named?.full_name_en || user.username, login: user.username, secret: pin, pin: true });
+    await logReset(db, { systemUserId: user.id, actorId: me.systemUser.id, via: 'office_telegram', delivered });
+    if (delivered === 0) throw new Error(NOT_DELIVERED);
+    return { ok: true, delivered };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
   }
@@ -277,11 +313,10 @@ export async function resetParentPin(phone: string): Promise<{ ok: true; pin: st
 
 export async function setParentLoginActive(phone: string, active: boolean): Promise<ActionResult> {
   try {
-    const { db } = await authorize('STUDENT_CREATE', 'USER_MANAGE');
+    const { db } = await authorizeIn('portals', 'STUDENT_CREATE', 'USER_MANAGE');
     const user = await parentOnlyAccount(db, phone);
     await db.from('system_users').update({ is_active: active }).eq('id', user.id).then(check);
-    const { error } = await db.auth.admin.updateUserById(user.auth_user_id, { ban_duration: active ? 'none' : '876000h' });
-    if (error) throw new Error(error.message);
+    await setLoginBanned(db, user.auth_user_id, !active);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };

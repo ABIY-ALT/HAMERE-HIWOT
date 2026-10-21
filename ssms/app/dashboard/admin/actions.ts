@@ -13,6 +13,8 @@ import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage } from '@/lib/auth/authorize';
 import { isValidPhone, normalizePhone, phoneToAuthEmail } from '@/lib/auth/phone';
 import { provisionSystemUser } from '@/lib/admin/provision';
+import { NOT_DELIVERED, loginPowers, logReset, newTemporary, officeTargets, pinOnly, sendTemporary, setTemporaryPassword } from '@/lib/auth/temp-password';
+import { existingLoginForPhone, setLoginBanned } from '@/lib/tenant/accounts';
 import { refreshPublicSite } from '@/lib/site/cache';
 import {
   DEFAULT_PARISH_SETTINGS,
@@ -153,6 +155,9 @@ export async function createUser(input: z.input<typeof CreateUserSchema>): Promi
       ...data,
       email: phoneToAuthEmail(data.phone),
       assignedBy: me.systemUser.id,
+      temporary: true,
+      // The person may already sign in for another Sunday school: same login, their own password
+      existingLogin: existingLoginForPhone,
     });
     return { ok: true };
   } catch (e) {
@@ -174,11 +179,8 @@ export async function setUserActive(systemUserId: string, active: boolean): Prom
 
     const authUserId = await authUserIdFor(db, systemUserId);
     await db.from('system_users').update({ is_active: active }).eq('id', systemUserId).then(check);
-    // Ban the login too, so an existing session cannot be refreshed.
-    const { error } = await db.auth.admin.updateUserById(authUserId, {
-      ban_duration: active ? 'none' : '876000h',
-    });
-    if (error) throw new Error(error.message);
+    // Ban the login too, so an existing session cannot be refreshed (unless another Sunday school uses it)
+    await setLoginBanned(db, authUserId, !active);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: message(e) };
@@ -187,12 +189,36 @@ export async function setUserActive(systemUserId: string, active: boolean): Prom
 
 export async function resetUserPassword(systemUserId: string, password: string): Promise<ActionResult> {
   try {
-    const { db } = await authorize('USER_MANAGE');
+    const { me, db } = await authorize('USER_MANAGE');
     if (password.length < 8) throw new Error('Password must be at least 8 characters');
     const authUserId = await authUserIdFor(db, systemUserId);
-    const { error } = await db.auth.admin.updateUserById(authUserId, { password });
-    if (error) throw new Error(error.message);
+    // Temporary: they choose their own at the next sign-in
+    await setTemporaryPassword(authUserId, password);
+    await logReset(db, { systemUserId, actorId: me.systemUser.id, via: 'office' });
     return { ok: true };
+  } catch (e) {
+    return { ok: false, error: message(e) };
+  }
+}
+
+/** A new temporary PIN / password sent to the person's own Telegram chat (no SMS or e-mail yet). */
+export async function sendPasswordByTelegram(systemUserId: string): Promise<{ ok: true; delivered: number } | { ok: false; error: string }> {
+  try {
+    const { me, db } = await authorize('USER_MANAGE');
+    if (me.systemUser.id === systemUserId) throw new Error('Change your own password under My profile');
+    const user = (await db.from('system_users')
+      .select('id, auth_user_id, person_id, username, person:persons!system_users_person_id_fkey(full_name_en, full_name_am)')
+      .eq('id', systemUserId)
+      .single()
+      .then(check)) as unknown as { id: string; auth_user_id: string; person_id: string; username: string; person: { full_name_en: string; full_name_am: string | null } | null };
+    const chats = await officeTargets(db, user);
+    const pin = pinOnly(user.username, [...(await loginPowers(user.auth_user_id)).codes]);
+    const secret = newTemporary(pin);
+    await setTemporaryPassword(user.auth_user_id, secret);
+    const delivered = await sendTemporary(chats, { name: user.person?.full_name_am || user.person?.full_name_en || user.username, login: user.username, secret, pin });
+    await logReset(db, { systemUserId: user.id, actorId: me.systemUser.id, via: 'office_telegram', delivered });
+    if (delivered === 0) throw new Error(NOT_DELIVERED);
+    return { ok: true, delivered };
   } catch (e) {
     return { ok: false, error: message(e) };
   }

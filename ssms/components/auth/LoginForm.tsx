@@ -13,6 +13,7 @@ export default function LoginForm() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -27,12 +28,14 @@ export default function LoginForm() {
       () => ({ ok: false, error: 'SERVER' }) as const
     );
     if (result.ok) {
-      router.push('/dashboard');
+      router.push(result.to);
       router.refresh();
       return;
     }
 
-    if (result.error === 'INACTIVE') {
+    if (result.error === 'RATE_LIMITED') {
+      setError(t('Too many attempts. Wait 15 minutes and try again.', 'ብዙ ሙከራዎች ተደርገዋል። 15 ደቂቃ ቆይተው እንደገና ይሞክሩ።'));
+    } else if (result.error === 'INACTIVE') {
       setError(t('This account is disabled. Contact the administrator.', 'ይህ መለያ ተዘግቷል። አስተዳዳሪውን ያነጋግሩ።'));
     } else if (result.error === 'SERVER') {
       setError(t('Could not sign in right now. Please try again.', 'አሁን መግባት አልተቻለም። እባክዎ እንደገና ይሞክሩ።'));
@@ -115,10 +118,23 @@ export default function LoginForm() {
           <div className="form-group">
             <div className="flex items-center justify-between">
               <label className="form-label" htmlFor="password">{t('Password / PIN', 'የይለፍ ቃል / ሚስጥር ቁጥር')}</label>
-              <a href="#" className="text-sm font-medium text-slate-800 hover:underline">
+              <button type="button" onClick={() => setShowForgot((s) => !s)} className="text-sm font-medium text-slate-800 hover:underline">
                 {t('Forgot password?', 'የይለፍ ቃል ረስተዋል?')}
-              </a>
+              </button>
             </div>
+            {showForgot && (
+              <div className="mb-2 p-3 rounded-lg bg-sky-50 border border-sky-200 text-sky-900 text-xs space-y-1">
+                <p>
+                  {t(
+                    'Open your Sunday school’s Telegram bot and press “🔑 Forgot my PIN”. A temporary PIN comes to your chat; sign in with it and choose your own.',
+                    'የሰንበት ትምህርት ቤትዎን የቴሌግራም ቦት ይክፈቱና «🔑 ሚስጥር ቁጥሬን ረሳሁ» ይጫኑ። ጊዜያዊ ሚስጥር ቁጥር ወደ ቻትዎ ይመጣል፤ በእሱ ገብተው የራስዎን ይምረጡ።'
+                  )}
+                </p>
+                <p className="text-sky-700">
+                  {t('Not on Telegram? Ask the office for a new one.', 'ቴሌግራም የለዎትም? ጽ/ቤቱን አዲስ ይጠይቁ።')}
+                </p>
+              </div>
+            )}
             <div className="relative">
               <input
                 id="password"
@@ -148,6 +164,12 @@ export default function LoginForm() {
             {loading ? t('Signing in…', 'በመግባት ላይ…') : t('Login', 'ግባ')}
           </button>
         </form>
+        <p className="mt-6 text-center text-sm text-slate-500">
+          {t('New Sunday school?', 'አዲስ ሰንበት ትምህርት ቤት?')}{' '}
+          <a href="/register" className="font-semibold text-slate-800 hover:underline">
+            {t('Register it here', 'እዚህ ያስመዝግቡ')}
+          </a>
+        </p>
       </div>
     </main>
   );

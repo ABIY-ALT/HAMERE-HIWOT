@@ -7,7 +7,7 @@
 
 import { z } from 'zod';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { authorize, errorMessage } from '@/lib/auth/authorize';
+import { authorizeIn, errorMessage } from '@/lib/auth/authorize';
 import { answerAssignment, myService, type MyService } from '@/lib/choir/service-core';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 
@@ -17,7 +17,7 @@ const missing = (msg: string) =>
 export async function loadMyService(): Promise<Loaded<MyService>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
-    const { me, db } = await authorize();
+    const { me, db } = await authorizeIn('sacred_arts');
     return { mode: 'live', data: await myService(db, me.person.id) };
   } catch (e) {
     return { mode: 'error', error: missing(errorMessage(e)) };
@@ -27,7 +27,7 @@ export async function loadMyService(): Promise<Loaded<MyService>> {
 /** I will serve / I can't come (with a reason). */
 export async function answerMyService(assignmentId: string, response: 'CONFIRMED' | 'DECLINED', note: string): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize();
+    const { me, db } = await authorizeIn('sacred_arts');
     const res = await answerAssignment(
       db,
       z.string().min(1).parse(assignmentId),

@@ -2,7 +2,13 @@
 // Create a system user account (server only, service-role client)
 //
 // One account = Supabase auth user + persons row + system_users row + role
-// assignment. If a later step fails, the earlier ones are rolled back.
+// assignment, in the Sunday school the client is held to. If a later step
+// fails, the earlier ones are rolled back.
+//
+// A phone number has one login across all Sunday schools. When the phone
+// already has one (the person serves in another Sunday school too), the new
+// account is linked to that login and its password is NOT changed — the
+// person keeps signing in with their own password.
 // No runtime imports: scripts/create-admin.mjs loads this file directly.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -18,13 +24,24 @@ export interface ProvisionInput {
   roleId: string;
   unitId: string;
   assignedBy: string | null;
+  /** The password was made by someone else: the person must choose their own at the first sign-in (lib/auth/temp-password) */
+  temporary?: boolean;
+  /** The login already using this phone in any Sunday school (or as platform admin), if any */
+  existingLogin?: (phone: string) => Promise<string | null>;
 }
 
-/** Returns the new system_users id. Throws with a readable message on failure. */
+export interface ProvisionResult {
+  /** system_users id */
+  id: string;
+  /** true = linked to the person's existing login; the password given was not used */
+  linked: boolean;
+}
+
+/** Throws with a readable message on failure. */
 export async function provisionSystemUser(
   db: SupabaseClient,
   input: ProvisionInput
-): Promise<string> {
+): Promise<ProvisionResult> {
   const { data: existing, error: existingError } = await db
     .from('system_users')
     .select('id')
@@ -33,16 +50,21 @@ export async function provisionSystemUser(
   if (existingError) throw new Error(existingError.message);
   if (existing) throw new Error('A user with this phone number already exists');
 
-  const { data: created, error: authError } = await db.auth.admin.createUser({
-    email: input.email,
-    password: input.password,
-    email_confirm: true,
-    user_metadata: { phone: input.phone, full_name: input.nameEn },
-  });
-  if (authError || !created.user) {
-    throw new Error(authError?.message ?? 'Could not create the login');
+  let authUserId = input.existingLogin ? await input.existingLogin(input.phone) : null;
+  const linked = Boolean(authUserId);
+  if (!authUserId) {
+    const { data: created, error: authError } = await db.auth.admin.createUser({
+      email: input.email,
+      password: input.password,
+      email_confirm: true,
+      user_metadata: { phone: input.phone, full_name: input.nameEn },
+      ...(input.temporary ? { app_metadata: { temp_password: true } } : {}),
+    });
+    if (authError || !created.user) {
+      throw new Error(authError?.message ?? 'Could not create the login');
+    }
+    authUserId = created.user.id;
   }
-  const authUserId = created.user.id;
 
   let personId: string | null = null;
   let systemUserId: string | null = null;
@@ -66,11 +88,12 @@ export async function provisionSystemUser(
     });
     if (assignError) throw new Error(assignError.message);
 
-    return systemUserId;
+    return { id: systemUserId, linked };
   } catch (e) {
     if (systemUserId) await db.from('system_users').delete().eq('id', systemUserId);
     if (personId) await db.from('persons').delete().eq('id', personId);
-    await db.auth.admin.deleteUser(authUserId);
+    // Only a login made here is removed — never someone's existing one
+    if (!linked) await db.auth.admin.deleteUser(authUserId);
     throw e;
   }
 }

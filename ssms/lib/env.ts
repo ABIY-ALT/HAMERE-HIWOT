@@ -28,6 +28,8 @@ export const env = {
   siteUrl: () => cleanEnv(process.env.SITE_URL),
   /** Shared with the outside timer that calls /api/cron once a day; without it the daily jobs do not run */
   cronSecret: () => cleanEnv(process.env.CRON_SECRET),
+  /** 32 random bytes, base64: encrypts each Sunday school's secrets (bot tokens) in the database */
+  tenantSecretsKey: () => cleanEnv(process.env.TENANT_SECRETS_KEY),
 };
 
 /** Like the getters above, but throws a clear error when the setting is missing. */

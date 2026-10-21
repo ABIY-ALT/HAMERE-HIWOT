@@ -8,6 +8,7 @@
 import { z } from 'zod';
 import { headers } from 'next/headers';
 import { isStudentLogin } from '@/lib/auth/student-login';
+import { setOwnPassword } from '@/lib/auth/temp-password';
 import { createClient } from '@supabase/supabase-js';
 import type { Person } from '@/types';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
@@ -154,8 +155,8 @@ export async function changeMyPassword(current: string, next: string): Promise<A
     if (wrong) throw new Error('The current password is not correct');
     await verifier.auth.signOut({ scope: 'local' });
 
-    const { error } = await db.auth.admin.updateUserById(user.id, { password: next });
-    if (error) throw new Error(error.message);
+    // Their own login, current password just checked — allowed even when it is shared with another Sunday school
+    await setOwnPassword(user.id, next);
 
     // Record that the password changed (never the password itself)
     const h = await headers();

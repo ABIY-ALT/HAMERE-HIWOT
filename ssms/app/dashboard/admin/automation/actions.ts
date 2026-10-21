@@ -7,7 +7,7 @@
 
 import { z } from 'zod';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { authorize, check, errorMessage } from '@/lib/auth/authorize';
+import { authorizeIn, check, errorMessage } from '@/lib/auth/authorize';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import { env } from '@/lib/env';
 import { siteUrl, telegramConfigured } from '@/lib/telegram/bot';
@@ -28,7 +28,7 @@ export interface AutomationPage {
 export async function loadAutomationPage(): Promise<Loaded<AutomationPage>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
-    const { db } = await authorize('SYSTEM_CONFIGURE');
+    const { db } = await authorizeIn('automation', 'SYSTEM_CONFIGURE');
     const [settings, last_run] = await Promise.all([loadAutomation(db), loadLastRun(db)]);
     return {
       mode: 'live',
@@ -37,7 +37,7 @@ export async function loadAutomationPage(): Promise<Loaded<AutomationPage>> {
         last_run,
         timer_ready: Boolean(env.cronSecret()),
         cron_url: `${siteUrl()}/api/cron`,
-        telegram: telegramConfigured(),
+        telegram: (await telegramConfigured()),
         push: pushConfigured(),
       },
     };
@@ -57,7 +57,7 @@ const SettingsSchema = z.object({
 
 export async function saveAutomation(input: AutomationSettings): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('SYSTEM_CONFIGURE');
+    const { me, db } = await authorizeIn('automation', 'SYSTEM_CONFIGURE');
     const value = SettingsSchema.parse(input);
     await db.from('system_settings')
       .upsert({ key: AUTOMATION_KEY, value, updated_by: me.systemUser.id, updated_at: new Date().toISOString() }, { onConflict: 'key' })
@@ -71,7 +71,7 @@ export async function saveAutomation(input: AutomationSettings): Promise<ActionR
 /** Runs the daily jobs now. Safe: whatever already went out today is not sent again. */
 export async function runAutomationNow(): Promise<{ ok: true; run: LastRun } | { ok: false; error: string }> {
   try {
-    const { db } = await authorize('SYSTEM_CONFIGURE');
+    const { db } = await authorizeIn('automation', 'SYSTEM_CONFIGURE');
     return { ok: true, run: await runDaily(db, 'manual') };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };

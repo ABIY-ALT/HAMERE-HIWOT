@@ -13,6 +13,7 @@ import { z } from 'zod';
 import type { Person } from '@/types';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { tenantPath } from '@/lib/tenant/db';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import { MAX_PHOTO_BYTES, PHOTO_TYPES, SERVICE_DEPARTMENT_CODES } from '@/lib/members/form';
 import { nonMemberIds } from '@/lib/members/membership';
@@ -314,7 +315,7 @@ export async function uploadMemberPhoto(form: FormData): Promise<ActionResult> {
     const person = (await db.from('persons').select('id, profile_photo_url').eq('id', personId).single().then(check)) as {
       id: string; profile_photo_url: string | null;
     };
-    const path = `${person.id}/${crypto.randomUUID()}${ext}`;
+    const path = tenantPath(db, person.id, `${crypto.randomUUID()}${ext}`);
     const { error: uploadError } = await db.storage.from(PHOTO_BUCKET).upload(path, file, { contentType: file.type, upsert: false });
     if (uploadError) throw new Error(missingMigration(uploadError.message));
     const { error } = await db.from('persons').update({ profile_photo_url: path, updated_at: new Date().toISOString() }).eq('id', person.id);

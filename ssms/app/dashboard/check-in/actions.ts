@@ -12,7 +12,7 @@
 
 import { z } from 'zod';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { authorizeIn, check, errorMessage, selectAll } from '@/lib/auth/authorize';
 import type { SessionUser } from '@/lib/auth/session';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import type { PermissionCode } from '@/types';
@@ -20,7 +20,7 @@ import { checkIn, codeAt, newSecret, openEventsNow, secondsLeft, type EventRow }
 import { checkinOpen, type CheckinEvent, type CheckinFlag, type CheckinRow, type CheckinStatus, type EventKind } from '@/lib/checkin/types';
 
 type Row = Record<string, unknown>;
-type Db = Awaited<ReturnType<typeof authorize>>['db'];
+type Db = Awaited<ReturnType<typeof authorizeIn>>['db'];
 
 const MIGRATION = 'Run database migration 036 (check-in) first';
 const missing = (m: string) => (/checkin/.test(m) ? MIGRATION : m);
@@ -58,7 +58,7 @@ export interface CheckinEventsData {
 export async function loadCheckinEvents(): Promise<Loaded<CheckinEventsData>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
-    const { me, db } = await authorize(...RUNNERS, 'PROGRAM_VIEW', 'AUDIT_VIEW_ALL');
+    const { me, db } = await authorizeIn('check_in', ...RUNNERS, 'PROGRAM_VIEW', 'AUDIT_VIEW_ALL');
     const since = new Date(Date.now() - 60 * 86_400_000).toISOString();
     const { data, error } = await db.from('checkin_events').select('*').gte('ends_at', since).order('starts_at', { ascending: false }).limit(200);
     if (error) throw new Error(missing(error.message));
@@ -108,7 +108,7 @@ const EventSchema = z.object({
 /** Open check-in for an event. Times are Addis Ababa time. */
 export async function createCheckinEvent(input: z.input<typeof EventSchema>): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
-    const { me, db } = await authorize(...RUNNERS);
+    const { me, db } = await authorizeIn('check_in', ...RUNNERS);
     const e = EventSchema.parse(input);
     if (!runsKind(me, e.kind)) throw new Error(e.kind === 'CHOIR' ? 'Choir rehearsals need the choir permission' : 'Programs need the programs permission');
     let title = e.title;
@@ -166,7 +166,7 @@ export interface CheckinDetail {
 
 export async function loadCheckinDetail(eventId: string): Promise<{ ok: true; data: CheckinDetail } | { ok: false; error: string }> {
   try {
-    const { me, db } = await authorize(...RUNNERS, 'PROGRAM_VIEW', 'AUDIT_VIEW_ALL');
+    const { me, db } = await authorizeIn('check_in', ...RUNNERS, 'PROGRAM_VIEW', 'AUDIT_VIEW_ALL');
     const e = (await db.from('checkin_events').select('*').eq('id', eventId).maybeSingle().then(check)) as Row | null;
     if (!e) throw new Error('This event was not found — reload the page');
     const marks = await selectAll<Row>((a, b) => db.from('checkins').select('*').eq('event_id', eventId).order('checked_at').range(a, b));
@@ -204,7 +204,7 @@ export async function loadCheckinDetail(eventId: string): Promise<{ ok: true; da
 /** The code on the leader's screen (asked again every few seconds). */
 export async function liveCode(eventId: string): Promise<{ ok: true; code: string; seconds: number; open: boolean } | { ok: false; error: string }> {
   try {
-    const { me, db } = await authorize(...RUNNERS);
+    const { me, db } = await authorizeIn('check_in', ...RUNNERS);
     const e = await ownEvent(db, me, eventId);
     return { ok: true, code: codeAt(e.secret), seconds: secondsLeft(), open: checkinOpen(e) };
   } catch (e) {
@@ -215,7 +215,7 @@ export async function liveCode(eventId: string): Promise<{ ok: true; code: strin
 /** Find people to mark present by hand. */
 export async function findPeople(query: string): Promise<{ ok: true; people: { id: string; name: string; code: string }[] } | { ok: false; error: string }> {
   try {
-    const { db } = await authorize(...RUNNERS);
+    const { db } = await authorizeIn('check_in', ...RUNNERS);
     const q = z.string().trim().min(2, 'Type at least 2 letters').max(60).parse(query).replace(/[%,()]/g, ' ');
     const { data } = await db.from('persons')
       .select('id, full_name_en, full_name_am, membership_code, phone_primary')
@@ -234,7 +234,7 @@ export async function findPeople(query: string): Promise<{ ok: true; people: { i
 /** Mark someone present (no phone, or put back after removing). */
 export async function markPresent(eventId: string, personId: string): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize(...RUNNERS);
+    const { me, db } = await authorizeIn('check_in', ...RUNNERS);
     const e = await ownEvent(db, me, eventId);
     if (e.status !== 'OPEN') throw new Error('This event is closed');
     await db.from('checkins')
@@ -252,7 +252,7 @@ export async function markPresent(eventId: string, personId: string): Promise<Ac
 /** Confirm a flagged check-in (PRESENT) or remove one (REMOVED: they cannot check in again for this event). */
 export async function reviewCheckin(checkinId: string, decision: 'PRESENT' | 'REMOVED'): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize(...RUNNERS);
+    const { me, db } = await authorizeIn('check_in', ...RUNNERS);
     const c = (await db.from('checkins').select('id, event_id').eq('id', z.string().min(1).parse(checkinId)).maybeSingle().then(check)) as Row | null;
     if (!c) throw new Error('This check-in was not found — reload the page');
     const e = await ownEvent(db, me, c.event_id as string);
@@ -275,7 +275,7 @@ export async function reviewCheckin(checkinId: string, decision: 'PRESENT' | 'RE
  */
 export async function closeCheckinEvent(eventId: string): Promise<{ ok: true; present: number } | { ok: false; error: string }> {
   try {
-    const { me, db } = await authorize(...RUNNERS);
+    const { me, db } = await authorizeIn('check_in', ...RUNNERS);
     const e = await ownEvent(db, me, eventId);
     const marks = await selectAll<Row>((a, b) => db.from('checkins').select('person_id, status').eq('event_id', e.id).order('id').range(a, b));
     const present = new Set(marks.filter((m) => m.status === 'PRESENT').map((m) => m.person_id as string));
@@ -309,7 +309,7 @@ export interface MyCheckin {
 export async function loadMyCheckin(): Promise<Loaded<MyCheckin>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
-    const { me, db } = await authorize();
+    const { me, db } = await authorizeIn('check_in');
     const events = await openEventsNow(db);
     const { data } = events.length
       ? await db.from('checkins').select('event_id, status').eq('person_id', me.person.id).in('event_id', events.map((e) => e.id))
@@ -333,7 +333,7 @@ export async function checkInMe(
   location: { lat: number; lng: number } | null
 ): Promise<{ ok: true; status: 'PRESENT' | 'FLAGGED'; flag: CheckinFlag | null } | { ok: false; error: string }> {
   try {
-    const { me, db } = await authorize();
+    const { me, db } = await authorizeIn('check_in');
     const e = (await db.from('checkin_events').select('*').eq('id', z.string().min(1).parse(eventId)).maybeSingle().then(check)) as EventRow | null;
     if (!e) throw new Error('This event was not found');
     const loc = location ? z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) }).parse(location) : null;
@@ -373,7 +373,7 @@ export interface CheckinExportRow {
 /** Every check-in of the events since `from` (YYYY-MM-DD), one row each — for Excel / CSV. */
 export async function loadCheckinExport(from: string): Promise<{ ok: true; rows: CheckinExportRow[] } | { ok: false; error: string }> {
   try {
-    const { db } = await authorize(...RUNNERS, 'PROGRAM_VIEW', 'AUDIT_VIEW_ALL');
+    const { db } = await authorizeIn('check_in', ...RUNNERS, 'PROGRAM_VIEW', 'AUDIT_VIEW_ALL');
     const since = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).parse(from);
     const events = await selectAll<Row>((a, b) => db.from('checkin_events').select('id, title, kind, starts_at').gte('starts_at', `${since}T00:00:00+03:00`).order('starts_at').range(a, b));
     if (!events.length) return { ok: true, rows: [] };

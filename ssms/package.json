@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "create-admin": "node --experimental-strip-types --env-file=.env.local scripts/create-admin.mjs",
+    "create-platform-admin": "node --experimental-strip-types --env-file=.env.local scripts/create-platform-admin.mjs",
     "check-setup": "node --env-file=.env.local scripts/check-setup.mjs",
     "setup-push": "node scripts/setup-push.mjs"
   },

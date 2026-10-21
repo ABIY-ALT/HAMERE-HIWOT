@@ -24,7 +24,8 @@
 
 import { z } from 'zod';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { authorizeIn, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { tenantPath } from '@/lib/tenant/db';
 import type { SessionUser } from '@/lib/auth/session';
 import { notifyLater } from '@/lib/push/send';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
@@ -51,7 +52,7 @@ import {
   type UpdateKind,
 } from '@/lib/tasks/types';
 
-type Db = Awaited<ReturnType<typeof authorize>>['db'];
+type Db = Awaited<ReturnType<typeof authorizeIn>>['db'];
 type Row = Record<string, unknown> & { id: string };
 type ByUser = { person?: { full_name_en?: string | null } | null } | null;
 type UnitName = { name_en?: string; name_am?: string | null } | null;
@@ -79,7 +80,7 @@ const seesAll = (me: SessionUser) => me.permissions.includes('TASK_ASSIGN') || m
 export async function loadTasks(): Promise<Loaded<TasksData>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
-    const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT', 'AUDIT_VIEW_ALL');
+    const { me, db } = await authorizeIn('tasks', 'TASK_ASSIGN', 'TASK_REPORT', 'AUDIT_VIEW_ALL');
     const unitRows = (await db.from('organization_units')
       .select('id, name_en, name_am, unit_type')
       .eq('is_active', true)
@@ -287,7 +288,7 @@ export async function assignTasks(
   input: TaskInput & { unit_ids: string[]; repeat: Frequency | '' }
 ): Promise<{ ok: true; taskNos: string[] } | { ok: false; error: string }> {
   try {
-    const { me, db } = await authorize('TASK_ASSIGN');
+    const { me, db } = await authorizeIn('tasks', 'TASK_ASSIGN');
     const t = TaskSchema.parse(input);
     const unitIds = z.array(z.string()).min(1, 'Choose at least one department').max(100).parse([...new Set(input.unit_ids)]);
     const repeat = z.enum(['', 'WEEKLY', 'MONTHLY', 'QUARTERLY']).parse(input.repeat);
@@ -355,7 +356,7 @@ const followsUp = (me: SessionUser, task: Pick<TaskRow, 'internal' | 'unit_id'>)
 
 export async function updateTask(id: string, input: TaskInput & { unit_id: string }): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT');
+    const { me, db } = await authorizeIn('tasks', 'TASK_ASSIGN', 'TASK_REPORT');
     const t = TaskSchema.parse(input);
     const task = await loadTaskRow(db, id);
     if (!followsUp(me, task)) throw new Error('Only the one who gave this task can change it');
@@ -393,7 +394,7 @@ export async function reportTask(
   input: z.input<typeof ReportSchema>
 ): Promise<{ ok: true; updateId: string } | { ok: false; error: string }> {
   try {
-    const { me, db } = await authorize();
+    const { me, db } = await authorizeIn('tasks');
     const r = ReportSchema.parse(input);
     const task = await loadTaskRow(db, id);
     const head = worksOn(me, task);
@@ -420,7 +421,7 @@ const BUCKET = 'task-files';
 /** Attach a photo or document to a task, or (update_id) to one of its reports. */
 export async function uploadTaskFile(form: FormData): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize();
+    const { me, db } = await authorizeIn('tasks');
     const taskId = String(form.get('task_id') ?? '');
     const updateId = String(form.get('update_id') ?? '') || null;
     const file = form.get('file');
@@ -437,7 +438,7 @@ export async function uploadTaskFile(form: FormData): Promise<ActionResult> {
       if (!update) throw new Error('That report does not belong to this task');
     }
 
-    const path = `${taskId}/${crypto.randomUUID()}${ext}`;
+    const path = tenantPath(db, taskId, `${crypto.randomUUID()}${ext}`);
     const { error: uploadError } = await db.storage.from(BUCKET).upload(path, file, { contentType: file.type, upsert: false });
     if (uploadError) throw new Error(missingTables(uploadError.message));
     const { error } = await db.from('task_files').insert({
@@ -462,7 +463,7 @@ export async function uploadTaskFile(form: FormData): Promise<ActionResult> {
 /** Remove a file: whoever uploaded it, or anyone who gives tasks. */
 export async function deleteTaskFile(fileId: string): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('TASK_REPORT', 'TASK_ASSIGN');
+    const { me, db } = await authorizeIn('tasks', 'TASK_REPORT', 'TASK_ASSIGN');
     const file = (await db.from('task_files').select('id, path, uploaded_by').eq('id', fileId).single().then(check)) as {
       id: string; path: string; uploaded_by: string | null;
     };
@@ -482,7 +483,7 @@ export async function deleteTaskFile(fileId: string): Promise<ActionResult> {
 /** Stop giving a repeating task; the tasks already given stay. */
 export async function stopRepeating(seriesId: string): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('TASK_ASSIGN');
+    const { me, db } = await authorizeIn('tasks', 'TASK_ASSIGN');
     await db.from('task_series')
       .update({ is_active: false, stopped_by: me.systemUser.id, stopped_at: new Date().toISOString() })
       .eq('id', seriesId)
@@ -497,7 +498,7 @@ export async function stopRepeating(seriesId: string): Promise<ActionResult> {
 
 export async function reviewTask(id: string, decision: 'COMPLETED' | 'RETURNED', note: string): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT');
+    const { me, db } = await authorizeIn('tasks', 'TASK_ASSIGN', 'TASK_REPORT');
     if (decision !== 'COMPLETED' && decision !== 'RETURNED') throw new Error('Invalid decision');
     const cleanNote = note.trim();
     if (decision === 'RETURNED' && cleanNote.length < 3) throw new Error('Write what still has to be done');
@@ -526,7 +527,7 @@ export async function reviewTask(id: string, decision: 'COMPLETED' | 'RETURNED',
 
 export async function cancelTask(id: string, reason: string): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT');
+    const { me, db } = await authorizeIn('tasks', 'TASK_ASSIGN', 'TASK_REPORT');
     const cleanReason = reason.trim();
     if (cleanReason.length < 3) throw new Error('Write why the task is cancelled');
     const task = await loadTaskRow(db, id);
@@ -546,7 +547,7 @@ export async function cancelTask(id: string, reason: string): Promise<ActionResu
 
 export async function remindTask(id: string, note: string): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT');
+    const { me, db } = await authorizeIn('tasks', 'TASK_ASSIGN', 'TASK_REPORT');
     const task = await loadTaskRow(db, id);
     if (!followsUp(me, task) && !(task.assignee_person_id && worksOn(me, task))) throw new Error('Only the one who gave this task can send a reminder');
     if (!WORK_STATUSES.includes(task.status)) throw new Error('This task is not waiting on the department');
@@ -577,7 +578,7 @@ const missing035 = (m: string) => (/assignee_person_id|parent_task_id|plan_activ
 /** Give the task to a person in the department (or take it back: personId ''). The unit's head or TASK_ASSIGN. */
 export async function setTaskAssignee(taskId: string, personId: string): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT');
+    const { me, db } = await authorizeIn('tasks', 'TASK_ASSIGN', 'TASK_REPORT');
     const task = await loadTaskRow(db, z.string().min(1).parse(taskId));
     if (!worksOn(me, task)) throw new Error('Only the department’s head can choose who does it');
     if (!OPEN_STATUSES.includes(task.status)) throw new Error('This task is already finished');
@@ -621,7 +622,7 @@ export type OwnTaskInput = z.input<typeof OwnTaskSchema>;
  */
 export async function createDepartmentTask(input: OwnTaskInput): Promise<{ ok: true; taskNo: string } | { ok: false; error: string }> {
   try {
-    const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT');
+    const { me, db } = await authorizeIn('tasks', 'TASK_ASSIGN', 'TASK_REPORT');
     const t = OwnTaskSchema.parse(input);
     if (!worksOn(me, { unit_id: t.unit_id })) throw new Error('You can only give tasks inside your own department');
     if (!(await inUnit(db, t.unit_id, t.assignee_person_id))) throw new Error('That person is not in this department');
@@ -672,7 +673,7 @@ export async function createDepartmentTask(input: OwnTaskInput): Promise<{ ok: t
 export async function loadMyTasks(): Promise<Loaded<{ tasks: MyTask[] }>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
-    const { me, db } = await authorize();
+    const { me, db } = await authorizeIn('tasks');
     const { data, error } = await db.from('tasks').select('*').eq('assignee_person_id', me.person.id).order('created_at', { ascending: false }).limit(100);
     if (error) throw new Error(missing035(missingTables(error.message)));
     const rows = ((data ?? []) as Row[]).filter((r) => r.status !== 'CANCELLED');

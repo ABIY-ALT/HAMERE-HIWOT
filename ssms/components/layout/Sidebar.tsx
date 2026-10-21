@@ -37,11 +37,18 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLang } from '@/contexts/LangContext';
 import { canSeeNavItem } from '@/lib/permissions';
+import { moduleForPath } from '@/lib/billing/modules';
 import type { PermissionCode } from '@/types';
 
 /** Signed in only for the student or parent portal (no staff permissions) */
 const portalOnly = (user: { permissions: Set<PermissionCode> } | null) =>
   Boolean(user) && [...user!.permissions].every((p) => p === 'STUDENT_PORTAL' || p === 'PARENT_PORTAL');
+
+/** The page's module is in the Sunday school's plan (core pages always are) */
+const inPlan = (user: ReturnType<typeof useAuth>['user'], href?: string) => {
+  const pageModule = href ? moduleForPath(href) : null;
+  return !pageModule || !user?.tenant || user.tenant.access.modules.includes(pageModule);
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Navigation Configuration
@@ -316,6 +323,8 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
         icon: Globe,
         permissions: ['WEBSITE_MANAGE'],
         children: [
+          { labelEn: 'Overview', labelAm: 'አጠቃላይ', href: '/dashboard/website', permissions: ['WEBSITE_MANAGE'] },
+          { labelEn: 'Events', labelAm: 'መርሐ ግብሮች', href: '/dashboard/website/events', permissions: ['WEBSITE_MANAGE'] },
           { labelEn: 'News & Announcements', labelAm: 'ዜናና ማስታወቂያ', href: '/dashboard/website/news', permissions: ['WEBSITE_MANAGE'] },
           { labelEn: 'Photo Gallery', labelAm: 'የፎቶ ማዕከል', href: '/dashboard/website/gallery', permissions: ['WEBSITE_MANAGE'] },
         ],
@@ -330,6 +339,7 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
           { labelEn: 'Roles', labelAm: 'ሚናዎች', href: '/dashboard/admin/roles', permissions: ['ROLE_MANAGE'] },
           { labelEn: 'Permissions', labelAm: 'ፈቃዶች', href: '/dashboard/admin/permissions', permissions: ['ROLE_MANAGE'] },
           { labelEn: 'System Settings', labelAm: 'የስርዓት ቅንብሮች', href: '/dashboard/admin/settings', permissions: ['SYSTEM_CONFIGURE'] },
+          { labelEn: 'Billing & Plan', labelAm: 'ክፍያና ዕቅድ', href: '/dashboard/admin/billing', permissions: ['SYSTEM_CONFIGURE'] },
           { labelEn: 'Telegram Bot', labelAm: 'የቴሌግራም ቦት', href: '/dashboard/admin/telegram', permissions: ['SYSTEM_CONFIGURE', 'MEMBER_UPDATE', 'STUDENT_UPDATE'] },
           { labelEn: 'Automation', labelAm: 'አውቶሜሽን', href: '/dashboard/admin/automation', permissions: ['SYSTEM_CONFIGURE'] },
         ],
@@ -342,10 +352,12 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
 // Sub-components
 // ─────────────────────────────────────────────────────────────────────────────
 
-function NavItemLeaf({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
+const matches = (pathname: string, href?: string) => Boolean(href) && (pathname === href || pathname.startsWith(href + '/'));
+
+function NavItemLeaf({ item, collapsed, active }: { item: NavItem; collapsed: boolean; active?: boolean }) {
   const pathname = usePathname();
   const { t } = useLang();
-  const isActive = item.href ? pathname === item.href || pathname.startsWith(item.href + '/') : false;
+  const isActive = active ?? matches(pathname, item.href);
   const Icon = item.icon;
 
   return (
@@ -369,16 +381,22 @@ function NavItemGroup({ item, collapsed }: { item: NavItem; collapsed: boolean }
   const Icon = item.icon;
 
   const hasActiveChild = item.children?.some(
-    (c) => c.href && (pathname === c.href || pathname.startsWith(c.href + '/'))
+    (c) => matches(pathname, c.href)
   );
 
   const [open, setOpen] = useState(hasActiveChild ?? false);
 
   const visibleChildren = item.children?.filter((c) =>
-    canSeeNavItem(user, c.permissions ?? [])
+    canSeeNavItem(user, c.permissions ?? []) && inPlan(user, c.href)
   );
 
   if (!visibleChildren?.length) return null;
+
+  // Only the closest match is highlighted (Overview at /dashboard/website, not on its sub-pages)
+  const activeHref = visibleChildren
+    .map((c) => c.href)
+    .filter((href) => matches(pathname, href))
+    .sort((a, b) => b!.length - a!.length)[0];
 
   return (
     <div>
@@ -398,7 +416,7 @@ function NavItemGroup({ item, collapsed }: { item: NavItem; collapsed: boolean }
       {open && !collapsed && (
         <div className="ml-6 mt-0.5">
           {visibleChildren.map((child) => (
-            <NavItemLeaf key={child.href} item={child} collapsed={false} />
+            <NavItemLeaf key={child.href} item={child} collapsed={false} active={child.href === activeHref} />
           ))}
         </div>
       )}
@@ -437,20 +455,37 @@ export default function Sidebar({ collapsed, mobileOpen, onToggleCollapse, onClo
       >
         {/* Brand */}
         <div className="brand-logo">
-          <div className="brand-icon">
-            <Image
-              src="/logo.png"
-              alt="ሳሎ ደብረ ፀሐይ ሐመረ ሕይወት ሰንበት ት/ቤት"
-              width={42}
-              height={42}
-              priority
-            />
-          </div>
-          {!collapsed && (
-            <div className="brand-text">
-              <div className="name">{t('Hamere Hiwot', 'ሐመረ ሕይወት')}</div>
-              <div className="sub">{t('Sallo Debre Tsehay SSMS', 'ሳሎ ደ/ፀ/ቅ/ጊዮርጊስ ሰ/ት/ቤት')}</div>
-            </div>
+          {/* The default Sunday school keeps its own logo and names; others show theirs */}
+          {!user?.tenant || user.tenant.is_default ? (
+            <>
+              <div className="brand-icon">
+                <Image
+                  src="/logo.png"
+                  alt="ሳሎ ደብረ ፀሐይ ሐመረ ሕይወት ሰንበት ት/ቤት"
+                  width={42}
+                  height={42}
+                  priority
+                />
+              </div>
+              {!collapsed && (
+                <div className="brand-text">
+                  <div className="name">{t('Hamere Hiwot', 'ሐመረ ሕይወት')}</div>
+                  <div className="sub">{t('Sallo Debre Tsehay SSMS', 'ሳሎ ደ/ፀ/ቅ/ጊዮርጊስ ሰ/ት/ቤት')}</div>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="brand-icon flex items-center justify-center font-bold text-lg">
+                {(user.tenant.name_en || '?').slice(0, 1)}
+              </div>
+              {!collapsed && (
+                <div className="brand-text">
+                  <div className="name">{t(user.tenant.name_en, user.tenant.name_am || user.tenant.name_en)}</div>
+                  <div className="sub">{t('Sunday School MS', 'የሰንበት ት/ቤት አስተዳደር')}</div>
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -458,7 +493,7 @@ export default function Sidebar({ collapsed, mobileOpen, onToggleCollapse, onClo
         <div className="flex-1 py-3">
           {NAV_SECTIONS.map((section) => {
             const visibleItems = section.items.filter(
-              (item) => canSeeNavItem(user, item.permissions ?? []) && !(item.staffOnly && portalOnly(user))
+              (item) => canSeeNavItem(user, item.permissions ?? []) && !(item.staffOnly && portalOnly(user)) && inPlan(user, item.href)
             );
             if (!visibleItems.length) return null;
 

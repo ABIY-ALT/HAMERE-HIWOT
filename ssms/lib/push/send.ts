@@ -8,7 +8,8 @@ import webpush from 'web-push';
 import { after } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { PermissionCode } from '@/types';
-import { createAdminClient } from '@/lib/supabase/server';
+import { tenantClient } from '@/lib/tenant/db';
+import { currentTenantId, runInTenant } from '@/lib/tenant/scope';
 import { env } from '@/lib/env';
 import { escapeHtml, personsOfUsers, siteUrl, telegramConfigured, telegramToPersons } from '@/lib/telegram/bot';
 
@@ -112,19 +113,26 @@ export function notifyLater(
   },
   message: PushMessage
 ): void {
-  if (!pushConfigured() && !telegramConfigured()) return;
+  // Only the people of the Sunday school this is happening in
+  const tenant = currentTenantId();
   after(async () => {
     try {
-      const db = createAdminClient();
-      const ids = new Set((to.users ?? []).filter((id): id is string => Boolean(id)));
-      if (to.permissions?.length) for (const id of await usersWithPermission(db, ...to.permissions)) ids.add(id);
-      if (to.units) for (const id of await usersInUnits(db, to.units.ids, to.units.holding)) ids.add(id);
-      if (to.except) ids.delete(to.except);
-      await pushToUsers(db, [...ids], message);
-      if (telegramConfigured()) {
-        const text = `<b>${escapeHtml(message.title)}</b>\n${escapeHtml(message.body)}\n${siteUrl()}${message.url}`;
-        await telegramToPersons(db, await personsOfUsers(db, [...ids]), text);
-      }
+      const tenantId = await tenant;
+      if (!tenantId) return;
+      await runInTenant(tenantId, async () => {
+        const bot = await telegramConfigured();
+        if (!pushConfigured() && !bot) return;
+        const db = tenantClient(tenantId);
+        const ids = new Set((to.users ?? []).filter((id): id is string => Boolean(id)));
+        if (to.permissions?.length) for (const id of await usersWithPermission(db, ...to.permissions)) ids.add(id);
+        if (to.units) for (const id of await usersInUnits(db, to.units.ids, to.units.holding)) ids.add(id);
+        if (to.except) ids.delete(to.except);
+        await pushToUsers(db, [...ids], message);
+        if (bot) {
+          const text = `<b>${escapeHtml(message.title)}</b>\n${escapeHtml(message.body)}\n${siteUrl()}${message.url}`;
+          await telegramToPersons(db, await personsOfUsers(db, [...ids]), text);
+        }
+      });
     } catch (e) {
       console.error('notify failed', e);
     }

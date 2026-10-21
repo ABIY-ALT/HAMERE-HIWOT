@@ -16,6 +16,7 @@ import {
   loadTelegramChats,
   refreshTelegramChat,
   saveBotAbout,
+  saveBotToken,
   sendBroadcast,
   type BotStatus,
   type TelegramChatRow,
@@ -30,6 +31,7 @@ export default function TelegramAdminPage() {
   const [audience, setAudience] = useState('EVERYONE');
   const [reach, setReach] = useState<{ people: number; connected: number } | null>(null);
   const [message, setMessage] = useState('');
+  const [token, setToken] = useState('');
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
 
@@ -59,6 +61,17 @@ export default function TelegramAdminPage() {
     setBusy(false);
     if (!res.ok) return notify('error', res.error);
     notify('success', t('The bot is connected to this site', 'ቦቱ ከዚህ ድረ-ገጽ ጋር ተገናኝቷል'));
+    loadBotStatus().then(apply);
+  };
+
+  const saveToken = async (e: React.FormEvent | null, value: string | null) => {
+    e?.preventDefault();
+    setBusy(true);
+    const res = await saveBotToken(value);
+    setBusy(false);
+    if (!res.ok) return notify('error', res.error);
+    setToken('');
+    notify('success', value ? t('Bot token saved', 'የቦት ቁልፉ ተቀምጧል') : t('Bot token removed', 'የቦት ቁልፉ ተሰርዟል'));
     loadBotStatus().then(apply);
   };
 
@@ -104,7 +117,7 @@ export default function TelegramAdminPage() {
         <div className="card p-5 space-y-4">
           <h2 className="font-bold text-slate-800 text-sm">{t('Status', 'ሁኔታ')}</h2>
           <ul className="space-y-1.5 text-sm">
-            <Check ok={status.configured} text={status.configured ? t(`Bot token set${status.username ? ` — @${status.username}` : ''}`, `የቦት ቁልፍ ገብቷል${status.username ? ` — @${status.username}` : ''}`) : t('TELEGRAM_BOT_TOKEN is not set on the server', 'TELEGRAM_BOT_TOKEN በሰርቨሩ ላይ አልገባም')} />
+            <Check ok={status.configured} text={status.configured ? t(`Bot token set${status.username ? ` — @${status.username}` : ''}`, `የቦት ቁልፍ ገብቷል${status.username ? ` — @${status.username}` : ''}`) : t('No bot token yet', 'የቦት ቁልፍ ገና አልገባም')} />
             {status.configured && (
               <Check
                 ok={webhookOk}
@@ -119,10 +132,28 @@ export default function TelegramAdminPage() {
               <Link2 size={14} /> {webhookOk ? t('Connect again', 'እንደገና አገናኝ') : t('Connect the bot to this site', 'ቦቱን ከዚህ ድረ-ገጽ ጋር አገናኝ')}
             </button>
           )}
+          {status.can_configure && (
+            <form onSubmit={(e) => saveToken(e, token)} className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+              <input
+                type="password"
+                autoComplete="off"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder={status.token_source === 'saved' ? t('Replace the bot token…', 'የቦት ቁልፉን ይተኩ…') : t('Paste the bot token from @BotFather', 'ከ@BotFather የተቀበሉትን ቁልፍ ይለጥፉ')}
+                className="form-input flex-1 min-w-[16rem] w-auto"
+              />
+              <button disabled={busy || !token.trim()} className="btn btn-secondary text-xs disabled:opacity-60">{t('Save token', 'ቁልፉን አስቀምጥ')}</button>
+              {status.token_source === 'saved' && (
+                <button type="button" disabled={busy} onClick={() => saveToken(null, null)} className="btn btn-ghost text-xs text-red-600 disabled:opacity-60">
+                  {t('Remove', 'አስወግድ')}
+                </button>
+              )}
+            </form>
+          )}
           {status.can_configure && !webhookOk && (
             <ol className="text-xs text-slate-600 list-decimal pl-5 space-y-1 border-t border-slate-100 pt-3">
               <li>{t('In Telegram, open @BotFather, send /newbot, give a name (e.g. “Hamere Hiwot Sunday School”) and a username ending in “bot”. Copy the token it gives you.', 'በቴሌግራም @BotFather ን ከፍተው /newbot ይላኩ፤ ስም (ለምሳሌ «Hamere Hiwot Sunday School») እና በ«bot» የሚያልቅ የተጠቃሚ ስም ይስጡ። የሚሰጥዎትን ቁልፍ (token) ይቅዱ።')}</li>
-              <li>{t('On Render, open the site’s service → Environment → add TELEGRAM_BOT_TOKEN with that token (and SITE_URL with the site address, e.g. https://hamere-hiwot.onrender.com). Save and deploy.', 'በRender የድረ-ገጹን አገልግሎት ከፍተው → Environment → TELEGRAM_BOT_TOKEN በዚያ ቁልፍ ያስገቡ (SITE_URL ደግሞ በድረ-ገጹ አድራሻ፣ ለምሳሌ https://hamere-hiwot.onrender.com)። አስቀምጠው deploy ያድርጉ።')}</li>
+              <li>{t('Paste the token above and press “Save token”. It is kept encrypted and only used by this Sunday school.', 'ቁልፉን ከላይ ለጥፈው «ቁልፉን አስቀምጥ» ይጫኑ። በምስጢር ይቀመጣል፤ የሚጠቀመው ይህ ሰንበት ትምህርት ቤት ብቻ ነው።')}</li>
               <li>{t('Open this page on the live site and press “Connect the bot to this site”.', 'ይህን ገጽ በቀጥታው ድረ-ገጽ ላይ ከፍተው «ቦቱን ከዚህ ድረ-ገጽ ጋር አገናኝ» ይጫኑ።')}</li>
               <li>{t('Then everyone connects from their profile with “Connect Telegram”.', 'ከዚያ ሁሉም ከመገለጫቸው «ቴሌግራም አገናኝ» በመጫን ይገናኛሉ።')}</li>
             </ol>

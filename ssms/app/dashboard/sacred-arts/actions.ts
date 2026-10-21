@@ -7,7 +7,7 @@
 
 import { z } from 'zod';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { authorizeIn, check, errorMessage, selectAll } from '@/lib/auth/authorize';
 import { nonMemberIds } from '@/lib/members/membership';
 import { telegramLater, telegramToPersons } from '@/lib/telegram/bot';
 import { cancelledText, sessionTitle } from '@/lib/choir/service-core';
@@ -32,7 +32,7 @@ const optionalDate = z.string().refine((v) => v === '' || /^\d{4}-\d{2}-\d{2}$/.
 export async function loadChoir(): Promise<Loaded<ChoirData>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
-    const { db } = await authorize('MEMBER_VIEW', 'CHOIR_MANAGE', 'AUDIT_VIEW_ALL');
+    const { db } = await authorizeIn('sacred_arts', 'MEMBER_VIEW', 'CHOIR_MANAGE', 'AUDIT_VIEW_ALL');
     const [memberRows, hymnRows, sessionRows, persons, notMembers, vestments, programs] = await Promise.all([
       selectAll<Row>((a, b) =>
         db.from('choir_members')
@@ -159,7 +159,7 @@ export type ChoirMemberInput = z.input<typeof MemberSchema>;
 
 export async function saveChoirMember(id: string | null, input: ChoirMemberInput): Promise<ActionResult> {
   try {
-    const { db } = await authorize('CHOIR_MANAGE');
+    const { db } = await authorizeIn('sacred_arts', 'CHOIR_MANAGE');
     const m = MemberSchema.parse(input);
     const fields = {
       voice_part: m.voice_part,
@@ -198,7 +198,7 @@ export type HymnInput = z.input<typeof HymnSchema>;
 
 export async function saveHymn(id: string | null, input: HymnInput): Promise<ActionResult> {
   try {
-    const { db } = await authorize('CHOIR_MANAGE');
+    const { db } = await authorizeIn('sacred_arts', 'CHOIR_MANAGE');
     const h = HymnSchema.parse(input);
     const fields = {
       title_am: h.title_am,
@@ -235,7 +235,7 @@ export type ChoirSessionInput = z.input<typeof SessionSchema>;
 
 export async function saveChoirSession(id: string | null, input: ChoirSessionInput): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('CHOIR_MANAGE');
+    const { me, db } = await authorizeIn('sacred_arts', 'CHOIR_MANAGE');
     const s = SessionSchema.parse(input);
     const fields = {
       session_date: s.date,
@@ -277,7 +277,7 @@ const MarksSchema = z.record(z.string(), z.enum(['PRESENT', 'ABSENT', 'LATE', 'E
 /** Save choir attendance; the session counts as held. */
 export async function saveChoirAttendance(sessionId: string, marks: Record<string, AttendanceStatus>): Promise<ActionResult> {
   try {
-    const { db } = await authorize('CHOIR_MANAGE');
+    const { db } = await authorizeIn('sacred_arts', 'CHOIR_MANAGE');
     const m = MarksSchema.parse(marks);
     const ids = Object.keys(m);
     if (ids.length === 0) throw new Error('Mark at least one member');
@@ -294,7 +294,7 @@ export async function saveChoirAttendance(sessionId: string, marks: Record<strin
 
 export async function cancelChoirSession(sessionId: string): Promise<ActionResult> {
   try {
-    const { db } = await authorize('CHOIR_MANAGE');
+    const { db } = await authorizeIn('sacred_arts', 'CHOIR_MANAGE');
     await db.from('choir_sessions').update({ status: 'CANCELLED' }).eq('id', sessionId).eq('status', 'PLANNED').then(check);
     // A published roster: the people on it are told (migration 037; before it, nothing to tell)
     const { data: session } = await db.from('choir_sessions').select('session_date, start_time, title, kind, roster_status').eq('id', sessionId).maybeSingle();

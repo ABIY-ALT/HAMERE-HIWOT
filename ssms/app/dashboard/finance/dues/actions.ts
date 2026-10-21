@@ -18,7 +18,7 @@
 import { after } from 'next/server';
 import { z } from 'zod';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { authorize, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { authorizeIn, errorMessage, selectAll } from '@/lib/auth/authorize';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import { ETHIOPIAN_MONTHS_AM, ETHIOPIAN_MONTHS_EN } from '@/lib/utils/ethiopian-calendar';
 import {
@@ -39,7 +39,7 @@ import { periodsOf, recordPayment, removeReceipt, type DuesReceipt } from '@/lib
 import { nonMemberIds } from '@/lib/members/membership';
 
 type Row = Record<string, unknown>;
-type Db = Awaited<ReturnType<typeof authorize>>['db'];
+type Db = Awaited<ReturnType<typeof authorizeIn>>['db'];
 
 export interface DuesPayment {
   amount: number;
@@ -127,7 +127,7 @@ async function duesMembers(db: Db) {
 export async function loadDues(year?: number): Promise<Loaded<DuesData>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
-    const { me, db } = await authorize('FINANCE_VIEW', 'AUDIT_VIEW_ALL');
+    const { me, db } = await authorizeIn('dues', 'FINANCE_VIEW', 'AUDIT_VIEW_ALL');
     const current = currentEthiopianYear();
     const y = year && year > 1900 && year < 2200 ? Math.trunc(year) : current;
     const [members, rateRow, paid, claimRes] = await Promise.all([
@@ -216,7 +216,7 @@ export async function loadDues(year?: number): Promise<Loaded<DuesData>> {
 
 export async function setDuesRate(year: number, amount: number): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('FINANCE_CREATE');
+    const { me, db } = await authorizeIn('dues', 'FINANCE_CREATE');
     const y = z.number().int().min(1900).max(2200).parse(year);
     const a = z.coerce.number().min(0, 'The amount cannot be negative').max(1_000_000).parse(amount);
     const { error } = await db.from('dues_rates').upsert({ year: y, monthly_amount: a, updated_by: me.systemUser.id, updated_at: new Date().toISOString() }, { onConflict: 'year' });
@@ -231,7 +231,7 @@ export async function setDuesRate(year: number, amount: number): Promise<ActionR
 
 /** A message to the member's own Telegram chats (not a parent's) — never fails the action. */
 async function tellPerson(db: Db, personId: string, html: string, chatId?: number | null) {
-  if (!telegramConfigured()) return;
+  if (!(await telegramConfigured())) return;
   try {
     if (chatId) await sendTelegram(Number(chatId), html);
     else await telegramToPersons(db, [personId], html, 'SELF');
@@ -259,7 +259,7 @@ const PaymentSchema = z.object({
 /** Record a payment for one member: the months, one receipt number, and one income entry in Finance. The member hears about it on Telegram. */
 export async function recordDuesPayment(input: z.input<typeof PaymentSchema>): Promise<{ ok: true; receipt: DuesReceipt } | { ok: false; error: string }> {
   try {
-    const { me, db } = await authorize('FINANCE_CREATE');
+    const { me, db } = await authorizeIn('dues', 'FINANCE_CREATE');
     const receipt = await recordPayment(db, me.systemUser.id, PaymentSchema.parse(input));
     after(() => tellPerson(db, input.person_id, `🧾 <b>ክፍያዎ ተመዝግቧል · Payment recorded</b>\n${receiptLines([receipt])}`));
     return { ok: true, receipt };
@@ -291,7 +291,7 @@ interface ClaimRow {
  */
 export async function approveDuesClaim(claimId: string, amountPerMonth?: number): Promise<{ ok: true; receipts: DuesReceipt[] } | { ok: false; error: string }> {
   try {
-    const { me, db } = await authorize('FINANCE_CREATE');
+    const { me, db } = await authorizeIn('dues', 'FINANCE_CREATE');
     const id = z.string().min(1).parse(claimId);
     const perMonth = amountPerMonth === undefined ? undefined : z.coerce.number().min(0, 'The amount cannot be negative').max(1_000_000).parse(amountPerMonth);
     // Take the report first, so two people approving at once cannot record it twice
@@ -334,7 +334,7 @@ export async function approveDuesClaim(claimId: string, amountPerMonth?: number)
 /** Reject a payment reported in the bot (e.g. the money never arrived); the member is told why. */
 export async function rejectDuesClaim(claimId: string, reason: string): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('FINANCE_CREATE');
+    const { me, db } = await authorizeIn('dues', 'FINANCE_CREATE');
     const id = z.string().min(1).parse(claimId);
     const note = z.string().trim().min(3, 'Write the reason, so the member knows what to do').max(300).parse(reason);
     const { data: taken, error } = await db.from('dues_claims')
@@ -363,7 +363,7 @@ export async function rejectDuesClaim(claimId: string, reason: string): Promise<
 /** Undo a receipt recorded by mistake: its months become unpaid and its income entry is removed. */
 export async function cancelDuesReceipt(receiptNo: string): Promise<ActionResult> {
   try {
-    const { db } = await authorize('FINANCE_APPROVE');
+    const { db } = await authorizeIn('dues', 'FINANCE_APPROVE');
     await removeReceipt(db, receiptNo);
     return { ok: true };
   } catch (e) {
@@ -374,8 +374,8 @@ export async function cancelDuesReceipt(receiptNo: string): Promise<ActionResult
 /** Telegram reminder to members who are behind by at least `minBehind` months (only those who connected Telegram). */
 export async function sendDuesReminders(year: number, minBehind: number): Promise<{ ok: true; members: number; delivered: number } | { ok: false; error: string }> {
   try {
-    const { db } = await authorize('FINANCE_CREATE');
-    if (!telegramConfigured()) throw new Error('The Telegram bot is not set up yet');
+    const { db } = await authorizeIn('dues', 'FINANCE_CREATE');
+    if (!(await telegramConfigured())) throw new Error('The Telegram bot is not set up yet');
     const y = z.number().int().min(1900).max(2200).parse(year);
     const min = z.number().int().min(1).max(DUES_MONTHS).parse(minBehind);
     const due = monthsDue(y);

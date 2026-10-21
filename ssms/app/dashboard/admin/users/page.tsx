@@ -1,14 +1,14 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { UserPlus, Search, Shield, CheckCircle2, KeyRound, AlertCircle } from 'lucide-react';
+import { UserPlus, Search, Shield, CheckCircle2, KeyRound, AlertCircle, Send } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Modal } from '@/components/ui/Modal';
 import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
 import { demoRoles, demoUnits, demoUsers } from '@/lib/admin/demo';
 import type { AdminRoleRow, AdminUnitRow, AdminUserRow, LoadMode } from '@/lib/admin/types';
-import { changeUserRole, createUser, loadUsers, resetUserPassword, setUserActive } from '../actions';
+import { changeUserRole, createUser, loadUsers, resetUserPassword, sendPasswordByTelegram, setUserActive } from '../actions';
 
 type Toast = { kind: 'success' | 'error'; text: string } | null;
 
@@ -197,7 +197,21 @@ export default function AdminUsersPage() {
       if (!res.ok) return showToast('error', res.error);
     }
     setNewPassword('');
-    showToast('success', t('Password changed', 'የይለፍ ቃል ተቀይሯል'));
+    showToast('success', t('Password changed — they choose their own at the next sign-in', 'የይለፍ ቃል ተቀይሯል — በሚቀጥለው ሲገቡ የራሳቸውን ይመርጣሉ'));
+  };
+
+  const handleSendByTelegram = async () => {
+    if (!selectedUser) return;
+    const name = locale === 'am' ? selectedUser.name_am : selectedUser.name;
+    if (!window.confirm(t(
+      `Send ${name} a new password on Telegram?\n\nTheir current password stops working. They choose their own when they sign in.`,
+      `ለ${name} አዲስ የይለፍ ቃል በቴሌግራም ይላክ?\n\nአሁን ያለው መሥራት ያቆማል። ሲገቡ የራሳቸውን ይመርጣሉ።`
+    ))) return;
+    setBusy(true);
+    const res = await sendPasswordByTelegram(selectedUser.id);
+    setBusy(false);
+    if (!res.ok) return showToast('error', res.error);
+    showToast('success', t('A new password was sent on Telegram', 'አዲስ የይለፍ ቃል በቴሌግራም ተልኳል'));
   };
 
   const q = search.toLowerCase();
@@ -560,6 +574,21 @@ export default function AdminUsersPage() {
                   {t('Change', 'ቀይር')}
                 </button>
               </div>
+              {!isSelf && (
+                <button
+                  onClick={handleSendByTelegram}
+                  disabled={busy || !live}
+                  className="btn btn-secondary text-xs inline-flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <Send size={14} /> {t('Send a new one by Telegram', 'አዲስ በቴሌግራም ላክ')}
+                </button>
+              )}
+              <p className="text-[11px] text-slate-500">
+                {t(
+                  'Either way it is temporary: they choose their own when they next sign in. Telegram goes to their own chat only.',
+                  'በሁለቱም መንገድ ጊዜያዊ ነው፤ በሚቀጥለው ሲገቡ የራሳቸውን ይመርጣሉ። ቴሌግራሙ ወደ ራሳቸው ቻት ብቻ ይሄዳል።'
+                )}
+              </p>
             </div>
 
             {/* Permissions from the assigned role */}

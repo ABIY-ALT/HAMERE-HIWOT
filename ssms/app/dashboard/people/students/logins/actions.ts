@@ -4,15 +4,19 @@
 // Student logins: registration number + 6-digit PIN (migration 023).
 // Each login is a system user (username = reg no) with the STUDENT role, which
 // only opens the student's own pages. PINs are returned once, for the slips —
-// they are never stored or shown again (reset to make a new one).
+// they are never stored or shown again (reset to make a new one) — or sent on
+// Telegram. Every such PIN is temporary (lib/auth/temp-password): the student
+// chooses their own at the next sign-in.
 //   STUDENT_CREATE or USER_MANAGE   create, reset, disable
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { authorizeIn, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { setLoginBanned } from '@/lib/tenant/accounts';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import { isStudentLogin, newPin, regNoToAuthEmail } from '@/lib/auth/student-login';
+import { NOT_DELIVERED, TEMP_FLAG, logReset, officeTargets, sendTemporary, setTemporaryPassword } from '@/lib/auth/temp-password';
 
 type Row = Record<string, unknown>;
 type Named = { full_name_en: string; full_name_am: string | null } | null;
@@ -53,7 +57,7 @@ const MAX_AT_ONCE = 60;
 export async function loadStudentLogins(): Promise<Loaded<StudentLoginsData>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
-    const { db } = await authorize('STUDENT_CREATE', 'USER_MANAGE');
+    const { db } = await authorizeIn('portals', 'STUDENT_CREATE', 'USER_MANAGE');
     const year = (await db.from('academic_years').select('id').order('is_current', { ascending: false }).order('start_date', { ascending: false }).limit(1).maybeSingle().then(check)) as { id: string } | null;
     if (!year) return { mode: 'live', data: { classes: [], rows: [] } };
 
@@ -147,7 +151,7 @@ export async function createStudentLogins(
   studentIds: string[]
 ): Promise<{ ok: true; slips: LoginSlip[]; skipped: { name: string; reason: string }[] } | { ok: false; error: string }> {
   try {
-    const { me, db } = await authorize('STUDENT_CREATE', 'USER_MANAGE');
+    const { me, db } = await authorizeIn('portals', 'STUDENT_CREATE', 'USER_MANAGE');
     if (studentIds.length === 0) throw new Error('Choose at least one student');
     if (studentIds.length > MAX_AT_ONCE) throw new Error(`Create at most ${MAX_AT_ONCE} logins at a time (one class)`);
 
@@ -199,6 +203,8 @@ export async function createStudentLogins(
         password: pin,
         email_confirm: true,
         user_metadata: { reg_no: s.reg_no, full_name: name, student: true },
+        // The slip's PIN is temporary: the student chooses their own at the first sign-in
+        app_metadata: { [TEMP_FLAG]: true },
       });
       if (authError || !created.user) {
         skipped.push({ name, reason: authError?.message ?? 'could not create the login' });
@@ -231,13 +237,31 @@ export async function createStudentLogins(
 /** A new PIN for a student who forgot theirs. */
 export async function resetStudentPin(studentId: string): Promise<{ ok: true; slip: LoginSlip } | { ok: false; error: string }> {
   try {
-    const { db } = await authorize('STUDENT_CREATE', 'USER_MANAGE');
+    const { me, db } = await authorizeIn('portals', 'STUDENT_CREATE', 'USER_MANAGE');
     const s = await studentRecord(db, studentId);
     if (!s.user || !isStudentLogin(s.user.username)) throw new Error('This student has no student login yet');
     const pin = newPin();
-    const { error } = await db.auth.admin.updateUserById(s.user.auth_user_id, { password: pin });
-    if (error) throw new Error(error.message);
+    await setTemporaryPassword(s.user.auth_user_id, pin);
+    await logReset(db, { systemUserId: s.user.id, actorId: me.systemUser.id, via: 'office' });
     return { ok: true, slip: s.slip(pin) };
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) };
+  }
+}
+
+/** A new PIN sent on Telegram (to the student's own chat and their parents'), instead of a slip. */
+export async function sendStudentPinByTelegram(studentId: string): Promise<{ ok: true; delivered: number } | { ok: false; error: string }> {
+  try {
+    const { me, db } = await authorizeIn('portals', 'STUDENT_CREATE', 'USER_MANAGE');
+    const s = await studentRecord(db, studentId);
+    if (!s.user || !isStudentLogin(s.user.username)) throw new Error('This student has no student login yet');
+    const chats = await officeTargets(db, { person_id: s.person_id, username: s.user.username }, s.id);
+    const pin = newPin();
+    await setTemporaryPassword(s.user.auth_user_id, pin);
+    const delivered = await sendTemporary(chats, { name: s.person?.full_name_am || s.person?.full_name_en || s.reg_no, login: s.user.username, secret: pin, pin: true });
+    await logReset(db, { systemUserId: s.user.id, actorId: me.systemUser.id, via: 'office_telegram', delivered });
+    if (delivered === 0) throw new Error(NOT_DELIVERED);
+    return { ok: true, delivered };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
   }
@@ -246,13 +270,12 @@ export async function resetStudentPin(studentId: string): Promise<{ ok: true; sl
 /** Turn a student's login off (e.g. they left) or on again. */
 export async function setStudentLoginActive(studentId: string, active: boolean): Promise<ActionResult> {
   try {
-    const { db } = await authorize('STUDENT_CREATE', 'USER_MANAGE');
+    const { db } = await authorizeIn('portals', 'STUDENT_CREATE', 'USER_MANAGE');
     const s = await studentRecord(db, studentId);
     if (!s.user || !isStudentLogin(s.user.username)) throw new Error('This student has no student login');
     await db.from('system_users').update({ is_active: active }).eq('id', s.user.id).then(check);
     // Ban the login too, so an open session cannot be refreshed
-    const { error } = await db.auth.admin.updateUserById(s.user.auth_user_id, { ban_duration: active ? 'none' : '876000h' });
-    if (error) throw new Error(error.message);
+    await setLoginBanned(db, s.user.auth_user_id, !active);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };

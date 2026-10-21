@@ -11,7 +11,7 @@
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { authorize, check, errorMessage } from '@/lib/auth/authorize';
+import { authorizeIn, check, errorMessage } from '@/lib/auth/authorize';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import { parseScheme, parseScores } from '@/lib/education/types';
 import { notifyLater } from '@/lib/push/send';
@@ -209,7 +209,7 @@ async function ensureTickets(db: SupabaseClient, exam: Exam): Promise<number> {
 export async function loadExams(): Promise<Loaded<ExamSummary[]>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
-    const { db } = await authorize('GRADE_VIEW', 'AUDIT_VIEW_ALL');
+    const { db } = await authorizeIn('online_exams', 'GRADE_VIEW', 'AUDIT_VIEW_ALL');
     const { data, error } = await db.from('exams').select(EXAM_SELECT).order('created_at', { ascending: false });
     if (error) throw new Error(missing(error.message));
     return { mode: 'live', data: (data as Record<string, unknown>[]).map(toSummary) };
@@ -221,7 +221,7 @@ export async function loadExams(): Promise<Loaded<ExamSummary[]>> {
 export async function loadExam(id: string): Promise<Loaded<ExamDetail>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
-    const { db } = await authorize('GRADE_VIEW', 'AUDIT_VIEW_ALL');
+    const { db } = await authorizeIn('online_exams', 'GRADE_VIEW', 'AUDIT_VIEW_ALL');
     let exam = await getExam(db, id);
     const questions = await getQuestions(db, id);
     if (exam.status === 'OPEN') {
@@ -306,7 +306,7 @@ async function examYear(db: SupabaseClient, classId: string, partKey: string) {
 
 export async function createExam(input: ExamInput): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
-    const { me, db } = await authorize('GRADE_CREATE');
+    const { me, db } = await authorizeIn('online_exams', 'GRADE_CREATE');
     const e = ExamSchema.parse(input);
     const academic_year_id = await examYear(db, e.class_id, e.part_key);
     const { data, error } = await db.from('exams')
@@ -322,7 +322,7 @@ export async function createExam(input: ExamInput): Promise<{ ok: true; id: stri
 
 export async function updateExam(id: string, input: ExamInput): Promise<ActionResult> {
   try {
-    const { db } = await authorize('GRADE_CREATE');
+    const { db } = await authorizeIn('online_exams', 'GRADE_CREATE');
     const exam = await getExam(db, id);
     const e = ExamSchema.parse(input);
     if (exam.status !== 'DRAFT' && (e.class_id !== exam.class_id || e.duration_minutes !== exam.duration_minutes || e.shuffle !== exam.shuffle)) {
@@ -344,7 +344,7 @@ export async function updateExam(id: string, input: ExamInput): Promise<ActionRe
 /** Only an exam nobody has started can be deleted. */
 export async function deleteExam(id: string): Promise<ActionResult> {
   try {
-    const { db } = await authorize('GRADE_CREATE');
+    const { db } = await authorizeIn('online_exams', 'GRADE_CREATE');
     const exam = await getExam(db, id);
     if (exam.started > 0) throw new Error('Students have already sat this exam — close it instead');
     await db.from('exams').delete().eq('id', id).then(check);
@@ -380,7 +380,7 @@ export type QuestionInput = z.input<typeof QuestionSchema>;
 
 export async function saveQuestion(examId: string, questionId: string | null, input: QuestionInput): Promise<ActionResult> {
   try {
-    const { db } = await authorize('GRADE_CREATE');
+    const { db } = await authorizeIn('online_exams', 'GRADE_CREATE');
     const exam = await getExam(db, examId);
     requireDraft(exam);
     const q = QuestionSchema.parse(input);
@@ -401,7 +401,7 @@ export async function saveQuestion(examId: string, questionId: string | null, in
 
 export async function deleteQuestion(examId: string, questionId: string): Promise<ActionResult> {
   try {
-    const { db } = await authorize('GRADE_CREATE');
+    const { db } = await authorizeIn('online_exams', 'GRADE_CREATE');
     requireDraft(await getExam(db, examId));
     await db.from('exam_questions').delete().eq('id', questionId).eq('exam_id', examId).then(check);
     return { ok: true };
@@ -413,7 +413,7 @@ export async function deleteQuestion(examId: string, questionId: string): Promis
 /** Swap a question with the one above (-1) or below (+1). */
 export async function moveQuestion(examId: string, questionId: string, direction: -1 | 1): Promise<ActionResult> {
   try {
-    const { db } = await authorize('GRADE_CREATE');
+    const { db } = await authorizeIn('online_exams', 'GRADE_CREATE');
     requireDraft(await getExam(db, examId));
     const questions = await getQuestions(db, examId);
     const i = questions.findIndex((q) => q.id === questionId);
@@ -436,7 +436,7 @@ export async function moveQuestion(examId: string, questionId: string, direction
 /** Open the exam: every student of the class gets a ticket. Also used to reopen, and to give late students a ticket. */
 export async function openExam(id: string): Promise<ActionResult> {
   try {
-    const { db } = await authorize('GRADE_CREATE');
+    const { db } = await authorizeIn('online_exams', 'GRADE_CREATE');
     const exam = await getExam(db, id);
     if (exam.questions === 0) throw new Error('Add at least one question first');
     await ensureTickets(db, exam);
@@ -473,7 +473,7 @@ export async function openExam(id: string): Promise<ActionResult> {
 /** Close the exam: nobody can start any more, and unfinished answers are handed in as they are. */
 export async function closeExam(id: string): Promise<ActionResult> {
   try {
-    const { db } = await authorize('GRADE_CREATE');
+    const { db } = await authorizeIn('online_exams', 'GRADE_CREATE');
     const exam = await getExam(db, id);
     if (exam.status !== 'OPEN') throw new Error('The exam is not open');
     await db.from('exams').update({ status: 'CLOSED', closed_at: new Date().toISOString() }).eq('id', id).then(check);
@@ -489,7 +489,7 @@ export async function closeExam(id: string): Promise<ActionResult> {
 /** The teacher's marks for the short answers of one handed-in exam. */
 export async function markShortAnswers(attemptId: string, given: Record<string, number>): Promise<ActionResult> {
   try {
-    const { db } = await authorize('GRADE_CREATE');
+    const { db } = await authorizeIn('online_exams', 'GRADE_CREATE');
     const attempt = toAttempt((await db.from('exam_attempts').select('*').eq('id', attemptId).single().then(check)) as Record<string, unknown>);
     if (!attempt.submitted_at) throw new Error('The student has not handed in this exam yet');
     const questions = await getQuestions(db, attempt.exam_id);
@@ -520,7 +520,7 @@ export async function markShortAnswers(attemptId: string, given: Record<string, 
  */
 export async function giveExtraTime(attemptId: string, minutes: number): Promise<ActionResult> {
   try {
-    const { db } = await authorize('GRADE_CREATE');
+    const { db } = await authorizeIn('online_exams', 'GRADE_CREATE');
     const add = z.coerce.number().int('Whole minutes only').min(1, 'At least 1 minute').max(180, 'At most 180 minutes at a time').parse(minutes);
     const attempt = toAttempt((await db.from('exam_attempts').select('*').eq('id', attemptId).single().then(check)) as Record<string, unknown>);
     const exam = await getExam(db, attempt.exam_id);
@@ -544,7 +544,7 @@ export async function giveExtraTime(attemptId: string, minutes: number): Promise
 /** Let the next phone that opens this student's code take the exam over (their phone died, or they share one). */
 export async function allowAnotherPhone(attemptId: string): Promise<ActionResult> {
   try {
-    const { db } = await authorize('GRADE_CREATE');
+    const { db } = await authorizeIn('online_exams', 'GRADE_CREATE');
     const attempt = toAttempt((await db.from('exam_attempts').select('*').eq('id', attemptId).single().then(check)) as Record<string, unknown>);
     if (attempt.submitted_at) throw new Error('This exam is already handed in — give extra time to reopen it');
     await db.from('exam_attempts').update({ new_device_allowed: true }).eq('id', attemptId).then(check);
@@ -560,7 +560,7 @@ export async function allowAnotherPhone(attemptId: string): Promise<ActionResult
  */
 export async function giveNewCode(attemptId: string): Promise<ActionResult> {
   try {
-    const { db } = await authorize('GRADE_CREATE');
+    const { db } = await authorizeIn('online_exams', 'GRADE_CREATE');
     const attempt = toAttempt((await db.from('exam_attempts').select('*').eq('id', attemptId).single().then(check)) as Record<string, unknown>);
     const exam = await getExam(db, attempt.exam_id);
     if (exam.status !== 'OPEN') throw new Error('Open the exam first');
@@ -599,7 +599,7 @@ export async function giveNewCode(attemptId: string): Promise<ActionResult> {
 /** A new room key (e.g. it was seen outside the class). Students already writing are not affected. */
 export async function changeStartKey(examId: string): Promise<ActionResult> {
   try {
-    const { db } = await authorize('GRADE_CREATE');
+    const { db } = await authorizeIn('online_exams', 'GRADE_CREATE');
     await db.from('exams').update({ start_key: newStartKey() }).eq('id', examId).then(check);
     return { ok: true };
   } catch (e) {
@@ -616,7 +616,7 @@ export async function changeStartKey(examId: string): Promise<ActionResult> {
  */
 export async function sendExamToGrades(id: string): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
   try {
-    const { me, db } = await authorize('GRADE_CREATE');
+    const { me, db } = await authorizeIn('online_exams', 'GRADE_CREATE');
     const exam = await getExam(db, id);
     if (exam.status !== 'CLOSED') throw new Error('Close the exam first');
     if (!exam.part_key) throw new Error('Choose which grade part this exam fills (Edit exam)');

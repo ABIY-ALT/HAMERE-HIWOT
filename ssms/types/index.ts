@@ -315,6 +315,19 @@ export interface AuthUser {
   assignments: UserUnitAssignment[];
   permissions: Set<PermissionCode>;
   organizationIds: string[];
+  /** The Sunday school this session works in, with what its plan allows (lib/auth/session.ts) */
+  tenant?: ClientTenant;
+  /** Every Sunday school this login has an account in (more than one → a switcher) */
+  memberships?: { tenantId: string; slug: string; name_en: string; name_am: string | null }[];
+}
+
+export interface ClientTenant {
+  id: string;
+  slug: string;
+  name_en: string;
+  name_am: string | null;
+  is_default: boolean;
+  access: import('@/lib/billing/access').TenantAccess;
 }
 
 // ── Audit ─────────────────────────────────────────────────────────────────────

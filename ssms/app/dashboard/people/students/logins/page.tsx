@@ -2,12 +2,12 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, ArrowLeft, KeyRound, Printer, UserCheck } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, KeyRound, Printer, Send, UserCheck } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
 import type { LoadMode } from '@/lib/admin/types';
 import { formatEthiopianDate } from '@/lib/utils/ethiopian-calendar';
-import { createStudentLogins, loadStudentLogins, resetStudentPin, setStudentLoginActive, type LoginSlip, type StudentLoginsData } from './actions';
+import { createStudentLogins, loadStudentLogins, resetStudentPin, sendStudentPinByTelegram, setStudentLoginActive, type LoginSlip, type StudentLoginsData } from './actions';
 
 /** Staff: give students their registration number + PIN login, print the slips, reset forgotten PINs. */
 export default function StudentLoginsPage() {
@@ -75,6 +75,19 @@ export default function StudentLoginsPage() {
     setSlips([res.slip]);
     setSkipped([]);
     notify('success', t('New PIN made — give the student the slip below', 'አዲስ ሚስጥር ቁጥር ተሰርቷል — ከታች ያለውን ወረቀት ለተማሪው ይስጡ'));
+  };
+
+  /** No slip: the new PIN goes to the student's and their parents' Telegram */
+  const sendByTelegram = async (studentId: string, name: string) => {
+    if (!window.confirm(t(
+      `Send ${name} a new PIN on Telegram?\n\nThe old PIN stops working. The new one goes to the student’s and their parents’ Telegram chats, and they choose their own when they sign in.`,
+      `ለ${name} አዲስ ሚስጥር ቁጥር በቴሌግራም ይላክ?\n\nየድሮው መሥራት ያቆማል። አዲሱ ወደ ተማሪውና ወደ ወላጆቹ ቴሌግራም ይሄዳል፤ ሲገቡ የራሳቸውን ይመርጣሉ።`
+    ))) return;
+    setBusy(true);
+    const res = await sendStudentPinByTelegram(studentId);
+    setBusy(false);
+    if (!res.ok) return notify('error', res.error);
+    notify('success', t(`New PIN sent on Telegram (${res.delivered} chat(s))`, `አዲስ ሚስጥር ቁጥር በቴሌግራም ተልኳል (${res.delivered} ቻት)`));
   };
 
   const toggle = async (studentId: string, active: boolean) => {
@@ -218,6 +231,9 @@ export default function StudentLoginsPage() {
                         <>
                           <button disabled={busy} onClick={() => reset(r.student_id)} className="text-xs text-blue-600 hover:text-blue-800 font-semibold inline-flex items-center gap-1 px-2 py-1 rounded hover:bg-blue-50">
                             <KeyRound size={13} /> {t('Reset PIN', 'ሚስጥር ቁጥር ቀይር')}
+                          </button>
+                          <button disabled={busy} onClick={() => sendByTelegram(r.student_id, locale === 'am' ? r.name_am : r.name_en)} className="text-xs text-sky-700 hover:text-sky-900 font-semibold inline-flex items-center gap-1 px-2 py-1 rounded hover:bg-sky-50">
+                            <Send size={13} /> {t('Send by Telegram', 'በቴሌግራም ላክ')}
                           </button>
                           <button disabled={busy} onClick={() => toggle(r.student_id, !r.active)} className="text-xs text-slate-500 hover:text-slate-800 font-semibold px-2 py-1 rounded hover:bg-slate-100">
                             {r.active ? t('Turn off', 'ዝጋ') : t('Turn on', 'ክፈት')}

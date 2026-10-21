@@ -372,7 +372,9 @@ export async function loadNotifications(): Promise<Loaded<Notice[]>> {
     const sources: Source[] = [];
 
     // The bell loads on every page, so it is where repeating tasks are given on time
-    await issueRepeatingTasks(db).catch((e) => console.error('repeating tasks:', errorMessage(e)));
+    if (me.tenant.access.mode === 'full' && me.tenant.access.modules.includes('tasks')) {
+      await issueRepeatingTasks(db).catch((e) => console.error('repeating tasks:', errorMessage(e)));
+    }
 
     if (can('FINANCE_APPROVE')) {
       sources.push(() =>

@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, ArrowLeft, CheckCircle2, KeyRound, Link2, Printer, Search, UserPlus } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, KeyRound, Link2, Printer, Search, Send, UserPlus } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { Modal } from '@/components/ui/Modal';
 import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
@@ -13,6 +13,7 @@ import {
   loadFamilies,
   relinkFamily,
   resetParentPin,
+  sendParentPinByTelegram,
   setParentLoginActive,
   type FamilyRow,
   type ParentSlip,
@@ -79,6 +80,19 @@ export default function ParentLoginsPage() {
     setBusy(false);
     if (!res.ok) return notify('error', res.error);
     setSlip({ name: f.guardian_name, phone: f.phone, pin: res.pin, children: f.children.map((c) => (locale === 'am' ? c.name_am : c.name_en)) });
+  };
+
+  /** No slip: the new PIN goes to the parent's own Telegram */
+  const sendByTelegram = async (f: FamilyRow) => {
+    if (!window.confirm(t(
+      `Send ${f.guardian_name} a new PIN on Telegram?\n\nThe old PIN stops working. The parent chooses their own when they sign in.`,
+      `ለ${f.guardian_name} አዲስ ሚስጥር ቁጥር በቴሌግራም ይላክ?\n\nየድሮው መሥራት ያቆማል። ወላጁ ሲገቡ የራሳቸውን ይመርጣሉ።`
+    ))) return;
+    setBusy(true);
+    const res = await sendParentPinByTelegram(f.phone);
+    setBusy(false);
+    if (!res.ok) return notify('error', res.error);
+    notify('success', t('New PIN sent on Telegram', 'አዲስ ሚስጥር ቁጥር በቴሌግራም ተልኳል'));
   };
 
   return (
@@ -208,6 +222,9 @@ export default function ParentLoginsPage() {
                         <>
                           <button disabled={busy} onClick={() => resetPin(f)} className="text-xs text-blue-600 hover:text-blue-800 font-semibold inline-flex items-center gap-1 px-2 py-1 rounded hover:bg-blue-50">
                             <KeyRound size={13} /> {t('Reset PIN', 'ሚስጥር ቁጥር ቀይር')}
+                          </button>
+                          <button disabled={busy} onClick={() => sendByTelegram(f)} className="text-xs text-sky-700 hover:text-sky-900 font-semibold inline-flex items-center gap-1 px-2 py-1 rounded hover:bg-sky-50">
+                            <Send size={13} /> {t('Send by Telegram', 'በቴሌግራም ላክ')}
                           </button>
                           <button
                             disabled={busy}

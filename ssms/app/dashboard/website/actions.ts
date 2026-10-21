@@ -1,7 +1,8 @@
 'use server';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Public website → News and Gallery (migration 039). Everything needs
+// Public website → Overview, Events (038), News and Gallery (039). Nothing
+// made elsewhere in the system is public until it is added here. Everything needs
 // WEBSITE_MANAGE (role WEBSITE_EDITOR, the secretariat, the super admin).
 // Pictures go to the PUBLIC bucket "site-media", already made smaller in the
 // browser (lib/site/shrink). Every change refreshes the public website.
@@ -10,11 +11,17 @@
 import { z } from 'zod';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { tenantPath } from '@/lib/tenant/db';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
-import { escapeHtml, siteUrl, telegramConfigured, telegramLater, telegramToChats } from '@/lib/telegram/bot';
+import { escapeHtml, publicUrl, telegramConfigured, telegramLater, telegramToChats } from '@/lib/telegram/bot';
 import { refreshPublicSite } from '@/lib/site/cache';
 import { MAX_MEDIA_BYTES, MEDIA_BUCKET, type SiteAlbum, type SitePhoto, type SitePost } from '@/lib/site/media';
 import { POST_COLUMNS, albumList, albumPhotos, contentMissing, toPost } from '@/lib/site/content';
+import { PARISH_SETTINGS_KEY } from '@/lib/admin/types';
+import type { ProgramType } from '@/lib/programs/types';
+import { loadAbout } from '@/lib/telegram/about';
+import { publicPath } from '@/lib/tenant/context';
+import { todayIso } from '@/lib/utils/ethiopian-calendar';
 
 type Db = Awaited<ReturnType<typeof authorize>>['db'];
 type Row = Record<string, unknown>;
@@ -48,7 +55,7 @@ export async function loadPosts(): Promise<Loaded<{ posts: SitePost[]; telegram:
   try {
     const { db } = await authorize('WEBSITE_MANAGE');
     const rows = await selectAll<Row>((a, b) => db.from('site_posts').select(POST_COLUMNS).order('created_at', { ascending: false }).order('id').range(a, b));
-    return { mode: 'live', data: { posts: rows.map(toPost), telegram: telegramConfigured() } };
+    return { mode: 'live', data: { posts: rows.map(toPost), telegram: (await telegramConfigured()) } };
   } catch (e) {
     return { mode: 'error', error: contentMissing(errorMessage(e)) };
   }
@@ -90,7 +97,7 @@ export async function setPostStatus(postId: string, publish: boolean, toTelegram
     const post = (await db.from('site_posts').select(POST_COLUMNS).eq('id', id.parse(postId)).maybeSingle().then(check)) as Row | null;
     if (!post) throw new Error('Not found — reload the page');
     const now = new Date().toISOString();
-    const sendNow = publish && toTelegram && !post.telegram_sent_at && telegramConfigured();
+    const sendNow = publish && toTelegram && !post.telegram_sent_at && (await telegramConfigured());
     await db.from('site_posts')
       .update({
         status: publish ? 'PUBLISHED' : 'DRAFT',
@@ -102,7 +109,7 @@ export async function setPostStatus(postId: string, publish: boolean, toTelegram
     if (sendNow) {
       const p = toPost(post);
       const excerpt = p.body_am.length > 350 ? `${p.body_am.slice(0, 350).trimEnd()}…` : p.body_am;
-      const html = `📰 <b>${escapeHtml(p.title_am)}</b>${p.title_en ? `\n<i>${escapeHtml(p.title_en)}</i>` : ''}\n\n${escapeHtml(excerpt)}\n\n${siteUrl()}/news/${p.id}`;
+      const html = `📰 <b>${escapeHtml(p.title_am)}</b>${p.title_en ? `\n<i>${escapeHtml(p.title_en)}</i>` : ''}\n\n${escapeHtml(excerpt)}\n\n${await publicUrl(`/news/${p.id}`)}`;
       telegramLater(async (bg) => {
         const links = await selectAll<{ chat_id: number }>((a, b) => bg.from('telegram_links').select('chat_id').order('chat_id').range(a, b));
         await telegramToChats(bg, new Set(links.map((l) => Number(l.chat_id))), html);
@@ -123,7 +130,7 @@ export async function uploadPostCover(form: FormData): Promise<ActionResult> {
     const file = picture(form, 'file');
     const post = (await db.from('site_posts').select('id, cover_path').eq('id', postId).maybeSingle().then(check)) as { id: string; cover_path: string | null } | null;
     if (!post) throw new Error('Not found — reload the page');
-    const path = `posts/${postId}/${crypto.randomUUID()}.jpg`;
+    const path = tenantPath(db, 'posts', postId, `${crypto.randomUUID()}.jpg`);
     await put(db, path, file);
     const { error } = await db.from('site_posts').update({ cover_path: path }).eq('id', postId);
     if (error) {
@@ -244,8 +251,8 @@ export async function uploadPhoto(form: FormData): Promise<{ ok: true; photo: Si
     const { count } = await db.from('site_photos').select('id', { count: 'exact', head: true }).eq('album_id', albumId);
 
     const name = crypto.randomUUID();
-    const path = `albums/${albumId}/${name}.jpg`;
-    const thumbPath = `albums/${albumId}/${name}_t.jpg`;
+    const path = tenantPath(db, 'albums', albumId, `${name}.jpg`);
+    const thumbPath = tenantPath(db, 'albums', albumId, `${name}_t.jpg`);
     await put(db, path, full);
     try {
       await put(db, thumbPath, thumb);
@@ -324,5 +331,136 @@ export async function deleteAlbum(albumId: string): Promise<ActionResult> {
     return { ok: true };
   } catch (e) {
     return fail(e);
+  }
+}
+
+// ── Events (migration 038) ───────────────────────────────────────────────────
+// Programs are internal. Only the ones added here (programs.is_public) are
+// shown on the website under Events — and get the day-before reminder for
+// everyone on the bot (lib/automation/jobs).
+
+const EVENTS_MIGRATION = 'Run database migration 038 (automation & public site) first';
+const eventsMissing = (m: string) => (/is_public/.test(m) && /does not exist|schema cache/i.test(m) ? EVENTS_MIGRATION : m);
+
+export interface WebsiteEvent {
+  id: string;
+  title_en: string;
+  title_am: string;
+  type: ProgramType;
+  status: 'PLANNED' | 'CONFIRMED';
+  start_date: string;
+  start_time: string;
+  end_date: string | null;
+  location: string;
+  description: string;
+  unit_en: string;
+  unit_am: string;
+  is_public: boolean;
+}
+
+/** Coming (or still running) programs, soonest first, each with whether it is on the website. */
+export async function loadWebsiteEvents(): Promise<Loaded<{ events: WebsiteEvent[]; base: string }>> {
+  if (!isSupabaseEnabled()) return { mode: 'demo' };
+  try {
+    const { me, db } = await authorize('WEBSITE_MANAGE');
+    const today = todayIso();
+    const rows = await selectAll<Row>((a, b) =>
+      db.from('programs')
+        .select('id, title_en, title_am, program_type, status, start_date, start_time, end_date, location, description, is_public, unit:organization_units(name_en, name_am)')
+        .in('status', ['PLANNED', 'CONFIRMED'])
+        .or(`start_date.gte.${today},end_date.gte.${today}`)
+        .order('start_date')
+        .order('start_time')
+        .order('id')
+        .range(a, b)
+    );
+    const events = rows.map((p): WebsiteEvent => {
+      const unit = (p.unit ?? null) as { name_en?: string; name_am?: string | null } | null;
+      return {
+        id: p.id as string,
+        title_en: p.title_en as string,
+        title_am: (p.title_am as string) || (p.title_en as string),
+        type: p.program_type as ProgramType,
+        status: p.status === 'CONFIRMED' ? 'CONFIRMED' : 'PLANNED',
+        start_date: p.start_date as string,
+        start_time: ((p.start_time as string) ?? '').slice(0, 5),
+        end_date: (p.end_date as string) ?? null,
+        location: (p.location as string) ?? '',
+        description: (p.description as string) ?? '',
+        unit_en: unit?.name_en ?? '',
+        unit_am: unit?.name_am || unit?.name_en || '',
+        is_public: Boolean(p.is_public),
+      };
+    });
+    return { mode: 'live', data: { events, base: siteBase(me.tenant) } };
+  } catch (e) {
+    return { mode: 'error', error: eventsMissing(errorMessage(e)) };
+  }
+}
+
+/** Put a program on the public website (under Events), or take it off. */
+export async function setEventPublic(programId: string, show: boolean): Promise<ActionResult> {
+  try {
+    const { db } = await authorize('WEBSITE_MANAGE');
+    const row = (await db.from('programs').select('id, status').eq('id', id.parse(programId)).maybeSingle().then(check)) as { id: string; status: string } | null;
+    if (!row) throw new Error('Not found — reload the page');
+    if (show && row.status !== 'PLANNED' && row.status !== 'CONFIRMED') throw new Error('Only a planned or confirmed program can be shown on the website');
+    await db.from('programs').update({ is_public: show }).eq('id', row.id).then(check);
+    refreshPublicSite();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: eventsMissing(errorMessage(e)) };
+  }
+}
+
+// ── Overview: everything the public website shows, in one place ──────────────
+
+/** '' for the default Sunday school, '/s/<slug>' for the others */
+const siteBase = (tenant: Parameters<typeof publicPath>[0]) => publicPath(tenant, '/').replace(/\/$/, '');
+
+/** null = that part is not set up yet (its migration has not been run) */
+export interface WebsiteOverview {
+  base: string;
+  events: { shown: number; waiting: number } | null;
+  news: { published: number; drafts: number } | null;
+  albums: { shown: number; hidden: number } | null;
+  aboutTopics: number;
+  profileSaved: boolean;
+  departments: number;
+}
+
+export async function loadWebsiteOverview(): Promise<Loaded<WebsiteOverview>> {
+  if (!isSupabaseEnabled()) return { mode: 'demo' };
+  try {
+    const { me, db } = await authorize('WEBSITE_MANAGE');
+    const today = todayIso();
+    const count = async (q: PromiseLike<{ count: number | null; error: { message: string } | null }>) => {
+      const { count: n, error } = await q;
+      if (error) throw new Error(error.message);
+      return n ?? 0;
+    };
+    const coming = (isPublic: boolean) =>
+      db.from('programs')
+        .select('id', { count: 'exact', head: true })
+        .eq('is_public', isPublic)
+        .in('status', ['PLANNED', 'CONFIRMED'])
+        .or(`start_date.gte.${today},end_date.gte.${today}`);
+    const [events, news, albums, aboutTopics, profile, departments] = await Promise.all([
+      Promise.all([count(coming(true)), count(coming(false))]).then(([shown, waiting]) => ({ shown, waiting })).catch(() => null),
+      Promise.all([
+        count(db.from('site_posts').select('id', { count: 'exact', head: true }).eq('status', 'PUBLISHED')),
+        count(db.from('site_posts').select('id', { count: 'exact', head: true }).eq('status', 'DRAFT')),
+      ]).then(([published, drafts]) => ({ published, drafts })).catch(() => null),
+      Promise.all([
+        count(db.from('site_albums').select('id', { count: 'exact', head: true }).eq('is_published', true)),
+        count(db.from('site_albums').select('id', { count: 'exact', head: true }).eq('is_published', false)),
+      ]).then(([shown, hidden]) => ({ shown, hidden })).catch(() => null),
+      loadAbout(db).then((t) => t.length).catch(() => 0),
+      db.from('system_settings').select('key').eq('key', PARISH_SETTINGS_KEY).maybeSingle().then((r) => Boolean(r.data)),
+      count(db.from('organization_units').select('id', { count: 'exact', head: true }).eq('is_active', true).in('unit_type', ['DEPARTMENT', 'COORDINATION'])).catch(() => 0),
+    ]);
+    return { mode: 'live', data: { base: siteBase(me.tenant), events, news, albums, aboutTopics, profileSaved: profile, departments } };
+  } catch (e) {
+    return { mode: 'error', error: errorMessage(e) };
   }
 }

@@ -1,20 +1,39 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Telegram bot — server only. Sends messages to people who linked their
-// Telegram chat (migration 024). Needs TELEGRAM_BOT_TOKEN; without it nothing
-// is sent and everything else keeps working.
+// Telegram chat (migration 024). Each Sunday school has its own bot: its
+// token is saved under Administration → Telegram bot (tenant_secrets, 040);
+// the default Sunday school may instead use TELEGRAM_BOT_TOKEN. Without a
+// token nothing is sent and everything else keeps working.
+// The bot used is the one of the tenant in scope (lib/tenant/scope.ts): the
+// signed-in user's, or the one the webhook / daily job is working for.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createHash, randomBytes } from 'node:crypto';
 import { after } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { createAdminClient } from '@/lib/supabase/server';
 import { env } from '@/lib/env';
+import { DEFAULT_TENANT_ID, tenantClient } from '@/lib/tenant/db';
+import { currentTenantId, runInTenant } from '@/lib/tenant/scope';
+import { getTenantSecret } from '@/lib/tenant/secrets';
+import { loadTenant, publicPath } from '@/lib/tenant/context';
 
 /** Telegram allows about 30 messages a second; stay well below. */
 const SEND_GAP_MS = 50;
 
-export function telegramConfigured(): boolean {
-  return Boolean(env.telegramBotToken());
+/** The bot token of a tenant (the default tenant falls back to TELEGRAM_BOT_TOKEN). */
+export async function botTokenOf(tenantId: string): Promise<string | null> {
+  const saved = await getTenantSecret(tenantId, 'telegram_bot_token').catch(() => null);
+  if (saved) return saved;
+  return tenantId === DEFAULT_TENANT_ID ? (env.telegramBotToken() ?? null) : null;
+}
+
+async function currentToken(): Promise<string | null> {
+  const tenantId = await currentTenantId();
+  return tenantId ? botTokenOf(tenantId) : null;
+}
+
+export async function telegramConfigured(): Promise<boolean> {
+  return Boolean(await currentToken());
 }
 
 /** The site's address for links in messages. */
@@ -22,9 +41,20 @@ export function siteUrl(): string {
   return (env.siteUrl() ?? 'https://hamere-hiwot.onrender.com').replace(/\/+$/, '');
 }
 
+/** Address of a public page of the tenant in scope (the default one at /, others under /s/<slug>). */
+export async function publicUrl(path = '/'): Promise<string> {
+  const tenantId = await currentTenantId();
+  const tenant = tenantId ? await loadTenant(tenantId) : null;
+  return siteUrl() + (tenant ? publicPath(tenant, path) : path);
+}
+
 /** Sent by Telegram with every webhook call; made from the token, so there is nothing else to set up. */
-export function webhookSecret(): string {
-  return createHash('sha256').update(`${env.telegramBotToken() ?? ''}:ssms-webhook`).digest('hex').slice(0, 48);
+export function webhookSecretFor(token: string): string {
+  return createHash('sha256').update(`${token}:ssms-webhook`).digest('hex').slice(0, 48);
+}
+
+export async function webhookSecret(): Promise<string> {
+  return webhookSecretFor((await currentToken()) ?? '');
 }
 
 export const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -32,8 +62,8 @@ export const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, 
 type ApiResult<T> = { ok: true; result: T } | { ok: false; error_code?: number; description?: string };
 
 export async function telegramApi<T = unknown>(method: string, body: Record<string, unknown> = {}): Promise<ApiResult<T>> {
-  const token = env.telegramBotToken();
-  if (!token) return { ok: false, description: 'TELEGRAM_BOT_TOKEN is not set' };
+  const token = await currentToken();
+  if (!token) return { ok: false, description: 'The Telegram bot is not set up' };
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
       method: 'POST',
@@ -49,7 +79,7 @@ export async function telegramApi<T = unknown>(method: string, body: Record<stri
 
 /** A file someone sent the bot (e.g. a receipt photo), fetched here so the token never reaches the browser. */
 export async function telegramFile(fileId: string): Promise<{ bytes: ArrayBuffer; type: string } | null> {
-  const token = env.telegramBotToken();
+  const token = await currentToken();
   if (!token) return null;
   const info = await telegramApi<{ file_path?: string }>('getFile', { file_id: fileId });
   if (!info.ok || !info.result.file_path) return null;
@@ -64,13 +94,17 @@ export async function telegramFile(fileId: string): Promise<{ bytes: ArrayBuffer
   }
 }
 
-let usernameCache: string | null = null;
+const usernameCache = new Map<string, string>();
 /** The bot's @username, for t.me links. */
 export async function botUsername(): Promise<string | null> {
-  if (usernameCache) return usernameCache;
+  const token = await currentToken();
+  if (!token) return null;
+  const known = usernameCache.get(token);
+  if (known) return known;
   const res = await telegramApi<{ username: string }>('getMe');
-  usernameCache = res.ok ? res.result.username : null;
-  return usernameCache;
+  if (!res.ok) return null;
+  usernameCache.set(token, res.result.username);
+  return res.result.username;
 }
 
 /** One message to one chat (`extra`: e.g. a reply_markup keyboard). 'blocked' = the person stopped or blocked the bot. */
@@ -108,13 +142,13 @@ export async function telegramToPersons(
   html: string,
   relation?: 'SELF' | 'GUARDIAN'
 ): Promise<{ recipients: number; delivered: number }> {
-  if (!telegramConfigured() || personIds.length === 0) return { recipients: 0, delivered: 0 };
+  if (!(await telegramConfigured()) || personIds.length === 0) return { recipients: 0, delivered: 0 };
   return telegramToChats(db, await chatsOf(db, personIds, relation), html);
 }
 
 /** The same message to each of these chats. */
 export async function telegramToChats(db: SupabaseClient, chats: Set<number>, html: string): Promise<{ recipients: number; delivered: number }> {
-  if (!telegramConfigured() || chats.size === 0) return { recipients: 0, delivered: 0 };
+  if (!(await telegramConfigured()) || chats.size === 0) return { recipients: 0, delivered: 0 };
   let delivered = 0;
   const blocked: number[] = [];
   for (const chat of chats) {
@@ -149,12 +183,20 @@ export async function studentAndGuardians(db: SupabaseClient, studentIds: string
   return out;
 }
 
-/** Send after the response, so saving never waits on (or fails because of) Telegram. */
+/**
+ * Send after the response, so saving never waits on (or fails because of) Telegram.
+ * The work runs for the tenant in scope now, with a client held to that tenant.
+ */
 export function telegramLater(work: (db: SupabaseClient) => Promise<unknown>): void {
-  if (!telegramConfigured()) return;
+  const tenant = currentTenantId();
   after(async () => {
     try {
-      await work(createAdminClient());
+      const tenantId = await tenant;
+      if (!tenantId) return;
+      await runInTenant(tenantId, async () => {
+        if (!(await telegramConfigured())) return;
+        await work(tenantClient(tenantId));
+      });
     } catch (e) {
       console.error('telegram failed', e);
     }

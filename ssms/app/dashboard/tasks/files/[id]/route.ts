@@ -7,7 +7,7 @@
 
 import { NextResponse } from 'next/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { createAdminClient } from '@/lib/supabase/server';
+import { tenantClient } from '@/lib/tenant/db';
 import { getCurrentUser } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
@@ -21,7 +21,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!me) return new NextResponse('Sign in again to open this file', { status: 401 });
 
   const { id } = await params;
-  const db = createAdminClient(me.systemUser.id);
+  const db = tenantClient(me.tenant.id, { actorId: me.systemUser.id });
   const { data: file } = await db.from('task_files')
     .select('path, file_name, mime_type, task:tasks!inner(unit_id)')
     .eq('id', id)

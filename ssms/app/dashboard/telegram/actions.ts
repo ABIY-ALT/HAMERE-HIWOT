@@ -12,10 +12,12 @@ import { after } from 'next/server';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { authorize, authorizeIn, check, errorMessage, selectAll } from '@/lib/auth/authorize';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
-import { createAdminClient } from '@/lib/supabase/server';
-import { botUsername, chatsOf, escapeHtml, newLinkCode, sendTelegram, telegramApi, telegramConfigured, telegramToChats, webhookSecret } from '@/lib/telegram/bot';
+import { platformClient, tenantClient } from '@/lib/tenant/db';
+import { runInTenant } from '@/lib/tenant/scope';
+import { getTenantSecret, setTenantSecret } from '@/lib/tenant/secrets';
+import { botUsername, chatsOf, escapeHtml, newLinkCode, sendTelegram, telegramApi, telegramConfigured, telegramToChats, webhookSecret, botTokenOf } from '@/lib/telegram/bot';
 import { refreshChat, tellUpdated } from '@/lib/telegram/links';
 import { nonMemberIds } from '@/lib/members/membership';
 import { ABOUT_KEY, MAX_TOPICS, type AboutTopic } from '@/lib/telegram/about-topics';
@@ -36,7 +38,8 @@ export async function loadMyTelegram(): Promise<Loaded<MyTelegram>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
     const { me, db } = await authorize();
-    if (!telegramConfigured()) return { mode: 'live', data: { configured: false, links: [] } };
+    if (!me.tenant.access.modules.includes('telegram')) return { mode: 'live', data: { configured: false, links: [] } };
+    if (!(await telegramConfigured())) return { mode: 'live', data: { configured: false, links: [] } };
     // Own chats only — a parent's chat linked to a student (relation GUARDIAN, 027) is not the student's
     let res = await db.from('telegram_links').select('id, telegram_name, linked_at, relation').eq('person_id', me.person.id).order('linked_at');
     if (res.error && /relation/.test(res.error.message)) res = (await db.from('telegram_links').select('id, telegram_name, linked_at').eq('person_id', me.person.id).order('linked_at')) as typeof res;
@@ -58,8 +61,8 @@ export async function loadMyTelegram(): Promise<Loaded<MyTelegram>> {
 /** A t.me link that connects the chat that opens it to me (valid 15 minutes). */
 export async function startTelegramLink(): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   try {
-    const { me, db } = await authorize();
-    if (!telegramConfigured()) throw new Error('The Telegram bot is not set up yet');
+    const { me, db } = await authorizeIn('telegram');
+    if (!(await telegramConfigured())) throw new Error('The Telegram bot is not set up yet');
     const username = await botUsername();
     if (!username) throw new Error('Could not reach the Telegram bot — check TELEGRAM_BOT_TOKEN');
     const code = newLinkCode();
@@ -74,7 +77,7 @@ export async function startTelegramLink(): Promise<{ ok: true; url: string } | {
 
 export async function unlinkMyTelegram(linkId: string): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize();
+    const { me, db } = await authorizeIn('telegram');
     const { data: link } = await db.from('telegram_links').select('*').eq('id', linkId).eq('person_id', me.person.id).maybeSingle();
     if (!link || (link as { relation?: string }).relation === 'GUARDIAN') throw new Error('Not your Telegram link');
     await db.from('telegram_links').delete().eq('id', linkId).then(check);
@@ -88,6 +91,8 @@ export async function unlinkMyTelegram(linkId: string): Promise<ActionResult> {
 
 export interface BotStatus {
   configured: boolean;
+  /** Where the token comes from: saved on this page, the server setting (default Sunday school only), or none */
+  token_source: 'saved' | 'server' | null;
   username: string | null;
   webhook_url: string;
   expected_url: string;
@@ -109,11 +114,13 @@ async function siteOrigin(): Promise<string> {
 export async function loadBotStatus(): Promise<Loaded<BotStatus>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
-    const { me, db } = await authorize(...BROADCASTERS);
-    const expected = `${await siteOrigin()}/api/telegram`;
+    const { me, db } = await authorizeIn('telegram', ...BROADCASTERS);
+    const expected = `${await siteOrigin()}/api/telegram/${me.tenant.slug}`;
+    const saved = await getTenantSecret(me.tenant.id, 'telegram_bot_token').catch(() => null);
+    const tokenSource: BotStatus['token_source'] = saved ? 'saved' : (await botTokenOf(me.tenant.id)) ? 'server' : null;
     const [info, username, links, broadcasts, year] = await Promise.all([
-      telegramConfigured() ? telegramApi<{ url: string; pending_update_count: number; last_error_message?: string }>('getWebhookInfo') : Promise.resolve(null),
-      telegramConfigured() ? botUsername() : Promise.resolve(null),
+      (await telegramConfigured()) ? telegramApi<{ url: string; pending_update_count: number; last_error_message?: string }>('getWebhookInfo') : Promise.resolve(null),
+      (await telegramConfigured()) ? botUsername() : Promise.resolve(null),
       db.from('telegram_links').select('person_id'),
       db.from('telegram_broadcasts').select('id, audience, message, recipients, delivered, created_at').order('created_at', { ascending: false }).limit(10),
       db.from('academic_years').select('id').order('is_current', { ascending: false }).order('start_date', { ascending: false }).limit(1).maybeSingle(),
@@ -127,7 +134,8 @@ export async function loadBotStatus(): Promise<Loaded<BotStatus>> {
     return {
       mode: 'live',
       data: {
-        configured: telegramConfigured(),
+        configured: (await telegramConfigured()),
+        token_source: tokenSource,
         username,
         webhook_url: info?.ok ? info.result.url : '',
         expected_url: expected,
@@ -147,15 +155,15 @@ export async function loadBotStatus(): Promise<Loaded<BotStatus>> {
 /** Point Telegram at this site and set the bot's command menu. */
 export async function connectBot(): Promise<ActionResult> {
   try {
-    await authorize('SYSTEM_CONFIGURE');
-    if (!telegramConfigured()) throw new Error('Set TELEGRAM_BOT_TOKEN on the server first');
+    const { me } = await authorizeIn('telegram', 'SYSTEM_CONFIGURE');
+    if (!(await telegramConfigured())) throw new Error('Save your bot token first');
     const origin = await siteOrigin();
     if (!origin.startsWith('https://') || /localhost|127\.0\.0\.1/.test(origin)) {
       throw new Error('Telegram can only reach the live site (https). Open this page on the live site and connect from there.');
     }
     const set = await telegramApi('setWebhook', {
-      url: `${origin}/api/telegram`,
-      secret_token: webhookSecret(),
+      url: `${origin}/api/telegram/${me.tenant.slug}`,
+      secret_token: await webhookSecret(),
       allowed_updates: ['message'],
       drop_pending_updates: true,
     });
@@ -179,6 +187,45 @@ export async function connectBot(): Promise<ActionResult> {
         { command: 'stop', description: 'Stop messages · መልእክት አቁም' },
       ],
     });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) };
+  }
+}
+
+/** settings key remembering which Telegram bot (by its id) a Sunday school uses */
+const BOT_KEY = 'telegram_bot';
+
+/**
+ * Save this Sunday school's bot token from @BotFather (null removes it). The
+ * token is checked with Telegram, stored encrypted, and refused when another
+ * Sunday school already uses the same bot.
+ */
+export async function saveBotToken(token: string | null): Promise<ActionResult> {
+  try {
+    const { me, db } = await authorizeIn('telegram', 'SYSTEM_CONFIGURE');
+    if (!token) {
+      await setTenantSecret(me.tenant.id, 'telegram_bot_token', null);
+      await db.from('system_settings').delete().eq('key', BOT_KEY);
+      return { ok: true };
+    }
+    const clean = z.string().trim().regex(/^\d{5,15}:[A-Za-z0-9_-]{30,50}$/, 'That does not look like a bot token from @BotFather').parse(token);
+    const res = await fetch(`https://api.telegram.org/bot${clean}/getMe`, { cache: 'no-store' }).catch(() => null);
+    const info = (await res?.json().catch(() => null)) as { ok: boolean; result?: { id: number; username: string } } | null;
+    if (!info?.ok || !info.result) throw new Error('Telegram did not accept this token — copy it again from @BotFather');
+    const { data: taken } = await platformClient()
+      .from('system_settings')
+      .select('tenant_id')
+      .eq('key', BOT_KEY)
+      .eq('value->>id', String(info.result.id))
+      .neq('tenant_id', me.tenant.id)
+      .limit(1);
+    if (taken?.length) throw new Error('This bot is already used by another Sunday school — create a new bot with @BotFather');
+    await setTenantSecret(me.tenant.id, 'telegram_bot_token', clean);
+    await db
+      .from('system_settings')
+      .upsert({ key: BOT_KEY, value: { id: info.result.id, username: info.result.username }, updated_by: me.systemUser.id, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+      .then(check);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
@@ -233,7 +280,7 @@ async function audienceChats(db: SupabaseClient, audience: string): Promise<{ pe
 /** How many Telegram chats an audience would reach. */
 export async function countAudience(audience: string): Promise<{ ok: true; people: number; connected: number } | { ok: false; error: string }> {
   try {
-    const { db } = await authorize(...BROADCASTERS);
+    const { db } = await authorizeIn('telegram', ...BROADCASTERS);
     const { people, chats } = await audienceChats(db, AudienceSchema.parse(audience));
     return { ok: true, people, connected: chats.size };
   } catch (e) {
@@ -244,18 +291,22 @@ export async function countAudience(audience: string): Promise<{ ok: true; peopl
 /** Send a message to a group. It goes out in the background; the history shows how many it reached. */
 export async function sendBroadcast(audience: string, message: string): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize(...BROADCASTERS);
-    if (!telegramConfigured()) throw new Error('The Telegram bot is not set up yet');
+    const { me, db } = await authorizeIn('telegram', ...BROADCASTERS);
+    if (!(await telegramConfigured())) throw new Error('The Telegram bot is not set up yet');
     const who = AudienceSchema.parse(audience);
     const text = z.string().trim().min(2, 'Write the message').max(3500, 'The message is too long').parse(message);
     const row = (await db.from('telegram_broadcasts').insert({ audience: who, message: text, sent_by: me.systemUser.id }).select('id').single().then(check)) as { id: string };
     const { chats } = await audienceChats(db, who);
-    after(async () => {
-      const bg = createAdminClient();
-      const html = `📢 <b>የሐመረ ሕይወት ሰንበት ት/ቤት · Hamere Hiwot</b>\n\n${escapeHtml(text)}`;
-      const sent = await telegramToChats(bg, chats, html);
-      await bg.from('telegram_broadcasts').update({ recipients: sent.recipients, delivered: sent.delivered }).eq('id', row.id);
-    });
+    const tenant = me.tenant;
+    after(() =>
+      runInTenant(tenant.id, async () => {
+        const bg = tenantClient(tenant.id);
+        const name = tenant.name_am ? `${tenant.name_am} · ${tenant.name_en}` : tenant.name_en;
+        const html = `📢 <b>${escapeHtml(name)}</b>\n\n${escapeHtml(text)}`;
+        const sent = await telegramToChats(bg, chats, html);
+        await bg.from('telegram_broadcasts').update({ recipients: sent.recipients, delivered: sent.delivered }).eq('id', row.id);
+      })
+    );
     return { ok: true };
   } catch (e) {
     return { ok: false, error: missing(errorMessage(e)) };
@@ -291,7 +342,7 @@ async function inChunks<T>(ids: string[], load: (part: string[]) => PromiseLike<
 export async function loadTelegramChats(): Promise<Loaded<{ chats: TelegramChatRow[]; can_manage: boolean }>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
-    const { me, db } = await authorize(...BROADCASTERS);
+    const { me, db } = await authorizeIn('telegram', ...BROADCASTERS);
     const [links, saved, students, guardians, notMembers] = await Promise.all([
       selectAll<Record<string, unknown>>((a, b) => db.from('telegram_links').select('chat_id, person_id, relation, telegram_name, linked_at').order('id').range(a, b)),
       // Numbers kept from migration 030 (none before it)
@@ -355,7 +406,7 @@ export async function loadTelegramChats(): Promise<Loaded<{ chats: TelegramChatR
 /** Check a chat's links again by the number it shared (e.g. after fixing a record). */
 export async function refreshTelegramChat(chatId: number): Promise<{ ok: true; added: number; removed: number } | { ok: false; error: string }> {
   try {
-    const { db } = await authorize(...BROADCASTERS);
+    const { db } = await authorizeIn('telegram', ...BROADCASTERS);
     const id = z.number().int().parse(chatId);
     const result = await refreshChat(db, id, true);
     if (!result) throw new Error('This chat connected from the website — it has no shared number to check');
@@ -369,12 +420,12 @@ export async function refreshTelegramChat(chatId: number): Promise<{ ok: true; a
 /** Disconnect a chat (e.g. a wrong person): its links and kept number are removed, and it is told. */
 export async function disconnectTelegramChat(chatId: number): Promise<ActionResult> {
   try {
-    const { db } = await authorize('SYSTEM_CONFIGURE');
+    const { db } = await authorizeIn('telegram', 'SYSTEM_CONFIGURE');
     const id = z.number().int().parse(chatId);
     await db.from('telegram_links').delete().eq('chat_id', id).then(check);
     await db.from('telegram_chats').delete().eq('chat_id', id);
     await db.from('telegram_sessions').delete().eq('chat_id', id);
-    if (telegramConfigured()) {
+    if ((await telegramConfigured())) {
       await sendTelegram(
         id,
         escapeHtml('የትምህርት ቤቱ ጽ/ቤት ይህን ቻት አቋርጧል። እንደገና ለመገናኘት /start ይላኩ።\nThe school office disconnected this chat. Send /start to connect again.'),
@@ -402,7 +453,7 @@ const TopicSchema = z
 export async function loadBotAbout(): Promise<Loaded<{ topics: AboutTopic[]; can_edit: boolean }>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
-    const { db } = await authorize(...BROADCASTERS);
+    const { db } = await authorizeIn('telegram', ...BROADCASTERS);
     const { data, error } = await db.from('system_settings').select('value').eq('key', ABOUT_KEY).maybeSingle();
     if (error) throw new Error(error.message);
     const topics = ((data as { value?: { topics?: AboutTopic[] } } | null)?.value?.topics ?? []) as AboutTopic[];
@@ -415,7 +466,7 @@ export async function loadBotAbout(): Promise<Loaded<{ topics: AboutTopic[]; can
 /** Save the topics (in this order). A topic without text is kept here but not shown in the bot. */
 export async function saveBotAbout(topics: z.input<typeof TopicSchema>[]): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize(...BROADCASTERS);
+    const { me, db } = await authorizeIn('telegram', ...BROADCASTERS);
     const clean = z.array(TopicSchema).max(MAX_TOPICS, `At most ${MAX_TOPICS} topics`).parse(topics);
     await db.from('system_settings')
       .upsert({ key: ABOUT_KEY, value: { topics: clean }, updated_by: me.systemUser.id, updated_at: new Date().toISOString() }, { onConflict: 'key' })

@@ -11,7 +11,7 @@
 
 import { z } from 'zod';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { authorizeIn, check, errorMessage, selectAll } from '@/lib/auth/authorize';
 import type { SessionUser } from '@/lib/auth/session';
 import { notifyLater } from '@/lib/push/send';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
@@ -30,7 +30,7 @@ import {
 } from '@/lib/plans/types';
 
 type Row = Record<string, unknown>;
-type Db = Awaited<ReturnType<typeof authorize>>['db'];
+type Db = Awaited<ReturnType<typeof authorizeIn>>['db'];
 
 const MIGRATION = 'Run database migration 032 (department plans) first';
 const missing = (m: string) => (/unit_plans|plan_activities|plan_updates/.test(m) ? MIGRATION : m);
@@ -57,7 +57,7 @@ async function names(db: Db, userIds: string[]): Promise<Map<string, string>> {
 export async function loadPlans(year?: number): Promise<Loaded<PlansData>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
-    const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT', 'AUDIT_VIEW_ALL');
+    const { me, db } = await authorizeIn('tasks', 'TASK_ASSIGN', 'TASK_REPORT', 'AUDIT_VIEW_ALL');
     const now = nowQuarter();
     const y = year && year > 1900 && year < 2200 ? Math.trunc(year) : now.year;
     const unitRows = (await db.from('organization_units')
@@ -182,7 +182,7 @@ async function plan(db: Db, me: SessionUser, planId: string, open: boolean) {
 /** Start (or change the main goal of) a unit's plan for a year. */
 export async function savePlanGoal(unitId: string, year: number, goal: string): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   try {
-    const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT');
+    const { me, db } = await authorizeIn('tasks', 'TASK_ASSIGN', 'TASK_REPORT');
     const unit = z.string().min(1).parse(unitId);
     if (!canEdit(me, unit)) throw new Error('You can only work on your own department’s plan');
     const y = yearOk(year);
@@ -217,7 +217,7 @@ const ActivitySchema = z.object({
 /** Add an activity, or change one (`activityId`), while the plan is a draft or returned. */
 export async function saveActivity(planId: string, input: z.input<typeof ActivitySchema>, activityId?: string): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT');
+    const { me, db } = await authorizeIn('tasks', 'TASK_ASSIGN', 'TASK_REPORT');
     const p = await plan(db, me, planId, true);
     const a = ActivitySchema.parse(input);
     const row = {
@@ -244,7 +244,7 @@ export async function saveActivity(planId: string, input: z.input<typeof Activit
 
 export async function deleteActivity(planId: string, activityId: string): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT');
+    const { me, db } = await authorizeIn('tasks', 'TASK_ASSIGN', 'TASK_REPORT');
     const p = await plan(db, me, planId, true);
     await db.from('plan_activities').delete().eq('id', activityId).eq('plan_id', p.id).then(check);
     return { ok: true };
@@ -256,7 +256,7 @@ export async function deleteActivity(planId: string, activityId: string): Promis
 /** Send the plan to the Executive Committee for approval. */
 export async function submitPlan(planId: string): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT');
+    const { me, db } = await authorizeIn('tasks', 'TASK_ASSIGN', 'TASK_REPORT');
     const p = await plan(db, me, planId, true);
     const { data: acts } = await db.from('plan_activities').select('id').eq('plan_id', p.id);
     if (!(acts ?? []).length) throw new Error('Add at least one activity first');
@@ -280,7 +280,7 @@ export async function submitPlan(planId: string): Promise<ActionResult> {
  */
 export async function reviewPlan(planId: string, decision: 'APPROVED' | 'RETURNED', note: string): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('TASK_ASSIGN');
+    const { me, db } = await authorizeIn('tasks', 'TASK_ASSIGN');
     const id = z.string().min(1).parse(planId);
     const why = z.string().trim().max(1000).parse(note ?? '');
     const p = (await db.from('unit_plans').select('id, unit_id, year, status').eq('id', id).maybeSingle().then(check)) as
@@ -319,7 +319,7 @@ const ReportSchema = z.object({
 /** Progress on one activity of an approved plan. "Done" means 100 %. */
 export async function reportActivity(activityId: string, input: z.input<typeof ReportSchema>): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT');
+    const { me, db } = await authorizeIn('tasks', 'TASK_ASSIGN', 'TASK_REPORT');
     const r = ReportSchema.parse(input);
     const act = (await db.from('plan_activities').select('id, plan_id').eq('id', z.string().min(1).parse(activityId)).maybeSingle().then(check)) as
       | { id: string; plan_id: string }
@@ -348,7 +348,7 @@ export async function reportActivity(activityId: string, input: z.input<typeof R
  */
 export async function remindPlans(year: number): Promise<{ ok: true; no_plan: number; no_report: number } | { ok: false; error: string }> {
   try {
-    await authorize('TASK_ASSIGN');
+    await authorizeIn('tasks', 'TASK_ASSIGN');
     const y = yearOk(year);
     const res = await loadPlans(y);
     if (res.mode !== 'live') throw new Error(res.mode === 'error' ? res.error : 'Plans need the database');

@@ -12,7 +12,7 @@
 
 import { z } from 'zod';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
+import { authorizeIn, check, errorMessage, selectAll } from '@/lib/auth/authorize';
 import { pushToUsers } from '@/lib/push/send';
 import { telegramLater, telegramToPersons } from '@/lib/telegram/bot';
 import { addisDate } from '@/lib/checkin/types';
@@ -50,7 +50,7 @@ const missing = (msg: string) =>
 export async function loadService(): Promise<Loaded<ServiceData>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
-    const { db } = await authorize('MEMBER_VIEW', 'CHOIR_MANAGE', 'AUDIT_VIEW_ALL');
+    const { db } = await authorizeIn('sacred_arts', 'MEMBER_VIEW', 'CHOIR_MANAGE', 'AUDIT_VIEW_ALL');
     const since = new Date(Date.now() - 90 * 86_400_000).toISOString();
     const [sessions, assignments, vestments, uses, loans] = await Promise.all([
       selectAll<Row>((a, b) =>
@@ -160,7 +160,7 @@ type MemberRow = { id: string; person_id: string; status: string; person: { full
 const nameOf = (m: MemberRow) => m.person?.full_name_am || m.person?.full_name_en || '—';
 
 /** Each active member's rehearsal attendance (%) in the window before the service — the server's own count. */
-async function ratesBefore(db: Awaited<ReturnType<typeof authorize>>['db'], date: string, weeks: number): Promise<Map<string, number | null>> {
+async function ratesBefore(db: Awaited<ReturnType<typeof authorizeIn>>['db'], date: string, weeks: number): Promise<Map<string, number | null>> {
   const ids = ((await db.from('choir_sessions')
     .select('id')
     .eq('kind', 'REHEARSAL')
@@ -190,7 +190,7 @@ async function ratesBefore(db: Awaited<ReturnType<typeof authorize>>['db'], date
  */
 export async function saveRoster(sessionId: string, input: RosterInput, publish: boolean): Promise<ActionResult & { told?: number }> {
   try {
-    const { me, db } = await authorize('CHOIR_MANAGE');
+    const { me, db } = await authorizeIn('sacred_arts', 'CHOIR_MANAGE');
     const r = RosterSchema.parse(input);
     const s = (await db.from('choir_sessions')
       .select('id, kind, status, session_date, start_time, title, location, roster_status')
@@ -289,7 +289,7 @@ export async function saveRoster(sessionId: string, input: RosterInput, publish:
 /** The leader records an answer given in person ("she told me she can't come"). */
 export async function setAssignmentResponse(assignmentId: string, response: ServiceResponse, note: string): Promise<ActionResult> {
   try {
-    const { db } = await authorize('CHOIR_MANAGE');
+    const { db } = await authorizeIn('sacred_arts', 'CHOIR_MANAGE');
     const res = z.enum(['PENDING', 'CONFIRMED', 'DECLINED']).parse(response);
     await db.from('service_roster')
       .update({ response: res, response_note: res === 'DECLINED' ? note.trim().slice(0, 500) || null : null, responded_at: res === 'PENDING' ? null : new Date().toISOString() })
@@ -316,7 +316,7 @@ export type VestmentInput = z.input<typeof VestmentSchema>;
 
 export async function saveVestment(id: string | null, input: VestmentInput): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('CHOIR_MANAGE');
+    const { me, db } = await authorizeIn('sacred_arts', 'CHOIR_MANAGE');
     const v = VestmentSchema.parse(input);
     const fields = { code: v.code, kind: v.kind, size: v.size || null, condition: v.condition, notes: v.notes || null, updated_at: new Date().toISOString() };
     if (id) {
@@ -348,7 +348,7 @@ export type VestmentBatchInput = z.input<typeof BatchSchema>;
 /** Register several of the same kind at once: KB-001 … KB-020. */
 export async function addVestments(input: VestmentBatchInput): Promise<ActionResult & { added?: number }> {
   try {
-    const { me, db } = await authorize('CHOIR_MANAGE');
+    const { me, db } = await authorizeIn('sacred_arts', 'CHOIR_MANAGE');
     const b = BatchSchema.parse(input);
     const width = Math.max(3, String(b.from + b.count - 1).length);
     const codes = Array.from({ length: b.count }, (_, i) => `${b.prefix}${String(b.from + i).padStart(width, '0')}`);
@@ -374,7 +374,7 @@ export type IssueInput = z.input<typeof IssueSchema>;
 /** Give vestments out: each must be in the store; the person is told in the bot. */
 export async function issueVestments(input: IssueInput): Promise<ActionResult & { issued?: number }> {
   try {
-    const { me, db } = await authorize('CHOIR_MANAGE');
+    const { me, db } = await authorizeIn('sacred_arts', 'CHOIR_MANAGE');
     const list = IssueSchema.parse(input);
     const now = today();
     if (list.some((x) => x.due_on < now)) throw new Error('The return day cannot be in the past');
@@ -416,7 +416,7 @@ export async function issueVestments(input: IssueInput): Promise<ActionResult & 
 /** Received back. Damaged → it goes for repair; lost → marked lost. */
 export async function returnVestment(loanId: string, condition: VestmentCondition | 'LOST', note: string): Promise<ActionResult> {
   try {
-    const { me, db } = await authorize('CHOIR_MANAGE');
+    const { me, db } = await authorizeIn('sacred_arts', 'CHOIR_MANAGE');
     const c = z.enum(['GOOD', 'WORN', 'DAMAGED', 'LOST']).parse(condition);
     const loan = (await db.from('vestment_loans').select('id, vestment_id, returned_at').eq('id', z.string().min(1).parse(loanId)).maybeSingle().then(check)) as {
       id: string; vestment_id: string; returned_at: string | null;
@@ -445,7 +445,7 @@ export async function returnVestment(loanId: string, condition: VestmentConditio
 /** Remind everyone holding a vestment past its return day (one message each). */
 export async function remindOverdue(): Promise<ActionResult & { people?: number }> {
   try {
-    const { db } = await authorize('CHOIR_MANAGE');
+    const { db } = await authorizeIn('sacred_arts', 'CHOIR_MANAGE');
     const rows = (await db.from('vestment_loans')
       .select('id, person_id, due_on, vestment:vestments(code, kind, size)')
       .is('returned_at', null)
