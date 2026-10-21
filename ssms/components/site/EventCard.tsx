@@ -13,7 +13,7 @@ export function EventCard({ event, lang, full = false }: { event: PublicEvent; l
   const until = event.end_date && event.end_date !== event.start_date ? ` → ${formatEthiopianDate(event.end_date, lang)}` : '';
   return (
     <article id={`event-${event.id}`} className="flex gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm scroll-mt-28">
-      <div className="w-16 shrink-0 rounded-xl bg-[#1e2770] text-white text-center py-2 self-start">
+      <div className="w-16 shrink-0 rounded-xl bg-[var(--site-main)] text-white text-center py-2 self-start">
         <div className="text-2xl font-bold leading-none">{d?.day ?? '—'}</div>
         <div className="text-[11px] mt-1 text-amber-300 font-semibold">{d ? ethiopianMonthName(d.month, lang) : ''}</div>
         <div className="text-[10px] text-indigo-200">{d?.year}</div>

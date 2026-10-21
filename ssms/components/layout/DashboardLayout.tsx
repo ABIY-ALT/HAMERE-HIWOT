@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLang } from '@/contexts/LangContext';
 import { NotInPlan, PlanNotice } from '@/components/billing/PlanNotice';
 import { MODULE_LABELS, moduleForPath } from '@/lib/billing/modules';
+import { sidebarVars } from '@/lib/branding';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -32,7 +33,7 @@ export default function DashboardLayout({ children, breadcrumbs }: DashboardLayo
   const blocked = access?.mode === 'blocked' && !pathname.startsWith('/dashboard/profile');
 
   return (
-    <div className="min-h-screen bg-[var(--surface-2)]">
+    <div className="min-h-screen bg-[var(--surface-2)]" style={user?.tenant ? (sidebarVars(user.tenant.brand.color) as React.CSSProperties) : undefined}>
       <Sidebar
         collapsed={sidebarCollapsed && !mobileOpen}
         mobileOpen={mobileOpen}

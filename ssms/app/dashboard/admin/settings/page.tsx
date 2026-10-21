@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import Image from 'next/image';
+import Link from 'next/link';
+import { TenantLogo } from '@/components/branding/TenantLogo';
 import { Save, Shield, Database, Globe, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { AdminModeNotice } from '@/components/admin/AdminModeNotice';
@@ -95,7 +96,7 @@ export default function SettingsPage() {
           </h2>
         </div>
 
-        {/* Official Sunday School Seal & Emblem */}
+        {/* The Sunday school's emblem and names, as saved below (logo: Administration → Branding) */}
         <div className="flex flex-col sm:flex-row items-center gap-5 p-4 rounded-xl bg-slate-50 border border-slate-200/70">
           <div
             className="w-24 h-24 rounded-full p-1 shrink-0 shadow-lg relative"
@@ -104,35 +105,23 @@ export default function SettingsPage() {
               boxShadow: '0 4px 16px rgba(251,191,36,0.3)',
             }}
           >
-            <div className="w-full h-full rounded-full overflow-hidden bg-slate-950 flex items-center justify-center">
-              <Image
-                src="/logo.png"
-                alt="ሳሎ ደብረ ፀሐይ ቅዱስ ጊዮርጊስ ሐመረ ሕይወት ሰንበት ትምህርት ቤት ማኅተም"
-                width={96}
-                height={96}
-                className="w-full h-full object-cover"
-                priority
-              />
+            <div className="w-full h-full rounded-full overflow-hidden bg-white flex items-center justify-center">
+              <TenantLogo size={88} className="rounded-full" />
             </div>
           </div>
           <div className="space-y-1 text-center sm:text-left">
             <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-800">
               {t('Official Sunday School Seal & Emblem', 'ይፋዊ የሰንበት ት/ቤት ማኅተም እና አርማ')}
             </span>
-            <h3 className="font-bold text-slate-900 text-base" lang="am">
-              ሳሎ ደብረ ፀሐይ ቅዱስ ጊዮርጊስ ቤተክርስቲያን ሐመረ ሕይወት ሰንበት ትምህርት ቤት
-            </h3>
-            <p className="text-xs text-slate-600 font-medium">
-              Sallo Debre Tsehay Saint George Church Hamere Hiwot Sabbath School
-            </p>
+            <h3 className="font-bold text-slate-900 text-base" lang="am">{settings.parish_name_am}</h3>
+            <p className="text-xs text-slate-600 font-medium">{settings.parish_name_en}</p>
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1 text-xs text-slate-600 font-mono">
-              <span className="bg-white px-2 py-0.5 rounded border border-slate-200">
-                ፲፱፻፺፪ ዓ.ም ተመሠረተ (Est. 1992 E.C.)
-              </span>
-              <span className="bg-white px-2 py-0.5 rounded border border-slate-200">
-                መሪ ጥቅስ: ነህ 2፥20 (Nehemiah 2:20)
-              </span>
+              {settings.foundation_year && <span className="bg-white px-2 py-0.5 rounded border border-slate-200">{settings.foundation_year}</span>}
+              {settings.motto && <span className="bg-white px-2 py-0.5 rounded border border-slate-200">{settings.motto}</span>}
             </div>
+            <Link href="/dashboard/admin/branding" className="inline-block text-xs font-semibold text-indigo-700 hover:underline pt-1">
+              {t('Change the logo and colours →', 'አርማና ቀለሞችን ይቀይሩ →')}
+            </Link>
           </div>
         </div>
 

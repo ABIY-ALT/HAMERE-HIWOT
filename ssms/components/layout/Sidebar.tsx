@@ -38,6 +38,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLang } from '@/contexts/LangContext';
 import { canSeeNavItem } from '@/lib/permissions';
 import { moduleForPath } from '@/lib/billing/modules';
+import { TenantLogo } from '@/components/branding/TenantLogo';
 import type { PermissionCode } from '@/types';
 
 /** Signed in only for the student or parent portal (no staff permissions) */
@@ -339,6 +340,7 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
           { labelEn: 'Roles', labelAm: 'ሚናዎች', href: '/dashboard/admin/roles', permissions: ['ROLE_MANAGE'] },
           { labelEn: 'Permissions', labelAm: 'ፈቃዶች', href: '/dashboard/admin/permissions', permissions: ['ROLE_MANAGE'] },
           { labelEn: 'System Settings', labelAm: 'የስርዓት ቅንብሮች', href: '/dashboard/admin/settings', permissions: ['SYSTEM_CONFIGURE'] },
+          { labelEn: 'Branding', labelAm: 'መለያ ገጽታ', href: '/dashboard/admin/branding', permissions: ['SYSTEM_CONFIGURE'] },
           { labelEn: 'Billing & Plan', labelAm: 'ክፍያና ዕቅድ', href: '/dashboard/admin/billing', permissions: ['SYSTEM_CONFIGURE'] },
           { labelEn: 'Telegram Bot', labelAm: 'የቴሌግራም ቦት', href: '/dashboard/admin/telegram', permissions: ['SYSTEM_CONFIGURE', 'MEMBER_UPDATE', 'STUDENT_UPDATE'] },
           { labelEn: 'Automation', labelAm: 'አውቶሜሽን', href: '/dashboard/admin/automation', permissions: ['SYSTEM_CONFIGURE'] },
@@ -476,8 +478,8 @@ export default function Sidebar({ collapsed, mobileOpen, onToggleCollapse, onClo
             </>
           ) : (
             <>
-              <div className="brand-icon flex items-center justify-center font-bold text-lg">
-                {(user.tenant.name_en || '?').slice(0, 1)}
+              <div className="brand-icon flex items-center justify-center overflow-hidden bg-white">
+                <TenantLogo size={42} />
               </div>
               {!collapsed && (
                 <div className="brand-text">

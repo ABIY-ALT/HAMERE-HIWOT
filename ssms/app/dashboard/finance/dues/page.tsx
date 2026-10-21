@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
+import { TenantLogo, useSchoolName } from '@/components/branding/TenantLogo';
 import { Check, ChevronLeft, ChevronRight, Hourglass, ImageIcon, Plus, Printer, Search, Send } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { Modal } from '@/components/ui/Modal';
@@ -658,6 +659,7 @@ function PaymentDialog({ data, member, onClose, onDone }: { data: DuesData; memb
 /** The printable receipt(s) of a payment — one per year it covers. */
 function ReceiptSheet({ receipts, onClose }: { receipts: DuesReceipt[]; onClose: () => void }) {
   const { t, locale } = useLang();
+  const school = useSchoolName('Hamere Hiwot Sunday School', 'የሐመረ ሕይወት ሰንበት ትምህርት ቤት');
   const monthName = (m: number) => (locale === 'am' ? ETHIOPIAN_MONTHS_AM[m - 1] : ETHIOPIAN_MONTHS_EN[m - 1]);
   return (
     <Modal isOpen onClose={onClose} title={t('Payment recorded', 'ክፍያው ተመዝግቧል')} subtitle={receipts.map((r) => r.receipt_no).join(', ')} maxWidth="md">
@@ -665,9 +667,9 @@ function ReceiptSheet({ receipts, onClose }: { receipts: DuesReceipt[]; onClose:
         {receipts.map((receipt) => (
         <div key={receipt.receipt_no} className="print-sheet border border-slate-300 rounded-lg p-5 space-y-3 bg-white break-inside-avoid">
           <div className="flex items-center gap-3 border-b border-slate-300 pb-3">
-            <Image src="/logo.png" alt="" width={48} height={48} className="rounded-full" />
+            <TenantLogo size={48} className="rounded-full" />
             <div>
-              <div className="text-[11px] text-slate-500">{t('Hamere Hiwot Sunday School', 'የሐመረ ሕይወት ሰንበት ትምህርት ቤት')}</div>
+              <div className="text-[11px] text-slate-500">{t(...school)}</div>
               <div className="font-bold text-slate-900">{t('Monthly dues receipt', 'የወርሃዊ መዋጮ ደረሰኝ')}</div>
             </div>
             <div className="ml-auto font-mono text-sm font-bold">{receipt.receipt_no}</div>

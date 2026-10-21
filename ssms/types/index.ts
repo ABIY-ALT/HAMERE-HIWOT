@@ -330,6 +330,7 @@ export interface ClientTenant {
   name_am: string | null;
   is_default: boolean;
   access: import('@/lib/billing/access').TenantAccess;
+  brand: import('@/lib/branding').TenantBrand;
 }
 
 // ── Audit ─────────────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import Image from 'next/image';
+import { TenantLogo, useSchoolName } from '@/components/branding/TenantLogo';
 import { Printer } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { partScore } from '@/lib/education/types';
@@ -12,6 +12,7 @@ import { PortalNotice, attendanceCounts, useMyPortal } from '@/components/studen
 /** The student's own report card: approved grades, average, rank and attendance — printable. */
 export default function MyResultsPage() {
   const { t, locale } = useLang();
+  const school = useSchoolName('Sallo Debre Tsehay St. George Church · Hamere Hiwot Sabbath School', 'ሳሎ ደ/ፀ/ቅ/ጊዮርጊስ · ሐመረ ሕይወት ሰ/ት/ቤት');
   const today = useToday();
   const { mode, data, error } = useMyPortal();
 
@@ -40,10 +41,10 @@ export default function MyResultsPage() {
 
       <div className="print-sheet card p-6 sm:p-8 max-w-3xl mx-auto bg-white">
         <div className="flex items-center gap-4 border-b-2 border-slate-800 pb-4 mb-5">
-          <Image src="/logo.png" alt="" width={72} height={72} className="w-[64px] h-[64px] rounded-full shrink-0" />
+          <TenantLogo size={64} className="rounded-full shrink-0" />
           <div className="flex-1 text-center">
             <div className="text-xs uppercase tracking-widest text-slate-500">
-              {t('Sallo Debre Tsehay St. George Church · Hamere Hiwot Sabbath School', 'ሳሎ ደ/ፀ/ቅ/ጊዮርጊስ · ሐመረ ሕይወት ሰ/ት/ቤት')}
+              {t(...school)}
             </div>
             <h2 className="text-xl font-bold text-slate-900 mt-1">{t('Student Report Card', 'የተማሪ የውጤት ካርድ')}</h2>
             {s.year && <div className="text-sm text-slate-600">{t('Academic year', 'የትምህርት ዘመን')} {s.year}</div>}

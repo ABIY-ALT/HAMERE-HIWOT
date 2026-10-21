@@ -15,6 +15,8 @@ import {
   type TenantStatus,
 } from '@/lib/billing/access';
 import { MODULE_CODES } from '@/lib/billing/modules';
+import { brandOf, type TenantBrand } from '@/lib/branding';
+import { loadBranding } from './branding';
 
 export interface TenantInfo {
   id: string;
@@ -28,6 +30,8 @@ export interface TenantInfo {
 
 export interface TenantContext extends TenantInfo {
   access: TenantAccess;
+  /** Logo, colour and front-page photo (lib/branding) */
+  brand: TenantBrand;
 }
 
 export const TENANT_COLUMNS = 'id, slug, name_en, name_am, status, is_default, reg_prefix';
@@ -85,8 +89,8 @@ export const loadTenantAccess = cache(async (tenantId: string): Promise<TenantAc
 });
 
 export async function loadTenantContext(id: string): Promise<TenantContext | null> {
-  const [tenant, access] = await Promise.all([loadTenant(id), loadTenantAccess(id)]);
-  return tenant ? { ...tenant, access } : null;
+  const [tenant, access, branding] = await Promise.all([loadTenant(id), loadTenantAccess(id), loadBranding(id)]);
+  return tenant ? { ...tenant, access, brand: brandOf(branding, tenant.is_default) } : null;
 }
 
 /** Public address of a tenant page: the default tenant at /, others under /s/<slug>. */

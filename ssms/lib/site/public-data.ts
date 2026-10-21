@@ -20,6 +20,8 @@ import { todayIso } from '@/lib/utils/ethiopian-calendar';
 import { tenantClient } from '@/lib/tenant/db';
 import { runInTenant } from '@/lib/tenant/scope';
 import { publicPath, type TenantInfo } from '@/lib/tenant/context';
+import { loadBranding } from '@/lib/tenant/branding';
+import { DEFAULT_BRAND_COLOR, EMPTY_BRANDING, brandOf, type Branding } from '@/lib/branding';
 import { SITE_TAG } from './cache';
 import { POST_COLUMNS, albumList, albumPhotos, toPost } from './content';
 import type { SiteAlbum, SitePhoto, SitePost } from './media';
@@ -47,6 +49,8 @@ export interface SiteBrand {
   /** Hero picture and logo — only the default Sunday school has its own for now */
   image: string | null;
   logo: string | null;
+  /** Main colour (#rrggbb) — header, footer and title bands */
+  color: string;
 }
 
 export interface PublicSite {
@@ -75,17 +79,20 @@ const DEFAULT_BRAND: SiteBrand = {
   church_en: 'Sallo Debre Tsehay Saint George Church',
   image: '/images/hamere.jpg',
   logo: '/logo.png',
+  color: DEFAULT_BRAND_COLOR,
 };
 
-function brandOf(tenant: TenantInfo, parish: ParishSettings): SiteBrand {
-  if (tenant.is_default) return DEFAULT_BRAND;
+function siteBrandOf(tenant: TenantInfo, parish: ParishSettings, saved: Branding): SiteBrand {
+  // Logo, photo and colour as the Sunday school chose them (Administration → Branding)
+  const look = brandOf(saved, tenant.is_default);
+  const pictures = { image: look.heroUrl, logo: look.logoUrl, color: look.color };
+  if (tenant.is_default) return { ...DEFAULT_BRAND, ...pictures };
   return {
     name_am: tenant.name_am || tenant.name_en,
     name_en: tenant.name_en,
     church_am: parish.parish_name_am === DEFAULT_PARISH_SETTINGS.parish_name_am ? '' : parish.parish_name_am,
     church_en: parish.parish_name_en === DEFAULT_PARISH_SETTINGS.parish_name_en ? '' : parish.parish_name_en,
-    image: null,
-    logo: null,
+    ...pictures,
   };
 }
 
@@ -152,7 +159,8 @@ export async function publicSite(tenant: TenantInfo): Promise<PublicSite> {
     };
   }
   const base = publicPath(tenant, '/').replace(/\/$/, '');
-  return { ...data, base, brand: brandOf(tenant, data.parish) };
+  const saved = await loadBranding(tenant.id).catch(() => EMPTY_BRANDING);
+  return { ...data, base, brand: siteBrandOf(tenant, data.parish, saved) };
 }
 
 // ── News and gallery (migration 039) — published ones only ───────────────────

@@ -35,6 +35,10 @@ Reads are filtered by the scoped client. Writes are checked both by the client a
 - **Access** (`lib/billing/access.ts`): `full`, `read_only` (trial ended unpaid, unpaid after the grace days, canceled, expired, suspended subscription: data stays visible and exportable, nothing can change) or `blocked` (the Sunday school itself is suspended, deactivated or waiting for approval). It is computed from the dates on every request, so it never waits for the daily job. **No data is ever deleted.**
 - **Daily job** (`/api/cron`): billing first (`runBillingDaily`: trials and periods that ended, renewal invoices, usage snapshots), then each paid-up Sunday school's automation in its own scope.
 
+## Branding
+
+Each Sunday school sets its own look under Administration → **Branding** (`SYSTEM_CONFIGURE`), after approval: logo and main colour (every plan) and the website's front-page photo (website module). Stored in `system_settings` key `branding`; pictures in the public `site-media` bucket under `<tenant id>/brand/`. Used in the menu, dashboard, receipts, report cards, results, the exam page and the public website (`lib/branding.ts`, `components/branding/TenantLogo.tsx`). Hamere Hiwot keeps its own logo, photo and colour unless it sets others. Platform admins see it on `/platform/tenants/<id>` and can remove an unsuitable picture (audit-logged).
+
 ## Payments
 
 For now payments are **manual**: the Sunday school chooses a plan → an invoice (price from the plan) → it pays by bank or mobile money and reports the reference and receipt on Billing & plan → a platform admin checks the account and confirms on `/platform/payments` → the plan applies. A payment is applied exactly once (`PENDING → SUCCEEDED` in one conditional update), and the same reference cannot be claimed twice.

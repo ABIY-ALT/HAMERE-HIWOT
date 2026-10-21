@@ -7,6 +7,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import type { PublicSite } from '@/lib/site/public-data';
+import { siteVars } from '@/lib/branding';
 
 export type SiteLang = 'am' | 'en';
 
@@ -37,13 +38,13 @@ export function SiteShell({ lang, path, site, children }: { lang: SiteLang; path
   const t = (am: string, en: string) => pick(lang, am, en);
   const name = lang === 'am' ? site.parish.parish_name_am : site.parish.parish_name_en;
   return (
-    <div lang={lang} className="min-h-screen flex flex-col bg-white text-slate-900">
-      <header className="sticky top-0 z-30 bg-[#1e2770] text-white shadow">
+    <div lang={lang} className="min-h-screen flex flex-col bg-white text-slate-900" style={siteVars(site.brand.color) as React.CSSProperties}>
+      <header className="sticky top-0 z-30 bg-[var(--site-main)] text-white shadow">
         <div className="mx-auto max-w-6xl px-4 h-16 flex items-center gap-3">
           <Link href={hrefFor('/', lang, site.base)} className="flex items-center gap-2.5 min-w-0">
             <span className="w-10 h-10 rounded-full overflow-hidden ring-2 ring-amber-400 shrink-0 bg-slate-900 flex items-center justify-center">
               {site.brand.logo ? (
-                <Image src={site.brand.logo} alt="" width={40} height={40} className="w-full h-full object-cover" priority />
+                <Image src={site.brand.logo} alt="" width={40} height={40} unoptimized className={`w-full h-full ${site.base ? 'object-contain bg-white' : 'object-cover'}`} priority />
               ) : (
                 <span className="font-bold text-amber-300">{t(site.brand.name_am, site.brand.name_en).slice(0, 1)}</span>
               )}
@@ -92,7 +93,7 @@ export function SiteShell({ lang, path, site, children }: { lang: SiteLang; path
 
       <main className="flex-1">{children}</main>
 
-      <footer className="bg-[#161a4b] text-indigo-100">
+      <footer className="bg-[var(--site-dark)] text-indigo-100">
         <div className="mx-auto max-w-6xl px-4 py-10 grid gap-8 sm:grid-cols-3 text-sm">
           <div className="space-y-1.5">
             <div className="font-bold text-white">{name}</div>
@@ -135,7 +136,7 @@ export function SiteShell({ lang, path, site, children }: { lang: SiteLang; path
 /** A page's title band */
 export function PageTitle({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
-    <section className="bg-gradient-to-b from-[#1e2770] to-[#2937a2] text-white">
+    <section className="bg-gradient-to-b from-[var(--site-main)] to-[var(--site-light)] text-white">
       <div className="mx-auto max-w-6xl px-4 py-10 sm:py-14">
         <h1 className="text-2xl sm:text-3xl font-bold">{title}</h1>
         {subtitle && <p className="mt-2 text-indigo-100 max-w-2xl text-sm sm:text-base">{subtitle}</p>}

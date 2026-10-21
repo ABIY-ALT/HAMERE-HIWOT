@@ -24,6 +24,9 @@ import {
 import { createTenant, slugify } from '@/lib/tenant/provision';
 import { existingLoginForPhone } from '@/lib/tenant/accounts';
 import { DEFAULT_TENANT_ID } from '@/lib/tenant/db';
+import { BRANDING_KEY } from '@/lib/branding';
+import { MEDIA_BUCKET } from '@/lib/site/media';
+import { refreshPublicSite } from '@/lib/site/cache';
 
 type Result = { ok: true } | { ok: false; error: string };
 const done = (path: string): Result => {
@@ -101,6 +104,27 @@ export async function createTenantAction(form: FormData): Promise<{ ok: true; id
     );
     revalidatePath('/platform', 'layout');
     return { ok: true, id: result.tenantId, linked: result.linkedLogin };
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) };
+  }
+}
+
+/** Remove a Sunday school's logo or website photo (e.g. unsuitable); it goes back to the plain look. */
+export async function removeTenantPicture(tenantId: string, which: string, reason = ''): Promise<Result> {
+  try {
+    const { admin, db } = await authorizePlatform();
+    const id = uuid.parse(tenantId);
+    const key = z.enum(['logo', 'hero']).parse(which) === 'logo' ? 'logo_path' : 'hero_path';
+    const { data } = await db.from('system_settings').select('value').eq('tenant_id', id).eq('key', BRANDING_KEY).maybeSingle();
+    const branding = (data?.value ?? {}) as Record<string, unknown>;
+    const path = branding[key];
+    if (typeof path !== 'string') throw new Error('Nothing to remove');
+    const { error } = await db.from('system_settings').update({ value: { ...branding, [key]: null }, updated_at: new Date().toISOString() }).eq('tenant_id', id).eq('key', BRANDING_KEY);
+    if (error) throw new Error(error.message);
+    if (path.startsWith(`${id}/`)) await db.storage.from(MEDIA_BUCKET).remove([path]);
+    refreshPublicSite();
+    await logPlatform({ admin, tenantId: id, action: key === 'logo_path' ? 'TENANT_LOGO_REMOVED' : 'TENANT_PHOTO_REMOVED', targetType: 'tenant', targetId: id, details: { path, reason: reason.slice(0, 500) } });
+    return done('/platform');
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
   }

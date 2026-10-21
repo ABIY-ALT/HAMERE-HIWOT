@@ -24,9 +24,9 @@ export async function HomePage({ tenant, lang }: { tenant: TenantInfo; lang: Sit
   return (
     <SiteShell lang={lang} path="/" site={site}>
       {/* ── Hero ── */}
-      <section className="relative isolate overflow-hidden bg-[#161a4b] text-white">
-        {site.brand.image && <Image src={site.brand.image} alt={church} fill priority sizes="100vw" className="-z-10 object-cover opacity-35" />}
-        <div className="absolute inset-0 -z-10 bg-gradient-to-t from-[#161a4b] via-[#161a4b]/70 to-transparent" />
+      <section className="relative isolate overflow-hidden bg-[var(--site-dark)] text-white">
+        {site.brand.image && <Image src={site.brand.image} alt={church} fill priority unoptimized sizes="100vw" className="-z-10 object-cover opacity-35" />}
+        <div className="absolute inset-0 -z-10 bg-gradient-to-t from-[var(--site-dark)] via-[color-mix(in_srgb,var(--site-dark)_70%,transparent)] to-transparent" />
         <div className="mx-auto max-w-6xl px-4 py-20 sm:py-28">
           {church && <p className="text-amber-300 text-xs sm:text-sm font-semibold tracking-wide">{church}</p>}
           <h1 className="mt-3 text-3xl sm:text-5xl font-bold leading-tight max-w-3xl">{t(site.brand.name_am, site.brand.name_en)}</h1>
@@ -128,7 +128,7 @@ export async function HomePage({ tenant, lang }: { tenant: TenantInfo; lang: Sit
       {/* ── Reach us ── */}
       <section className="mx-auto max-w-6xl px-4 py-14 grid gap-4 md:grid-cols-2">
         {site.bot && (
-          <a href={`https://t.me/${site.bot}`} target="_blank" rel="noopener noreferrer" className="rounded-2xl bg-[#1e2770] text-white p-6 hover:bg-[#2937a2] transition">
+          <a href={`https://t.me/${site.bot}`} target="_blank" rel="noopener noreferrer" className="rounded-2xl bg-[var(--site-main)] text-white p-6 hover:bg-[var(--site-light)] transition">
             <Send className="text-amber-300" size={26} />
             <h3 className="mt-3 text-lg font-bold">{t('የቴሌግራም ቦታችን', 'Our Telegram bot')}</h3>
             <p className="mt-1 text-sm text-indigo-100">

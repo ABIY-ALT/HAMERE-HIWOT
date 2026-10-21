@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useSyncExternalStore } from 'react';
-import Image from 'next/image';
+import { TenantLogo, useSchoolName } from '@/components/branding/TenantLogo';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { ArrowLeft, Download, Printer } from 'lucide-react';
@@ -19,6 +19,7 @@ const noopSubscribe = () => () => {};
 
 export default function ReportCardPage() {
   const { t, locale } = useLang();
+  const school = useSchoolName('Sallo Debre Tsehay St. George Church · Hamere Hiwot Sabbath School', 'ሳሎ ደ/ፀ/ቅ/ጊዮርጊስ · ሐመረ ሕይወት ሰ/ት/ቤት');
   const params = useParams<{ id: string }>();
   const students = useStudents();
   const savedSessions = useSavedSessions();
@@ -45,10 +46,7 @@ export default function ReportCardPage() {
   }
 
   const year = years.find((y) => y.id === activeYearId);
-  const schoolName = t(
-    'Sallo Debre Tsehay St. George Church · Hamere Hiwot Sabbath School',
-    'ሳሎ ደ/ፀ/ቅ/ጊዮርጊስ · ሐመረ ሕይወት ሰ/ት/ቤት'
-  );
+  const schoolName = t(...school);
 
   const grades = allGrades.filter((g) => g.student_id === student.id);
   const approved = grades.filter((g) => g.status === 'APPROVED');
@@ -140,14 +138,7 @@ export default function ReportCardPage() {
       {/* The sheet that gets printed */}
       <div className="print-sheet card p-8 max-w-3xl mx-auto bg-white">
         <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-4 border-b-2 border-slate-800 pb-4 mb-5">
-          <Image
-            src="/logo.png"
-            alt={t('Hamere Hiwot Sabbath School emblem', 'የሐመረ ሕይወት ሰንበት ትምህርት ቤት ዓርማ')}
-            width={84}
-            height={84}
-            className="w-[72px] h-[72px] sm:w-[84px] sm:h-[84px] rounded-full shrink-0"
-            priority
-          />
+          <TenantLogo size={84} className="rounded-full shrink-0" />
           <div className="flex-1 text-center">
             <div className="text-xs uppercase tracking-widest text-slate-500">{schoolName}</div>
             <h1 className="text-2xl font-bold text-slate-900 mt-1">{t('Student Report Card', 'የተማሪ የውጤት ካርድ')}</h1>

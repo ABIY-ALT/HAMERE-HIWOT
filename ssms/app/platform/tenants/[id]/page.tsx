@@ -7,6 +7,7 @@ import { tenantDetail } from '@/lib/platform/data';
 import { LIMIT_LABELS, LIMIT_METRICS, usagePercent } from '@/lib/billing/access';
 import { badge, day, dayTime, money } from '@/components/platform/format';
 import { TenantControls } from '@/components/platform/TenantControls';
+import { BrandingReview } from '@/components/platform/BrandingReview';
 
 export default async function TenantPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -121,12 +122,15 @@ export default async function TenantPage({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
+        <div className="space-y-4">
+        <BrandingReview tenantId={tenant.id} brand={d.brand} hasLogo={Boolean(d.branding.logo_path)} hasHero={Boolean(d.branding.hero_path)} />
         <TenantControls
           tenant={{ id: tenant.id, status: tenant.status, is_default: tenant.is_default }}
           subscription={sub ? { ...sub, plan: undefined } : null}
           plans={d.plans.map((p) => ({ id: p.id, code: p.code, name_en: p.name_en, is_free: p.is_free, price_monthly: p.price_monthly, price_annual: p.price_annual }))}
           openInvoices={d.invoices.filter((i) => i.status === 'OPEN').map((i) => ({ id: i.id, invoice_no: i.invoice_no }))}
         />
+        </div>
       </div>
     </div>
   );

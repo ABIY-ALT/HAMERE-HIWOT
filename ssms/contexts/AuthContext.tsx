@@ -59,6 +59,11 @@ export function AuthProvider({
   );
 }
 
+/** Like useAuth, but null outside the signed-in area (e.g. the exam page) */
+export function useOptionalAuth(): AuthContextValue | null {
+  return useContext(AuthContext);
+}
+
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');

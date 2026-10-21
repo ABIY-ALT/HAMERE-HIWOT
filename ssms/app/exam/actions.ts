@@ -17,7 +17,9 @@
 import { cookies } from 'next/headers';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { platformClient, tenantClient } from '@/lib/tenant/db';
-import { loadTenantAccess } from '@/lib/tenant/context';
+import { loadTenant, loadTenantAccess } from '@/lib/tenant/context';
+import { loadBranding } from '@/lib/tenant/branding';
+import { brandOf } from '@/lib/branding';
 import {
   GRACE_SECONDS,
   OFFLINE_SECONDS,
@@ -49,6 +51,8 @@ export interface TicketInfo {
   needs_key: boolean;
   /** Handed in after leaving the page this many times; 0 = off */
   leave_limit: number;
+  /** The Sunday school giving the exam (header logo and name) */
+  school: { name_en: string; name_am: string; logoUrl: string | null; color: string };
 }
 
 /** Shown after handing in; the score only when the teacher allows it. */
@@ -126,9 +130,17 @@ async function findAttempt(ticket: string) {
   if (!data) return null;
   const row = data as Row;
   const exam = row.exam as Row;
+  const [tenant, branding] = await Promise.all([loadTenant(tenantId), loadBranding(tenantId)]);
+  const look = brandOf(branding, tenant?.is_default ?? false);
   const questions = ((await db.from('exam_questions').select('*').eq('exam_id', exam.id).order('position').then((r) => r.data)) ?? []) as Row[];
   return {
     db,
+    school: {
+      name_en: tenant?.name_en ?? '',
+      name_am: tenant?.name_am || tenant?.name_en || '',
+      logoUrl: look.logoUrl,
+      color: look.color,
+    },
     attempt: {
       id: row.id as string,
       started_at: (row.started_at as string) ?? null,
@@ -178,8 +190,9 @@ async function findAttempt(ticket: string) {
 
 type Found = NonNullable<Awaited<ReturnType<typeof findAttempt>>>;
 
-function info({ attempt, exam, questions }: Found): TicketInfo {
+function info({ attempt, exam, questions, school }: Found): TicketInfo {
   return {
+    school,
     student: attempt.person?.full_name_en ?? '',
     student_am: attempt.person?.full_name_am || attempt.person?.full_name_en || '',
     title: exam.title,

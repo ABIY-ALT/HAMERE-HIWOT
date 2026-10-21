@@ -6,6 +6,8 @@
 import { authorizePlatform } from './auth';
 import { computeAccess, type PlanRow, type SubscriptionRow, type TenantAccess, type TenantStatus } from '@/lib/billing/access';
 import { MODULE_CODES } from '@/lib/billing/modules';
+import { brandOf, type Branding, type TenantBrand } from '@/lib/branding';
+import { loadBranding } from '@/lib/tenant/branding';
 import {
   billingSettings,
   invoicesOf,
@@ -69,6 +71,9 @@ export interface TenantDetail {
   audit: AuditRow[];
   users: { active: number; total: number };
   plans: PlanRow[];
+  /** Logo, colour and photo the Sunday school chose */
+  branding: Branding;
+  brand: TenantBrand;
 }
 
 export async function tenantDetail(id: string): Promise<TenantDetail | null> {
@@ -88,6 +93,7 @@ export async function tenantDetail(id: string): Promise<TenantDetail | null> {
     db.from('platform_modules').select('code').eq('is_active', true),
     loadPlans(),
   ]);
+  const branding = await loadBranding(id);
   const { plan, ...sub } = tenant.subscription ?? ({} as SubscriptionRow & { plan: PlanRow | null });
   const access = computeAccess({
     tenantStatus: tenant.status,
@@ -106,6 +112,8 @@ export async function tenantDetail(id: string): Promise<TenantDetail | null> {
     audit: (audit.data ?? []) as AuditRow[],
     users: { active: active.count ?? 0, total: total.count ?? 0 },
     plans,
+    branding,
+    brand: brandOf(branding, tenant.is_default),
   };
 }
 

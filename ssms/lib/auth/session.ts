@@ -64,6 +64,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
 
 const DEMO_TENANT: TenantContext = {
   id: DEFAULT_TENANT_ID,
+  brand: { logoUrl: '/logo.png', heroUrl: '/images/hamere.jpg', color: '#1e2770' },
   slug: 'demo',
   name_en: 'Demo Sunday School',
   name_am: 'ማሳያ ሰንበት ትምህርት ቤት',

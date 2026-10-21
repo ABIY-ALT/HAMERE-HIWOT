@@ -7,7 +7,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
+import { TenantLogo, useSchoolName } from '@/components/branding/TenantLogo';
 import {
   AlertCircle,
   BookOpen,
@@ -154,6 +154,7 @@ const lastRate = (rows: WeekRate[]) => [...rows].reverse().find((r) => r.rate !=
 export default function DashboardPage() {
   const { user } = useAuth();
   const { t, locale } = useLang();
+  const school = useSchoolName('Sallo Debre Tsehay Saint George Church — Hamere Hiwot Sunday School', 'ሳሎ ደብረ ፀሐይ ቅዱስ ጊዮርጊስ ቤ/ክ — ሐመረ ሕይወት ሰንበት ት/ቤት');
   const [mode, setMode] = useState<'loading' | 'demo' | 'live' | 'error'>('loading');
   const [error, setError] = useState('');
   const [d, setData] = useState<DashboardData | null>(null);
@@ -183,8 +184,8 @@ export default function DashboardPage() {
             className="w-12 h-12 rounded-full p-0.5 shrink-0 shadow-md hidden sm:flex items-center justify-center"
             style={{ background: 'linear-gradient(135deg, #fbbf24, #d97706)', boxShadow: '0 4px 14px rgba(251,191,36,0.35)' }}
           >
-            <div className="w-full h-full rounded-full overflow-hidden bg-slate-950 flex items-center justify-center">
-              <Image src="/logo.png" alt="ሳሎ ደብረ ፀሐይ ሐመረ ሕይወት ሰንበት ት/ቤት" width={48} height={48} className="w-full h-full object-cover" priority />
+            <div className="w-full h-full rounded-full overflow-hidden bg-white flex items-center justify-center">
+              <TenantLogo size={44} className="rounded-full" />
             </div>
           </div>
           <div>
@@ -192,7 +193,7 @@ export default function DashboardPage() {
               {t(`Welcome, ${name ?? ''}`, `እንኳን ደህና መጡ፣ ${name ?? ''}`)}
             </h1>
             <p className="text-sm text-slate-500 mt-0.5">
-              {t('Sallo Debre Tsehay Saint George Church — Hamere Hiwot Sunday School', 'ሳሎ ደብረ ፀሐይ ቅዱስ ጊዮርጊስ ቤ/ክ — ሐመረ ሕይወት ሰንበት ት/ቤት')}
+              {t(...school)}
             </p>
           </div>
         </div>

@@ -4,7 +4,7 @@
 // after sign-up: the few things to set up, each a link to its page.
 
 import Link from 'next/link';
-import { ArrowRight, Building2, CreditCard, Globe, Send, Settings, Users } from 'lucide-react';
+import { ArrowRight, Building2, CreditCard, Globe, Palette, Send, Settings, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLang } from '@/contexts/LangContext';
 import { formatEthiopianDate } from '@/lib/utils/ethiopian-calendar';
@@ -20,6 +20,11 @@ export default function WelcomePage() {
       icon: Settings, href: '/dashboard/admin/settings', show: can('SYSTEM_CONFIGURE'),
       en: ['Parish profile', 'The church, diocese, founding year and motto shown on reports and the website.'],
       am: ['የደብሩ መረጃ', 'በሪፖርቶችና በድረ-ገጹ የሚታዩ ቤተክርስቲያን፣ ሀገረ ስብከት፣ የተመሠረተበት ዓመትና መሪ ቃል።'],
+    },
+    {
+      icon: Palette, href: '/dashboard/admin/branding', show: can('SYSTEM_CONFIGURE'),
+      en: ['Logo and colours', 'Upload your logo and choose your colour — used in the menu, on receipts, report cards and your website.'],
+      am: ['አርማና ቀለሞች', 'አርማዎን ይጫኑና ቀለምዎን ይምረጡ — በምናሌው፣ በደረሰኞች፣ በውጤት ካርዶችና በድረ-ገጽዎ ይታያሉ።'],
     },
     {
       icon: Building2, href: '/dashboard/organization/structure', show: can('GOVERNANCE_VIEW'),
