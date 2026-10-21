@@ -26,6 +26,8 @@ export const env = {
   telegramBotToken: () => cleanEnv(process.env.TELEGRAM_BOT_TOKEN),
   /** The site's public address, for links in Telegram messages */
   siteUrl: () => cleanEnv(process.env.SITE_URL),
+  /** Shared with the outside timer that calls /api/cron once a day; without it the daily jobs do not run */
+  cronSecret: () => cleanEnv(process.env.CRON_SECRET),
 };
 
 /** Like the getters above, but throws a clear error when the setting is missing. */

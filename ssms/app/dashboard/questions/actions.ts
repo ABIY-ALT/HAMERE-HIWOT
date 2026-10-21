@@ -3,6 +3,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Members' questions (migration 033): asked in the Telegram bot ("✉️ Ask a
 // department"), answered here; the answer goes back to the asker's chat.
+// From migration 038 also from the public website's contact form: no chat,
+// a phone number instead — the department calls them back.
 //   TASK_REPORT     their own units' questions: answer, close
 //   TASK_ASSIGN     every unit's
 //   AUDIT_VIEW_ALL  read
@@ -21,6 +23,9 @@ export interface MemberQuestion {
   id: string;
   unit_id: string;
   asker: string;
+  /** Asked on the public website: the number to call back (no Telegram chat) */
+  phone: string;
+  source: 'BOT' | 'WEB';
   question: string;
   status: 'OPEN' | 'ANSWERED' | 'CLOSED';
   answer: string;
@@ -71,6 +76,8 @@ export async function loadQuestions(): Promise<Loaded<QuestionsData>> {
         id: r.id as string,
         unit_id: r.unit_id as string,
         asker: (r.asker_name as string) ?? '',
+        phone: (r.contact_phone as string) ?? '',
+        source: (r.source === 'WEB' ? 'WEB' : 'BOT') as MemberQuestion['source'],
         question: r.question as string,
         status: r.status as MemberQuestion['status'],
         answer: (r.answer as string) ?? '',
@@ -92,8 +99,8 @@ async function question(db: Awaited<ReturnType<typeof authorize>>['db'], me: Ses
   return q;
 }
 
-/** Answer (or correct an answer); the answer is sent to the asker in the bot. */
-export async function answerQuestion(id: string, answer: string): Promise<{ ok: true; delivered: boolean } | { ok: false; error: string }> {
+/** Answer (or correct an answer); the answer is sent to the asker in the bot (website questions: kept only — call them back). */
+export async function answerQuestion(id: string, answer: string): Promise<{ ok: true; delivered: boolean; web: boolean } | { ok: false; error: string }> {
   try {
     const { me, db } = await authorize('TASK_ASSIGN', 'TASK_REPORT');
     const text = z.string().trim().min(2, 'Write the answer').max(3000).parse(answer);
@@ -103,7 +110,8 @@ export async function answerQuestion(id: string, answer: string): Promise<{ ok: 
       .eq('id', q.id as string)
       .then(check);
     let delivered = false;
-    if (telegramConfigured()) {
+    const web = !q.chat_id;
+    if (telegramConfigured() && !web) {
       const { data: unit } = await db.from('organization_units').select('name_en, name_am').eq('id', q.unit_id as string).maybeSingle();
       const u = unit as { name_en: string; name_am: string | null } | null;
       const html =
@@ -112,7 +120,7 @@ export async function answerQuestion(id: string, answer: string): Promise<{ ok: 
         `💬 ${escapeHtml(text)}`;
       delivered = (await sendTelegram(Number(q.chat_id), html)) === 'ok';
     }
-    return { ok: true, delivered };
+    return { ok: true, delivered, web };
   } catch (e) {
     return { ok: false, error: missing(errorMessage(e)) };
   }

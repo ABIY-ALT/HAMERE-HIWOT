@@ -126,6 +126,7 @@ function QuestionCard({ q, unit, canAnswer, onDone }: { q: MemberQuestion; unit:
     setBusy(false);
     if (!res.ok) return onDone(res.error, 'error');
     setOpen(false);
+    if (res.web) return onDone(t(`Answer saved — they asked on the website, so call them back on ${q.phone}`, `መልሱ ተቀምጧል — በድረ-ገጹ ስለጠየቁ በ${q.phone} ደውለው ይንገሯቸው`));
     onDone(res.delivered ? t('Answered — sent to them in the bot', 'ተመልሷል — በቦቱ ደርሷቸዋል') : t('Answer saved, but the bot could not deliver it (they may have stopped the bot)', 'መልሱ ተቀምጧል፤ ቦቱ ግን ማድረስ አልቻለም (ቦቱን አቁመው ሊሆን ይችላል)'));
   };
   const close = async () => {
@@ -141,7 +142,14 @@ function QuestionCard({ q, unit, canAnswer, onDone }: { q: MemberQuestion; unit:
     <div className="card p-4 space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
         <span>
-          <b className="text-slate-800">{q.asker || '—'}</b> → {unit} · {formatEthiopianDate(q.created_at.slice(0, 10), locale)}
+          <b className="text-slate-800">{q.asker || '—'}</b>
+          {q.source === 'WEB' && (
+            <>
+              {' '}<span className="badge badge-info">{t('Website', 'ድረ-ገጽ')}</span>
+              {q.phone && <> · <a href={`tel:${q.phone}`} className="text-blue-600 hover:underline font-mono">{q.phone}</a></>}
+            </>
+          )}{' '}
+          → {unit} · {formatEthiopianDate(q.created_at.slice(0, 10), locale)}
         </span>
         {q.status === 'ANSWERED' && <span className="inline-flex items-center gap-1 text-emerald-700"><CheckCircle2 size={13} /> {t('Answered', 'ተመልሷል')}</span>}
         {q.status === 'CLOSED' && <span className="inline-flex items-center gap-1 text-slate-400"><XCircle size={13} /> {t('Closed', 'ተዘግቷል')}</span>}

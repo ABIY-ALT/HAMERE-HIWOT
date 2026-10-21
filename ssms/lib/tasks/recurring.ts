@@ -1,11 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Repeating tasks (server only — never import from a client component).
 //
-// There is no scheduler, so the next task of a series is given the first time
-// anyone loads the Tasks page or the notification bell on or after its issue
-// day (due date minus ISSUE_BEFORE). (series_id, due_date) is unique, so two
-// people loading at once cannot create it twice. If a whole period passed
-// with nobody signed in, that period is skipped rather than given late.
+// The next task of a series is given on its issue day (due date minus
+// ISSUE_BEFORE) by the daily automation (lib/automation/jobs), or earlier the
+// first time anyone loads the Tasks page or the notification bell that day.
+// (series_id, due_date) is unique, so two of them at once cannot create it
+// twice. If a whole period passed without either (no daily timer set up and
+// nobody signed in), that period is skipped rather than given late.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -32,14 +33,15 @@ type SeriesRow = {
 
 const LONGEST_LEAD = Math.max(...Object.values(ISSUE_BEFORE));
 
-/** Gives every repeating task whose issue day has come. Quietly does nothing before migration 020. */
-export async function issueRepeatingTasks(db: SupabaseClient): Promise<void> {
+/** Gives every repeating task whose issue day has come; returns how many were given. Quietly does nothing before migration 020. */
+export async function issueRepeatingTasks(db: SupabaseClient): Promise<number> {
   const today = todayIso();
   const { data, error } = await db.from('task_series')
     .select('id, title, details, from_unit_id, unit_id, source, meeting_title, meeting_date, decision_ref, priority, frequency, next_due, created_by')
     .eq('is_active', true)
     .lte('next_due', addDays(today, LONGEST_LEAD));
-  if (error || !data?.length) return;
+  if (error || !data?.length) return 0;
+  let given = 0;
 
   for (const s of data as SeriesRow[]) {
     const lead = ISSUE_BEFORE[s.frequency];
@@ -74,10 +76,12 @@ export async function issueRepeatingTasks(db: SupabaseClient): Promise<void> {
     await db.from('task_series').update({ next_due: nextDue(due, s.frequency) }).eq('id', s.id).eq('next_due', s.next_due);
 
     for (const row of (created ?? []) as { id: string; task_no: string }[]) {
+      given += 1;
       notifyLater(
         { units: { ids: [s.unit_id], holding: 'TASK_REPORT' } },
         { title: 'አዲስ ተግባር · New task', body: `${row.task_no} — ${s.title} · ${due}`, url: '/dashboard/tasks', tag: `task-${row.id}` }
       );
     }
   }
+  return given;
 }

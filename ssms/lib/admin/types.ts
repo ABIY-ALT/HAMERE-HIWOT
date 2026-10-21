@@ -53,6 +53,9 @@ export interface ParishSettings {
   motto: string;
 }
 
+/** system_settings key of the parish profile (Administration → Settings; also the public website) */
+export const PARISH_SETTINGS_KEY = 'parish_profile';
+
 export const DEFAULT_PARISH_SETTINGS: ParishSettings = {
   parish_name_en: 'Sallo Debre Tsehay Saint George Church Hamere Hiwot Sabbath School',
   parish_name_am: 'ሳሎ ደብረ ፀሐይ ቅዱስ ጊዮርጊስ ቤተክርስቲያን ሐመረ ሕይወት ሰንበት ትምህርት ቤት',

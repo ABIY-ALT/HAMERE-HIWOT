@@ -13,8 +13,10 @@ import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage } from '@/lib/auth/authorize';
 import { isValidPhone, normalizePhone, phoneToAuthEmail } from '@/lib/auth/phone';
 import { provisionSystemUser } from '@/lib/admin/provision';
+import { refreshPublicSite } from '@/lib/site/cache';
 import {
   DEFAULT_PARISH_SETTINGS,
+  PARISH_SETTINGS_KEY as SETTINGS_KEY,
   type ActionResult,
   type AdminPermissionRow,
   type AdminRoleRow,
@@ -311,7 +313,6 @@ export async function setRolePermissions(roleId: string, codes: string[]): Promi
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 
-const SETTINGS_KEY = 'parish_profile';
 
 export async function loadSettings(): Promise<Loaded<ParishSettings>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
@@ -341,6 +342,7 @@ export async function saveSettings(input: ParishSettings): Promise<ActionResult>
     await db.from('system_settings')
       .upsert({ key: SETTINGS_KEY, value, updated_by: me.systemUser.id })
       .then(check);
+    refreshPublicSite();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: message(e) };

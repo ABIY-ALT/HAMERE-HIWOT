@@ -99,7 +99,9 @@ export type PermissionCode =
   | 'HR_MANAGE'
   // Tasks (Executive Committee → departments)
   | 'TASK_ASSIGN'
-  | 'TASK_REPORT';
+  | 'TASK_REPORT'
+  // Public website: news and gallery (migration 039)
+  | 'WEBSITE_MANAGE';
 
 // ── Organization ──────────────────────────────────────────────────────────────
 

@@ -31,6 +31,7 @@ import {
   ClipboardCheck,
   CheckSquare,
   QrCode,
+  Globe,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -310,6 +311,16 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
     sectionAm: 'ስርዓት',
     items: [
       {
+        labelEn: 'Public Website',
+        labelAm: 'የሕዝብ ድረ-ገጽ',
+        icon: Globe,
+        permissions: ['WEBSITE_MANAGE'],
+        children: [
+          { labelEn: 'News & Announcements', labelAm: 'ዜናና ማስታወቂያ', href: '/dashboard/website/news', permissions: ['WEBSITE_MANAGE'] },
+          { labelEn: 'Photo Gallery', labelAm: 'የፎቶ ማዕከል', href: '/dashboard/website/gallery', permissions: ['WEBSITE_MANAGE'] },
+        ],
+      },
+      {
         labelEn: 'Administration',
         labelAm: 'ስርዓት አስተዳደር',
         icon: Settings,
@@ -320,6 +331,7 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
           { labelEn: 'Permissions', labelAm: 'ፈቃዶች', href: '/dashboard/admin/permissions', permissions: ['ROLE_MANAGE'] },
           { labelEn: 'System Settings', labelAm: 'የስርዓት ቅንብሮች', href: '/dashboard/admin/settings', permissions: ['SYSTEM_CONFIGURE'] },
           { labelEn: 'Telegram Bot', labelAm: 'የቴሌግራም ቦት', href: '/dashboard/admin/telegram', permissions: ['SYSTEM_CONFIGURE', 'MEMBER_UPDATE', 'STUDENT_UPDATE'] },
+          { labelEn: 'Automation', labelAm: 'አውቶሜሽን', href: '/dashboard/admin/automation', permissions: ['SYSTEM_CONFIGURE'] },
         ],
       },
     ],

@@ -678,6 +678,8 @@ export const MOCK_PERMISSIONS: Permission[] = [
   // Tasks
   { id: 'perm-tk1', code: 'TASK_ASSIGN', name_en: 'Give Tasks to Departments', name_am: 'ለክፍሎች ተግባር መስጠት', description_en: null, category: 'GOVERNANCE', is_active: true },
   { id: 'perm-tk2', code: 'TASK_REPORT', name_en: 'Report on Department Tasks', name_am: 'በክፍሉ ተግባራት ላይ ሪፖርት ማቅረብ', description_en: null, category: 'GOVERNANCE', is_active: true },
+  // Public website
+  { id: 'perm-ws1', code: 'WEBSITE_MANAGE', name_en: 'Manage the Public Website (news, gallery)', name_am: 'የሕዝብ ድረ-ገጹን ማስተዳደር (ዜና፣ የፎቶ ማዕከል)', description_en: null, category: 'ADMIN', is_active: true },
 ];
 
 // ── Role Permissions ──────────────────────────────────────────────────────────

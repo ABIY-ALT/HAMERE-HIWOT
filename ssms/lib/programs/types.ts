@@ -22,6 +22,8 @@ export interface Program {
   expected: number | null;
   actual: number | null;
   description: string;
+  /** Shown on the public website (/events), and its day-before reminder goes to everyone on the bot (038) */
+  is_public: boolean;
   outcome: string;
   status: ProgramStatus;
   created_by_id: string | null;

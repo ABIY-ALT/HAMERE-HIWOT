@@ -37,7 +37,7 @@ export function GET() {
     service: process.env.RENDER_SERVICE_ID ?? 'not on Render',
     // Names only (never values) of settings that look related — catches typos in setting names
     similarSettingNames: Object.keys(process.env)
-      .filter((k) => /SUPA|VAPID|MOCK|NEXT_PUBLIC|ANON|SERVICE_ROLE|TELEGRAM|SITE_URL/i.test(k))
+      .filter((k) => /SUPA|VAPID|MOCK|NEXT_PUBLIC|ANON|SERVICE_ROLE|TELEGRAM|SITE_URL|CRON/i.test(k))
       .map((k) => JSON.stringify(k))
       .sort(),
     built: {
@@ -53,6 +53,7 @@ export function GET() {
       VAPID_PUBLIC_KEY: inspect(runtime('VAPID_PUBLIC_KEY'), (v) => /^[A-Za-z0-9_-]{80,}$/.test(v)),
       VAPID_PRIVATE_KEY: inspect(runtime('VAPID_PRIVATE_KEY'), (v) => /^[A-Za-z0-9_-]{40,}$/.test(v)),
       VAPID_SUBJECT: inspect(runtime('VAPID_SUBJECT'), (v) => /^(https:|mailto:)/.test(v)),
+      CRON_SECRET: inspect(runtime('CRON_SECRET'), (v) => v.length >= 16),
     },
   };
   return NextResponse.json(body, { headers: { 'Cache-Control': 'no-store' } });

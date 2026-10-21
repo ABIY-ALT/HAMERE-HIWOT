@@ -30,19 +30,19 @@ function demoPrograms(): Program[] {
     ...MOCK_PROGRAMS.map((p) => ({
       id: p.id, title_en: p.title_en, title_am: p.title_am, type: typeOf(p.type), unit_id: null, unit: p.dept, unit_am: p.dept,
       start_date: p.date, start_time: p.time, end_date: null, location: p.location, coordinator_id: null, coordinator: p.coordinator,
-      expected: p.participants, actual: null, description: '', outcome: '', status: statusOf(p.status), created_by_id: null,
+      expected: p.participants, actual: null, description: '', is_public: false, outcome: '', status: statusOf(p.status), created_by_id: null,
     })),
     ...MOCK_EVENTS.map((e) => ({
       id: e.id, title_en: e.title_en, title_am: e.title_am, type: typeOf(e.type), unit_id: null, unit: e.responsible, unit_am: e.responsible,
       start_date: e.date, start_time: '', end_date: null, location: '', coordinator_id: null, coordinator: '',
-      expected: null, actual: null, description: '', outcome: '', status: statusOf(e.status), created_by_id: null,
+      expected: null, actual: null, description: '', is_public: false, outcome: '', status: statusOf(e.status), created_by_id: null,
     })),
   ];
 }
 
 const EMPTY_FORM: ProgramInput = {
   title_en: '', title_am: '', type: 'ASSEMBLY', unit_id: '', start_date: '', start_time: '', end_date: '',
-  location: '', coordinator_id: '', expected: '', description: '',
+  location: '', coordinator_id: '', expected: '', description: '', is_public: false,
 };
 
 export function ProgramsPage({
@@ -145,6 +145,7 @@ export function ProgramsPage({
       title_en: p.title_en, title_am: p.title_am === p.title_en ? '' : p.title_am, type: p.type, unit_id: p.unit_id ?? '',
       start_date: p.start_date, start_time: p.start_time, end_date: p.end_date ?? '', location: p.location,
       coordinator_id: p.coordinator_id ?? '', expected: p.expected === null ? '' : String(p.expected), description: p.description,
+      is_public: p.is_public,
     });
     setFormError('');
     setFormOpen(true);
@@ -171,7 +172,7 @@ export function ProgramsPage({
         title_en: form.title_en, title_am: form.title_am || form.title_en, type: form.type, unit_id: form.unit_id || null,
         unit: unit?.name_en ?? '', unit_am: unit?.name_am ?? '', start_date: form.start_date, start_time: form.start_time,
         end_date: form.end_date || null, location: form.location, coordinator_id: form.coordinator_id || null, coordinator: coord?.name ?? '',
-        expected: form.expected === '' ? null : Number(form.expected), description: form.description,
+        expected: form.expected === '' ? null : Number(form.expected), description: form.description, is_public: form.is_public,
       };
       setPrograms((list) =>
         editingId
@@ -325,6 +326,7 @@ export function ProgramsPage({
               {selected.location && <Line label={t('Place', 'ቦታ')} value={selected.location} />}
               {selected.unit && <Line label={t('Responsible department', 'ኃላፊ ክፍል')} value={locale === 'am' ? selected.unit_am : selected.unit} />}
               {selected.coordinator && <Line label={t('Coordinator', 'አስተባባሪ')} value={selected.coordinator} />}
+              <Line label={t('Public website', 'የሕዝብ ድረ-ገጽ')} value={selected.is_public ? t('Shown under Events', 'በመርሐ ግብሮች ስር ይታያል') : t('Not shown', 'አይታይም')} />
               <Line label={t('Participants', 'ተሳታፊዎች')} value={`${t('expected', 'የሚጠበቁ')} ${selected.expected ?? '—'}${selected.actual !== null ? ` · ${t('attended', 'የተገኙ')} ${selected.actual}` : ''}`} />
             </dl>
             {selected.description && <p className="text-xs text-slate-700 whitespace-pre-wrap">{selected.description}</p>}
@@ -421,6 +423,18 @@ export function ProgramsPage({
           <Field label={t('Description / program outline', 'መግለጫ / የፕሮግራም ዝርዝር')}>
             <textarea rows={3} value={form.description} onChange={set('description')} className="form-input text-sm" />
           </Field>
+          <label className="flex items-start gap-2 text-xs text-slate-700 cursor-pointer">
+            <input type="checkbox" checked={form.is_public} onChange={(e) => setForm((f) => ({ ...f, is_public: e.target.checked }))} className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              <b>{t('Show on the public website', 'በሕዝብ ድረ-ገጽ ላይ አሳይ')}</b>
+              <span className="block text-slate-500">
+                {t(
+                  'Anyone can see it under Events, and everyone connected to the bot gets a reminder the day before. Leave off for internal meetings.',
+                  'ማንም ሰው በ«መርሐ ግብሮች» ስር ያየዋል፤ ቦቱን ያገናኙ ሁሉ አንድ ቀን በፊት ማስታወሻ ይደርሳቸዋል። ለውስጥ ስብሰባዎች አይምረጡ።'
+                )}
+              </span>
+            </span>
+          </label>
           <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
             <button type="button" onClick={() => setFormOpen(false)} className="btn btn-secondary text-xs">{t('Cancel', 'ሰርዝ')}</button>
             <button type="submit" disabled={busy} className="btn btn-primary text-xs disabled:opacity-60">{busy ? t('Saving…', 'በመመዝገብ ላይ…') : t('Save', 'መዝግብ')}</button>

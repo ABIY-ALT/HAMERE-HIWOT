@@ -13,6 +13,7 @@ import { nonMemberIds } from '@/lib/members/membership';
 import type { SessionUser } from '@/lib/auth/session';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import type { Program, ProgramOptions, ProgramStatus, ProgramType } from '@/lib/programs/types';
+import { refreshPublicSite } from '@/lib/site/cache';
 
 type Row = Record<string, unknown> & { id: string };
 type Db = Awaited<ReturnType<typeof authorize>>['db'];
@@ -56,6 +57,7 @@ export async function loadPrograms(): Promise<Loaded<{ programs: Program[] } & P
         expected: (p.expected_participants as number) ?? null,
         actual: (p.actual_participants as number) ?? null,
         description: (p.description as string) ?? '',
+        is_public: Boolean(p.is_public),
         outcome: (p.outcome_notes as string) ?? '',
         status: p.status as ProgramStatus,
         created_by_id: (p.created_by as string) ?? null,
@@ -92,6 +94,7 @@ const ProgramSchema = z
     coordinator_id: z.string(),
     expected: count,
     description: z.string().trim(),
+    is_public: z.boolean(),
   })
   .refine((p) => !p.end_date || p.end_date >= p.start_date, 'The end date cannot be before the start date');
 
@@ -110,6 +113,7 @@ function fields(p: z.output<typeof ProgramSchema>) {
     coordinator_person_id: p.coordinator_id || null,
     expected_participants: p.expected === '' ? null : p.expected,
     description: p.description || null,
+    is_public: p.is_public,
   };
 }
 
@@ -128,13 +132,23 @@ export async function saveProgram(id: string | null, input: ProgramInput): Promi
   try {
     const { me, db } = await authorize('PROGRAM_CREATE', 'PROGRAM_MANAGE');
     const p = ProgramSchema.parse(input);
-    if (id) {
-      const row = await editable(db, me, id);
-      if (row.status === 'COMPLETED' || row.status === 'CANCELLED') throw new Error('A completed or cancelled program cannot be edited');
-      await db.from('programs').update(fields(p)).eq('id', id).then(check);
-    } else {
-      await db.from('programs').insert({ ...fields(p), status: 'PLANNED', created_by: me.systemUser.id }).then(check);
-    }
+    const save = async (values: Partial<ReturnType<typeof fields>>) => {
+      if (id) {
+        const row = await editable(db, me, id);
+        if (row.status === 'COMPLETED' || row.status === 'CANCELLED') throw new Error('A completed or cancelled program cannot be edited');
+        return db.from('programs').update(values).eq('id', id);
+      }
+      return db.from('programs').insert({ ...values, status: 'PLANNED', created_by: me.systemUser.id });
+    };
+    const res = await save(fields(p));
+    // Before migration 038 there is no is_public: save the rest, and say so only if it was asked for
+    if (res.error && /is_public/.test(res.error.message)) {
+      const rest: Partial<ReturnType<typeof fields>> = fields(p);
+      delete rest.is_public;
+      await save(rest).then(check);
+      if (p.is_public) throw new Error('Saved, but “Show on the public website” needs database migration 038 first');
+    } else check(res);
+    refreshPublicSite();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
@@ -164,6 +178,7 @@ export async function setProgramStatus(
     } else {
       throw new Error('Invalid status');
     }
+    refreshPublicSite();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };

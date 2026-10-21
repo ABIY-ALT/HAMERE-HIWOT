@@ -19,6 +19,7 @@ import { botUsername, chatsOf, escapeHtml, newLinkCode, sendTelegram, telegramAp
 import { refreshChat, tellUpdated } from '@/lib/telegram/links';
 import { nonMemberIds } from '@/lib/members/membership';
 import { ABOUT_KEY, MAX_TOPICS, type AboutTopic } from '@/lib/telegram/about-topics';
+import { refreshPublicSite } from '@/lib/site/cache';
 
 const MIGRATION_024 = 'Run database migration 024 (Telegram) first';
 const missing = (m: string) => (/telegram_/.test(m) && /does not exist|schema cache/.test(m) ? MIGRATION_024 : m);
@@ -419,6 +420,8 @@ export async function saveBotAbout(topics: z.input<typeof TopicSchema>[]): Promi
     await db.from('system_settings')
       .upsert({ key: ABOUT_KEY, value: { topics: clean }, updated_by: me.systemUser.id, updated_at: new Date().toISOString() }, { onConflict: 'key' })
       .then(check);
+    // The same topics are the public website's About page
+    refreshPublicSite();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };

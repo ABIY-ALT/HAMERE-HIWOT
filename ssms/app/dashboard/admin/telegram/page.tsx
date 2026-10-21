@@ -234,8 +234,8 @@ function AboutEditor({ notify }: { notify: (kind: 'success' | 'error', text: str
         </h2>
         <p className="text-xs text-slate-500 mt-0.5">
           {t(
-            'Anyone who finds the bot can read these — connected or not. Each topic is a button. A topic without text is not shown.',
-            'ቦቱን ያገኘ ማንኛውም ሰው ያነባቸዋል — የተገናኘም ያልተገናኘም። እያንዳንዱ ርዕስ አዝራር ነው። ጽሑፍ የሌለው ርዕስ አይታይም።'
+            'Anyone who finds the bot can read these — connected or not. Each topic is a button. A topic without text is not shown. The same topics are the “About us” page of the public website.',
+            'ቦቱን ያገኘ ማንኛውም ሰው ያነባቸዋል — የተገናኘም ያልተገናኘም። እያንዳንዱ ርዕስ አዝራር ነው። ጽሑፍ የሌለው ርዕስ አይታይም። እነዚሁ ርዕሶች የሕዝብ ድረ-ገጹ «ስለ እኛ» ገጽ ናቸው።'
           )}
         </p>
       </div>
