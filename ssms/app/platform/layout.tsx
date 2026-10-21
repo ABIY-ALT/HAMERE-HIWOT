@@ -9,6 +9,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getPlatformAdmin } from '@/lib/platform/auth';
+import { isSupabaseEnabled } from '@/lib/supabase/config';
+import { createSessionClient } from '@/lib/supabase/server';
 import { PlatformSignOut } from '@/components/platform/PlatformSignOut';
 
 export const metadata: Metadata = { title: 'Platform administration' };
@@ -26,7 +28,11 @@ const NAV = [
 
 export default async function PlatformLayout({ children }: { children: React.ReactNode }) {
   const admin = await getPlatformAdmin();
-  if (!admin) redirect('/login');
+  if (!admin) {
+    // Not signed in: sign in and come back here. Signed in but not a platform admin: their own dashboard.
+    const signedIn = isSupabaseEnabled() && Boolean((await (await createSessionClient()).auth.getUser()).data.user);
+    redirect(signedIn ? '/dashboard' : '/login?next=/platform');
+  }
 
   return (
     <div className="min-h-screen bg-[var(--surface-2)]">

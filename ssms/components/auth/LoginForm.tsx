@@ -28,7 +28,10 @@ export default function LoginForm() {
       () => ({ ok: false, error: 'SERVER' }) as const
     );
     if (result.ok) {
-      router.push(result.to);
+      // Back to the page that asked for sign-in (e.g. /platform) — only addresses on this site
+      const next = new URLSearchParams(window.location.search).get('next');
+      const back = next && /^\/(?![/\\])/.test(next) ? next : null;
+      router.push(back && result.to !== '/set-password' ? back : result.to);
       router.refresh();
       return;
     }

@@ -23,6 +23,7 @@ import { DEFAULT_TENANT_ID, platformClient, tenantClient } from '@/lib/tenant/db
 import { TENANT_COLUMNS, loadTenantContext, type TenantContext, type TenantInfo } from '@/lib/tenant/context';
 import { MODULE_CODES, permissionsForModules } from '@/lib/billing/modules';
 import { readOnlyPermissions } from '@/lib/billing/access';
+import { isPlatformAdmin } from '@/lib/platform/auth';
 import {
   MOCK_PERSONS,
   MOCK_SYSTEM_USERS,
@@ -53,6 +54,8 @@ export interface SessionUser {
   memberships: Membership[];
   /** Signed in with a temporary PIN / password: must choose their own first (lib/auth/temp-password, /set-password) */
   mustChangePassword: boolean;
+  /** Also a platform administrator (/platform) — shown as a link in the user menu */
+  platformAdmin?: boolean;
 }
 
 export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
@@ -140,6 +143,7 @@ async function loadSupabaseUser(): Promise<SessionUser | null> {
   if (accounts.length === 0) return null;
   // app_metadata.temp_password (lib/auth/temp-password) — only the server can set it
   const mustChangePassword = authUser.app_metadata?.temp_password === true;
+  const platformAdmin = await isPlatformAdmin(authUser.id).catch(() => false);
   const chosenTenant = (await cookies()).get(TENANT_COOKIE)?.value;
   const account = accounts.find((a) => a.tenant_id === chosenTenant) ?? accounts[0];
   const tenant = await loadTenantContext(account.tenant_id);
@@ -183,6 +187,7 @@ async function loadSupabaseUser(): Promise<SessionUser | null> {
       tenant,
       memberships,
       mustChangePassword,
+      platformAdmin,
     };
   }
 
@@ -223,5 +228,6 @@ async function loadSupabaseUser(): Promise<SessionUser | null> {
     tenant,
     memberships,
     mustChangePassword,
+    platformAdmin,
   };
 }

@@ -380,6 +380,15 @@ export default function Header({
               <User size={15} className="text-slate-500" />
               {t('My Profile', 'የእኔ መገለጫ')}
             </Link>
+            {user?.platformAdmin && (
+              <a
+                href="/platform"
+                className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                <Building2 size={15} className="text-slate-500" />
+                {t('Platform administration', 'የመድረክ አስተዳደር')}
+              </a>
+            )}
             {can('SYSTEM_CONFIGURE') && (
               <Link
                 href="/dashboard/admin/settings"

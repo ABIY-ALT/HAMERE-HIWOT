@@ -319,6 +319,8 @@ export interface AuthUser {
   tenant?: ClientTenant;
   /** Every Sunday school this login has an account in (more than one → a switcher) */
   memberships?: { tenantId: string; slug: string; name_en: string; name_am: string | null }[];
+  /** Also a platform administrator: the user menu links to /platform */
+  platformAdmin?: boolean;
 }
 
 export interface ClientTenant {
