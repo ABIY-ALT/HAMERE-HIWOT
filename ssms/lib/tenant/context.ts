@@ -63,14 +63,19 @@ export const defaultTenant = cache(async (): Promise<TenantInfo | null> => {
 
 export const loadTenantAccess = cache(async (tenantId: string): Promise<TenantAccess> => {
   const db = platformClient();
-  const [{ data: tenant }, { data: sub }, { data: modules }] = await Promise.all([
+  const [{ data: tenant }, { data: sub, error: subError }, { data: modules }] = await Promise.all([
     db.from('tenants').select('status').eq('id', tenantId).maybeSingle(),
     db.from('subscriptions').select('*, plan:plans!subscriptions_plan_id_fkey(*)').eq('tenant_id', tenantId).maybeSingle(),
     db.from('platform_modules').select('code').eq('is_active', true),
   ]);
+  const tenantStatus = (tenant?.status as TenantStatus | undefined) ?? 'DEACTIVATED';
+  // Between migrations 040 and 041 there are no subscriptions yet: nobody is locked out meanwhile
+  if (subError?.code === 'PGRST205' && tenantStatus === 'ACTIVE') {
+    return { ...computeAccess({ tenantStatus, subscription: null, plan: null, activeModules: new Set(), now: new Date() }), mode: 'full', reason: null, notice: null, modules: [...MODULE_CODES] };
+  }
   const { plan, ...subscription } = (sub ?? {}) as SubscriptionRow & { plan?: PlanRow | null };
   return computeAccess({
-    tenantStatus: ((tenant?.status as TenantStatus | undefined) ?? 'DEACTIVATED'),
+    tenantStatus,
     subscription: sub ? (subscription as SubscriptionRow) : null,
     plan: plan ?? null,
     // Before migration 041 there are no modules: everything stays on
