@@ -450,6 +450,15 @@ export async function loadNotifications(): Promise<Loaded<Notice[]>> {
           am: `${n} የተግባር ሪፖርት(ዎች) ግምገማዎን ይጠብቃሉ`,
         }))
       );
+    } else if (can('TASK_REPORT') && myUnits.length) {
+      // A department reviews the reports on its own internal tasks (tasks/actions followsUp)
+      sources.push(() =>
+        counted('tasks', (q) => q.eq('status', 'SUBMITTED').eq('internal', true).in('unit_id', myUnits), 'updated_at', (n) => ({
+          id: 'task-reports-own', kind: 'alert', href: '/dashboard/tasks',
+          en: `${n} report${n === 1 ? '' : 's'} on your department's own tasks ${plural(n, 'is', 'are')} waiting for your review`,
+          am: `${n} በክፍልዎ የውስጥ ተግባራት ላይ ሪፖርት(ዎች) ግምገማዎን ይጠብቃሉ`,
+        }))
+      );
     }
     if (can('CHOIR_MANAGE')) {
       sources.push(() =>

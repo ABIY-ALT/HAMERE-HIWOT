@@ -39,7 +39,7 @@ function configure() {
 
 /** Active system users holding any of the permissions. */
 export async function usersWithPermission(db: SupabaseClient, ...codes: PermissionCode[]): Promise<string[]> {
-  const { data: perms } = await db.from('permissions').select('id').in('code', codes);
+  const { data: perms } = await db.from('permissions').select('id').in('code', codes).eq('is_active', true);
   if (!perms?.length) return [];
   const { data: grants } = await db.from('role_permissions').select('role_id').in('permission_id', perms.map((p) => p.id));
   if (!grants?.length) return [];
@@ -75,6 +75,13 @@ export async function usersInUnits(db: SupabaseClient, unitIds: string[], holdin
         .map((r) => r.system_user_id)
     ),
   ];
+}
+
+/** Only accounts that are switched on (a disabled account keeps its role assignments). */
+async function activeOnly(db: SupabaseClient, userIds: string[]): Promise<string[]> {
+  if (userIds.length === 0) return [];
+  const { data } = await db.from('system_users').select('id').in('id', [...new Set(userIds)]).eq('is_active', true);
+  return ((data ?? []) as { id: string }[]).map((r) => r.id);
 }
 
 /** Sends to all devices of the given users; forgets devices the push service has dropped. */
@@ -127,10 +134,11 @@ export function notifyLater(
         if (to.permissions?.length) for (const id of await usersWithPermission(db, ...to.permissions)) ids.add(id);
         if (to.units) for (const id of await usersInUnits(db, to.units.ids, to.units.holding)) ids.add(id);
         if (to.except) ids.delete(to.except);
-        await pushToUsers(db, [...ids], message);
+        const recipients = await activeOnly(db, [...ids]);
+        await pushToUsers(db, recipients, message);
         if (bot) {
           const text = `<b>${escapeHtml(message.title)}</b>\n${escapeHtml(message.body)}\n${siteUrl()}${message.url}`;
-          await telegramToPersons(db, await personsOfUsers(db, [...ids]), text);
+          await telegramToPersons(db, await personsOfUsers(db, recipients), text);
         }
       });
     } catch (e) {

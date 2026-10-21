@@ -15,6 +15,7 @@ import { isValidPhone, normalizePhone, phoneToAuthEmail } from '@/lib/auth/phone
 import { provisionSystemUser } from '@/lib/admin/provision';
 import { NOT_DELIVERED, loginPowers, logReset, newTemporary, officeTargets, pinOnly, sendTemporary, setTemporaryPassword } from '@/lib/auth/temp-password';
 import { existingLoginForPhone, setLoginBanned } from '@/lib/tenant/accounts';
+import { assertCanEditRole, assertCanGrantRole, assertCanManageUser } from '@/lib/auth/grant';
 import { refreshPublicSite } from '@/lib/site/cache';
 import {
   DEFAULT_PARISH_SETTINGS,
@@ -151,6 +152,7 @@ export async function createUser(input: z.input<typeof CreateUserSchema>): Promi
   try {
     const { me, db } = await authorize('USER_MANAGE');
     const data = CreateUserSchema.parse(input);
+    await assertCanGrantRole(db, me.systemUser.id, data.roleId);
     await provisionSystemUser(db, {
       ...data,
       email: phoneToAuthEmail(data.phone),
@@ -176,6 +178,7 @@ export async function setUserActive(systemUserId: string, active: boolean): Prom
   try {
     const { me, db } = await authorize('USER_MANAGE');
     if (me.systemUser.id === systemUserId) throw new Error('You cannot disable your own account');
+    await assertCanManageUser(db, me.systemUser.id, systemUserId);
 
     const authUserId = await authUserIdFor(db, systemUserId);
     await db.from('system_users').update({ is_active: active }).eq('id', systemUserId).then(check);
@@ -191,6 +194,7 @@ export async function resetUserPassword(systemUserId: string, password: string):
   try {
     const { me, db } = await authorize('USER_MANAGE');
     if (password.length < 8) throw new Error('Password must be at least 8 characters');
+    await assertCanManageUser(db, me.systemUser.id, systemUserId);
     const authUserId = await authUserIdFor(db, systemUserId);
     // Temporary: they choose their own at the next sign-in
     await setTemporaryPassword(authUserId, password);
@@ -233,6 +237,8 @@ export async function changeUserRole(
     const { me, db } = await authorize('USER_MANAGE');
     if (me.systemUser.id === systemUserId) throw new Error('You cannot change your own role');
     if (!roleId || !unitId) throw new Error('Choose a role and a unit');
+    await assertCanManageUser(db, me.systemUser.id, systemUserId);
+    await assertCanGrantRole(db, me.systemUser.id, roleId);
 
     await db.from('user_unit_assignments')
       .update({ is_active: false })
@@ -315,11 +321,12 @@ export async function createRole(input: z.input<typeof CreateRoleSchema>): Promi
 
 export async function setRolePermissions(roleId: string, codes: string[]): Promise<ActionResult> {
   try {
-    const { db } = await authorize('ROLE_MANAGE');
+    const { me, db } = await authorize('ROLE_MANAGE');
     const role = (await db.from('roles').select('id, is_system_role').eq('id', roleId).single().then(check)) as {
       id: string; is_system_role: boolean;
     };
     if (role.is_system_role) throw new Error('System roles are locked and cannot be edited');
+    await assertCanEditRole(db, me.systemUser.id, roleId, codes);
 
     const perms = codes.length
       ? ((await db.from('permissions').select('id, code').in('code', codes).then(check)) as { id: string }[])

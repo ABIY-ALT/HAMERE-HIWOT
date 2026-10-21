@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   Menu,
   Bell,
@@ -64,8 +64,17 @@ export default function Header({
   const { locale, setLocale, t } = useLang();
   const router = useRouter();
 
-  const [userMenuOpen, setUserMenuOpen] = React.useState(false);
-  const [notifOpen, setNotifOpen] = React.useState(false);
+  // A menu is open only on the page where it was opened, so a new page closes it
+  // (on phones a tap inside a menu does not count as "outside")
+  const pathname = usePathname();
+  const [userMenuOn, setUserMenuOn] = React.useState<string | null>(null);
+  const [notifOn, setNotifOn] = React.useState<string | null>(null);
+  const userMenuOpen = userMenuOn === pathname;
+  const notifOpen = notifOn === pathname;
+  const setUserMenuOpen = (v: boolean | ((open: boolean) => boolean)) =>
+    setUserMenuOn((on) => ((typeof v === 'function' ? v(on === pathname) : v) ? pathname : null));
+  const setNotifOpen = (v: boolean | ((open: boolean) => boolean)) =>
+    setNotifOn((on) => ((typeof v === 'function' ? v(on === pathname) : v) ? pathname : null));
   const [notices, setNotices] = React.useState<Notice[]>([]);
   const [seen, setSeen] = React.useState<Record<string, string>>({});
   const loadedAt = React.useRef(0);
@@ -97,10 +106,10 @@ export default function Header({
   React.useEffect(() => {
     function handler(e: MouseEvent) {
       if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
-        setUserMenuOpen(false);
+        setUserMenuOn(null);
       }
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
-        setNotifOpen(false);
+        setNotifOn(null);
       }
     }
     document.addEventListener('mousedown', handler);
@@ -223,7 +232,7 @@ export default function Header({
         </button>
 
         {notifOpen && (
-          <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-white rounded-2xl border border-slate-200 shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95">
+          <div className="fixed left-3 right-3 top-[calc(var(--header-height)+0.5rem)] sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 bg-white rounded-2xl border border-slate-200 shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95">
             <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
               <div className="flex items-center gap-2">
                 <span className="font-bold text-sm text-slate-800">
@@ -246,7 +255,7 @@ export default function Header({
               )}
             </div>
 
-            <div className="max-h-80 overflow-y-auto divide-y divide-slate-50">
+            <div className="max-h-[60vh] sm:max-h-80 overflow-y-auto divide-y divide-slate-50">
               {notices.length === 0 ? (
                 <div className="p-8 text-center text-xs text-slate-400">
                   {t('Nothing needs your attention right now', 'አሁን ትኩረትዎን የሚሻ ነገር የለም')}
@@ -297,7 +306,7 @@ export default function Header({
               )}
             </div>
 
-            {can('AUDIT_VIEW_ALL') && (
+            {can('AUDIT_VIEW_ALL') && (user?.tenant?.access.modules.includes('audit') ?? true) && (
               <div className="p-2.5 border-t border-slate-100 bg-slate-50/50 text-center">
                 <Link
                   href="/dashboard/audit"

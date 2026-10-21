@@ -454,6 +454,8 @@ export default function Sidebar({ collapsed, mobileOpen, onToggleCollapse, onClo
           collapsed && 'sidebar-collapsed',
           mobileOpen && 'open'
         )}
+        // Tapping a page in the phone menu closes it at once, not when the new page has loaded
+        onClick={(e) => { if (mobileOpen && (e.target as HTMLElement).closest('a[href]')) onCloseMobile(); }}
       >
         {/* Brand */}
         <div className="brand-logo">
