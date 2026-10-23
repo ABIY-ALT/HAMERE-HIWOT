@@ -37,7 +37,7 @@ export async function ContactPage({ tenant, lang }: { tenant: TenantInfo; lang: 
             <a href={`https://t.me/${site.bot}`} target="_blank" rel="noopener noreferrer" className="block rounded-2xl bg-[var(--site-main)] text-white p-5 hover:bg-[var(--site-light)] transition">
               <Send className="text-amber-300" size={22} />
               <h2 className="mt-2 font-bold">{t('በቴሌግራም', 'On Telegram')}</h2>
-              <p className="mt-1 text-sm text-indigo-100">
+              <p className="mt-1 text-sm text-white/80">
                 {t('አባላትና ወላጆች በቦቱ «✉️ ጥያቄ» በኩል መጠየቅ ይችላሉ፤ መልሱ እዚያው ይደርሳል።', 'Members and parents can also ask through “✉️ Ask a department” in the bot — the answer comes back there.')}
               </p>
               <span className="mt-2 inline-block text-sm font-semibold text-amber-300">@{site.bot} →</span>

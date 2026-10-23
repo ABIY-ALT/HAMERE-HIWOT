@@ -41,6 +41,15 @@ export interface FinanceTxn {
   unit: string;
   request_no: string;
   recorded_by: string;
+  /** Bank account / cash box it went through ('' = not given; migration 042) */
+  account?: string;
+}
+
+/** An account money can go through (migration 042) */
+export interface FinanceAccount {
+  id: string;
+  name: string;
+  kind: 'BANK' | 'CASH' | 'MOBILE';
 }
 
 export interface FinanceUnit {
@@ -82,9 +91,11 @@ export interface FinanceData {
   /** Current academic year's budget for the units this user may see. */
   budget: BudgetLine[];
   budgetYear: string | null;
+  /** Active accounts for the "paid from / received into" choice; empty before migration 042 */
+  accounts: FinanceAccount[];
 }
 
-export const EMPTY_FINANCE: FinanceData = { requests: [], transactions: [], units: [], budget: [], budgetYear: null };
+export const EMPTY_FINANCE: FinanceData = { requests: [], transactions: [], units: [], budget: [], budgetYear: null, accounts: [] };
 
 /** Stored in English; shown in Amharic when that language is chosen. */
 export const EXPENSE_CATEGORIES: [string, string][] = [
@@ -98,6 +109,7 @@ export const EXPENSE_CATEGORIES: [string, string][] = [
   ['Printing & Media', 'ሕትመትና ሚዲያ'],
   ['Utilities', 'አገልግሎቶች (መብራት፣ ውሃ)'],
   ['Charity & Support', 'የበጎ አድራጎት ድጋፍ'],
+  ['Bank Charges', 'የባንክ ክፍያ'],
   ['Other', 'ሌላ'],
 ];
 
@@ -107,6 +119,7 @@ export const INCOME_CATEGORIES: [string, string][] = [
   ['Church Support', 'ከቤተ ክርስቲያን ድጋፍ'],
   ['Events & Programs', 'ከዝግጅቶች ገቢ'],
   ['Sales', 'ሽያጭ'],
+  ['Bank Interest', 'የባንክ ወለድ'],
   ['Other', 'ሌላ'],
 ];
 

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Eye, EyeOff, Globe, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { signIn } from '@/app/login/actions';
+import { loginHelpByTelegram, signIn } from '@/app/login/actions';
 
 export default function LoginForm() {
   const router = useRouter();
@@ -18,6 +18,24 @@ export default function LoginForm() {
   const [error, setError] = useState('');
 
   const t = (en: string, am: string) => (locale === 'am' ? am : en);
+  const [helpPhone, setHelpPhone] = useState('');
+  const [helpBusy, setHelpBusy] = useState(false);
+  const [helpNote, setHelpNote] = useState('');
+
+  const askHelp = async () => {
+    setHelpBusy(true);
+    setHelpNote('');
+    const res = await loginHelpByTelegram(helpPhone).catch(() => ({ ok: false, error: 'SERVER' }) as const);
+    setHelpBusy(false);
+    if (res.ok) {
+      setHelpNote(t(
+        'If this number is in a Sunday school’s records and connected to its Telegram bot, a message is on its way to that chat. If nothing comes, open the bot, share your phone, and try again.',
+        'ይህ ቁጥር በሰንበት ትምህርት ቤት መዝገብ ውስጥ ካለና ከቦቱ ጋር ከተገናኘ፣ መልእክት ወደዚያ ቻት እየሄደ ነው። ምንም ካልመጣ ቦቱን ከፍተው ስልክዎን ያጋሩና እንደገና ይሞክሩ።'
+      ));
+    } else if (res.error === 'INVALID') setHelpNote(t('Enter a valid phone number, e.g. 0912345678.', 'ትክክለኛ ስልክ ቁጥር ያስገቡ፣ ለምሳሌ 0912345678።'));
+    else if (res.error === 'RATE_LIMITED') setHelpNote(t('Asked too many times — try again later.', 'ብዙ ጊዜ ተጠይቋል — ቆይተው ይሞክሩ።'));
+    else setHelpNote(t('Something went wrong — try again.', 'ችግር ተፈጥሯል — እንደገና ይሞክሩ።'));
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,19 +140,36 @@ export default function LoginForm() {
             <div className="flex items-center justify-between">
               <label className="form-label" htmlFor="password">{t('Password / PIN', 'የይለፍ ቃል / ሚስጥር ቁጥር')}</label>
               <button type="button" onClick={() => setShowForgot((s) => !s)} className="text-sm font-medium text-slate-800 hover:underline">
-                {t('Forgot password?', 'የይለፍ ቃል ረስተዋል?')}
+                {t('First time, or forgot?', 'የመጀመሪያ ጊዜ ወይስ ረስተዋል?')}
               </button>
             </div>
             {showForgot && (
-              <div className="mb-2 p-3 rounded-lg bg-sky-50 border border-sky-200 text-sky-900 text-xs space-y-1">
+              <div className="mb-2 p-3 rounded-lg bg-sky-50 border border-sky-200 text-sky-900 text-xs space-y-2">
                 <p>
                   {t(
-                    'Open your Sunday school’s Telegram bot and press “🔑 Forgot my PIN”. A temporary PIN comes to your chat; sign in with it and choose your own.',
-                    'የሰንበት ትምህርት ቤትዎን የቴሌግራም ቦት ይክፈቱና «🔑 ሚስጥር ቁጥሬን ረሳሁ» ይጫኑ። ጊዜያዊ ሚስጥር ቁጥር ወደ ቻትዎ ይመጣል፤ በእሱ ገብተው የራስዎን ይምረጡ።'
+                    'Members, teachers and servants in the records can get their login on Telegram — first share your phone with your Sunday school’s bot. Then:',
+                    'በመዝገቡ ያሉ አባላት፣ መምህራንና አገልጋዮች መግቢያቸውን በቴሌግራም ያገኛሉ — መጀመሪያ ስልክዎን ለሰንበት ትምህርት ቤትዎ ቦት ያጋሩ። ከዚያ፦'
                   )}
                 </p>
+                <div className="flex gap-2">
+                  <input
+                    type="tel"
+                    value={helpPhone}
+                    onChange={(e) => setHelpPhone(e.target.value)}
+                    placeholder="09…"
+                    className="form-input text-sm flex-1"
+                    aria-label={t('Your phone number', 'ስልክ ቁጥርዎ')}
+                  />
+                  <button type="button" onClick={askHelp} disabled={helpBusy || helpPhone.trim().length < 9} className="btn btn-secondary text-xs whitespace-nowrap disabled:opacity-50">
+                    {helpBusy ? '…' : t('Send to my Telegram', 'ወደ ቴሌግራሜ ላክ')}
+                  </button>
+                </div>
+                {helpNote && <p className="font-medium">{helpNote}</p>}
                 <p className="text-sky-700">
-                  {t('Not on Telegram? Ask the office for a new one.', 'ቴሌግራም የለዎትም? ጽ/ቤቱን አዲስ ይጠይቁ።')}
+                  {t(
+                    'Or in the bot press “🔑 Forgot my PIN” (it also offers “Create my login”). Students: your class teacher gives your PIN. Not on Telegram? Ask the office.',
+                    'ወይም በቦቱ «🔑 ሚስጥር ቁጥሬን ረሳሁ» ይጫኑ («መግቢያ ፍጠርልኝ»ም አለው)። ተማሪዎች፦ ሚስጥር ቁጥራችሁን የክፍል መምህራችሁ ይሰጣሉ። ቴሌግራም የለዎትም? ጽ/ቤቱን ይጠይቁ።'
+                  )}
                 </p>
               </div>
             )}

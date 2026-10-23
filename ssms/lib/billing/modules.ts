@@ -15,7 +15,7 @@ import type { PermissionCode } from '@/types';
 
 export const MODULE_CODES = [
   'education', 'online_exams', 'portals', 'programs', 'check_in', 'sacred_arts', 'hr', 'finance',
-  'dues', 'property', 'tasks', 'telegram', 'website', 'reports_export', 'audit', 'automation',
+  'dues', 'property', 'library', 'tasks', 'telegram', 'website', 'reports_export', 'audit', 'automation',
 ] as const;
 
 export type ModuleCode = (typeof MODULE_CODES)[number];
@@ -35,6 +35,7 @@ export const MODULE_LABELS: Record<ModuleCode, [en: string, am: string]> = {
   finance: ['Finance & budget', 'ፋይናንስ'],
   dues: ['Member dues', 'ወርሃዊ መዋጮ'],
   property: ['Property & assets', 'ንብረት'],
+  library: ['Library', 'ቤተ መጻሕፍት'],
   tasks: ['Tasks, plans & questions', 'ተግባራትና እቅድ'],
   telegram: ['Telegram bot', 'ቴሌግራም ቦት'],
   website: ['Public website', 'ድረ ገጽ'],
@@ -72,6 +73,8 @@ export const PERMISSION_MODULE: Partial<Record<PermissionCode, ModuleCode>> = {
   ASSET_CREATE: 'property',
   ASSET_ASSIGN: 'property',
   ASSET_TRANSFER: 'property',
+  LIBRARY_VIEW: 'library',
+  LIBRARY_MANAGE: 'library',
   PROGRAM_VIEW: 'programs',
   PROGRAM_CREATE: 'programs',
   PROGRAM_MANAGE: 'programs',
@@ -105,6 +108,7 @@ const ROUTE_MODULES: [prefix: string, module: ModuleCode][] = [
   ['/dashboard/hr', 'hr'],
   ['/dashboard/finance', 'finance'],
   ['/dashboard/property', 'property'],
+  ['/dashboard/library', 'library'],
   ['/dashboard/tasks', 'tasks'],
   ['/dashboard/my-tasks', 'tasks'],
   ['/dashboard/plans', 'tasks'],

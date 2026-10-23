@@ -46,7 +46,7 @@ export function PhotoGrid({ photos, lang }: { photos: GridPhoto[]; lang: SiteLan
     <>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-3">
         {photos.map((p, i) => (
-          <button key={p.id} onClick={() => setOpen(i)} className="group relative aspect-square overflow-hidden rounded-xl bg-slate-100 focus-visible:ring-2 focus-visible:ring-[#2f43c8]">
+          <button key={p.id} onClick={() => setOpen(i)} className="group relative aspect-square overflow-hidden rounded-xl bg-slate-100 focus-visible:ring-2 focus-visible:ring-[var(--site-main)]">
             <Image src={p.thumb} alt={p.caption} fill unoptimized loading="lazy" className="object-cover transition-transform duration-300 group-hover:scale-105" />
           </button>
         ))}

@@ -11,6 +11,11 @@ import { logAuthEvent } from '@/lib/audit/log';
 import { platformClient, tenantClient } from '@/lib/tenant/db';
 import { rateLimit, requestIp } from '@/lib/security/rate-limit';
 import { isPlatformAdmin } from '@/lib/platform/auth';
+import { runInTenant } from '@/lib/tenant/scope';
+import { loadTenantAccess } from '@/lib/tenant/context';
+import { chatsOf, escapeHtml, telegramConfigured, telegramToChats } from '@/lib/telegram/bot';
+import { createOwnLogin } from '@/lib/auth/self-login';
+import { logReset, sendTemporary } from '@/lib/auth/temp-password';
 
 export type SignInResult =
   | { ok: true; to: string }
@@ -128,4 +133,62 @@ export async function switchTenant(tenantId: string): Promise<{ ok: boolean }> {
     secure: process.env.NODE_ENV === 'production',
   });
   return { ok: true };
+}
+
+/**
+ * "First time, or forgot?" on the sign-in page. The answer is the same
+ * whatever is found, so nobody learns whose phone is in the records.
+ * In each Sunday school where this phone is on a person's own record and that
+ * person is connected to the Telegram bot:
+ *   • no login yet → one is made (lib/auth/self-login) and a temporary
+ *     password goes to their own chat;
+ *   • a login already → their chat is told how to get a new PIN there
+ *     (nothing is changed from the website, so a stranger typing the number
+ *     cannot lock anyone out).
+ */
+export async function loginHelpByTelegram(phoneInput: string): Promise<{ ok: true } | { ok: false; error: 'INVALID' | 'RATE_LIMITED' | 'SERVER' }> {
+  if (!isSupabaseEnabled()) return { ok: true };
+  const phone = normalizePhone(phoneInput);
+  if (!isValidPhone(phone)) return { ok: false, error: 'INVALID' };
+  if (!(await rateLimit(`login-help-ip:${await requestIp()}`, 10, 3600)) || !(await rateLimit(`login-help:${phone}`, 3, 24 * 3600))) {
+    return { ok: false, error: 'RATE_LIMITED' };
+  }
+  try {
+    const tail = `%${phone.slice(1).split('').join('%')}`;
+    const { data } = await platformClient().from('persons').select('id, tenant_id, phone_primary').ilike('phone_primary', tail).eq('status', 'ACTIVE').limit(20);
+    const people = ((data ?? []) as { id: string; tenant_id: string; phone_primary: string | null }[]).filter((p) => normalizePhone(p.phone_primary ?? '') === phone);
+    for (const p of people) {
+      await runInTenant(p.tenant_id, async () => {
+        const access = await loadTenantAccess(p.tenant_id);
+        if (access.mode === 'blocked' || !access.modules.includes('telegram') || !(await telegramConfigured())) return;
+        const db = tenantClient(p.tenant_id);
+        const chats = await chatsOf(db, [p.id], 'SELF');
+        if (chats.size === 0) return;
+        const { data: account } = await db.from('system_users').select('id').eq('person_id', p.id).limit(1).maybeSingle();
+        if (!account) {
+          if (access.mode !== 'full') return;
+          const made = await createOwnLogin(db, p.id);
+          if (made.status === 'created') {
+            const delivered = await sendTemporary(chats, { name: made.name, login: made.username, secret: made.secret, pin: false });
+            await logReset(db, { systemUserId: made.systemUserId, actorId: null, via: 'bot', delivered });
+          } else if (made.status === 'linked') {
+            await telegramToChats(db, chats, escapeHtml(`✅ ${made.name}: በዚህ ስልክ የሚገቡበት መግቢያ ከዚህ ሰንበት ትምህርት ቤት ጋርም ተገናኝቷል። በነበረው የይለፍ ቃልዎ ይግቡ።\nThe login you use with this phone now opens this Sunday school too. Sign in with your existing password.`));
+          }
+          return;
+        }
+        await telegramToChats(
+          db,
+          chats,
+          escapeHtml(
+            '🔑 ከድረ-ገጹ በዚህ ስልክ ለመግባት እርዳታ ተጠይቋል። እርስዎ ከሆኑ /pin ይላኩ ወይም «🔑 ሚስጥር ቁጥሬን ረሳሁ» ይጫኑ — አዲስ ጊዜያዊ እዚህ ይደርስዎታል። እርስዎ ካልሆኑ ይህን ይተዉት።\n' +
+              '🔑 Someone asked the website for help to sign in with this phone. If it was you, send /pin or tap “🔑 Forgot my PIN” — a new temporary one comes here. If not, ignore this.'
+          )
+        );
+      });
+    }
+    return { ok: true };
+  } catch (e) {
+    console.error('login help failed', e);
+    return { ok: false, error: 'SERVER' };
+  }
 }

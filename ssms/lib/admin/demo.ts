@@ -63,6 +63,9 @@ export function demoUsers(): AdminUserRow[] {
       last_login: u.last_login,
       is_active: u.is_active,
       permissions: role?.permissions ?? [],
+      assignments: role
+        ? [{ id: `demo-a-${u.id}`, role_id: role.id, role: u.role, role_am: u.role_am, unit_id: '', unit: u.org, unit_am: u.org, expires_at: null }]
+        : [],
     };
   });
 }

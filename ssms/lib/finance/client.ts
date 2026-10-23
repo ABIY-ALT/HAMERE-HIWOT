@@ -83,7 +83,7 @@ function demoFinance(): FinanceData {
       description: e.description, party: '', receipt_no: '', unit: '', request_no: '', recorded_by: e.paid_by,
     })),
   ].sort((a, b) => b.date.localeCompare(a.date));
-  return { requests, transactions, units, budget: demoBudget(requests), budgetYear: '2025/2026' };
+  return { requests, transactions, units, budget: demoBudget(requests), budgetYear: '2025/2026', accounts: [] };
 }
 
 /** Demo budget: the sample allocations spread over the departments. */
@@ -233,7 +233,7 @@ export async function reviewRequest(
 
 export async function markRequestPaid(
   id: string,
-  input: { paid_at: string; reference: string; payee: string },
+  input: { paid_at: string; reference: string; payee: string; account_id?: string },
   recorder: string
 ): Promise<ActionResult> {
   if (state.mode === 'live') return afterLive(await payAction(id, input));
@@ -266,6 +266,7 @@ export async function recordTransaction(
     receipt_no: string;
     unit_id: string;
     description: string;
+    account_id?: string;
   },
   recorder: string
 ): Promise<ActionResult> {

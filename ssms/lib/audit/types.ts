@@ -58,6 +58,12 @@ export const AUDIT_AREAS: Record<string, [string, string]> = {
   finance_requests: ['Payment requests', 'የክፍያ ጥያቄዎች'],
   finance_transactions: ['Income & expenses', 'ገቢና ወጪ'],
   budget_allocations: ['Budgets', 'በጀት'],
+  bank_accounts: ['Bank accounts', 'የባንክ ሂሳቦች'],
+  account_transfers: ['Transfers between accounts', 'በሂሳቦች መካከል ዝውውር'],
+  bank_statements: ['Bank statements', 'የባንክ መግለጫዎች'],
+  library_books: ['Library books', 'የቤተ መጻሕፍት መጻሕፍት'],
+  library_copies: ['Library copies', 'የመጻሕፍት ቅጂዎች'],
+  library_loans: ['Library lending', 'የመጻሕፍት ውሰት'],
   system_settings: ['System settings', 'የስርዓት ቅንብሮች'],
 };
 

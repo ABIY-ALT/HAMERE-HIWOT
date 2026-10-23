@@ -17,6 +17,9 @@ import { NOT_DELIVERED, loginPowers, logReset, newTemporary, officeTargets, pinO
 import { existingLoginForPhone, setLoginBanned } from '@/lib/tenant/accounts';
 import { assertCanEditRole, assertCanGrantRole, assertCanManageUser } from '@/lib/auth/grant';
 import { refreshPublicSite } from '@/lib/site/cache';
+import { PERMISSION_MODULE } from '@/lib/billing/modules';
+import { SELF_LOGIN_KEY, selfLoginAllowed } from '@/lib/auth/self-login';
+import type { PermissionCode } from '@/types';
 import {
   DEFAULT_PARISH_SETTINGS,
   PARISH_SETTINGS_KEY as SETTINGS_KEY,
@@ -33,14 +36,57 @@ import {
 
 const message = errorMessage;
 
-async function fetchRolesAndPermissions(db: SupabaseClient) {
+/** Active, unexpired role assignments with the account's name and the unit. */
+async function liveAssignments(db: SupabaseClient) {
+  const rows = (await db.from('user_unit_assignments')
+    .select('id, system_user_id, role_id, organization_unit_id, expires_at')
+    .eq('is_active', true)
+    .then(check)) as { id: string; system_user_id: string; role_id: string; organization_unit_id: string; expires_at: string | null }[];
+  const now = Date.now();
+  return rows.filter((a) => !a.expires_at || new Date(a.expires_at).getTime() > now);
+}
+
+/** Who holds each role now: name and unit. */
+async function roleHolders(db: SupabaseClient): Promise<Map<string, NonNullable<AdminRoleRow['holders']>>> {
+  const [assignments, users, units] = await Promise.all([
+    liveAssignments(db),
+    db.from('system_users').select('id, is_active, person:persons!system_users_person_id_fkey(full_name_en, full_name_am)').then(check) as Promise<
+      { id: string; is_active: boolean; person: { full_name_en: string; full_name_am: string | null } | null }[]
+    >,
+    db.from('organization_units').select('id, name_en, name_am').then(check) as Promise<{ id: string; name_en: string; name_am: string | null }[]>,
+  ]);
+  const userById = new Map(users.filter((u) => u.is_active).map((u) => [u.id, u]));
+  const unitById = new Map(units.map((u) => [u.id, u]));
+  const out = new Map<string, NonNullable<AdminRoleRow['holders']>>();
+  for (const a of assignments) {
+    const u = userById.get(a.system_user_id);
+    if (!u) continue;
+    const unit = unitById.get(a.organization_unit_id);
+    const list = out.get(a.role_id) ?? [];
+    list.push({
+      user_id: u.id,
+      name: u.person?.full_name_en ?? '—',
+      name_am: u.person?.full_name_am || u.person?.full_name_en || '—',
+      unit: unit?.name_en ?? '—',
+      unit_am: unit?.name_am || unit?.name_en || '—',
+    });
+    out.set(a.role_id, list);
+  }
+  return out;
+}
+
+async function fetchRolesAndPermissions(db: SupabaseClient, modules?: string[]) {
   const [roles, links, perms] = await Promise.all([
     db.from('roles').select('*').order('name_en').then(check),
     db.from('role_permissions').select('role_id, permission_id').then(check),
     db.from('permissions').select('id, code, name_en, name_am, category, is_active').order('code').then(check),
   ]);
 
-  const permissions = (perms ?? []) as AdminPermissionRow[];
+  // Not in the plan: the permission is kept on roles but does nothing until the module is added
+  const permissions = ((perms ?? []) as AdminPermissionRow[]).map((p) => {
+    const needs = PERMISSION_MODULE[p.code as PermissionCode];
+    return modules && needs && !modules.includes(needs) ? { ...p, unavailable: true } : p;
+  });
   const codeById = new Map(permissions.map((p) => [p.id, p.code]));
   const codesByRole = new Map<string, string[]>();
   for (const link of (links ?? []) as { role_id: string; permission_id: string }[]) {
@@ -67,20 +113,17 @@ async function fetchRolesAndPermissions(db: SupabaseClient) {
 // ── Users ────────────────────────────────────────────────────────────────────
 
 export async function loadUsers(): Promise<
-  Loaded<{ users: AdminUserRow[]; roles: AdminRoleRow[]; units: AdminUnitRow[] }>
+  Loaded<{ users: AdminUserRow[]; roles: AdminRoleRow[]; units: AdminUnitRow[]; permissions: AdminPermissionRow[] }>
 > {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
     const { db } = await authorize('USER_MANAGE');
-    const [users, assignments, { roles }, units] = await Promise.all([
+    const [users, assignments, { roles, permissions }, units] = await Promise.all([
       db.from('system_users')
         .select('id, person_id, username, is_active, last_login_at, created_at')
         .order('created_at', { ascending: false })
         .then(check),
-      db.from('user_unit_assignments')
-        .select('system_user_id, role_id, organization_unit_id, expires_at')
-        .eq('is_active', true)
-        .then(check),
+      liveAssignments(db),
       fetchRolesAndPermissions(db),
       db.from('organization_units')
         .select('id, name_en, name_am')
@@ -103,10 +146,7 @@ export async function loadUsers(): Promise<
     const roleById = new Map(roles.map((r) => [r.id, r]));
     const unitList = (units ?? []) as AdminUnitRow[];
     const unitById = new Map(unitList.map((u) => [u.id, u]));
-    const now = Date.now();
-    const activeAssignments = ((assignments ?? []) as {
-      system_user_id: string; role_id: string; organization_unit_id: string; expires_at: string | null;
-    }[]).filter((a) => !a.expires_at || new Date(a.expires_at).getTime() > now);
+    const activeAssignments = assignments;
 
     const rows: AdminUserRow[] = userList.map((u) => {
       const person = personById.get(u.person_id);
@@ -129,10 +169,24 @@ export async function loadUsers(): Promise<
         last_login: u.last_login_at,
         is_active: u.is_active,
         permissions,
+        assignments: mine.map((a) => {
+          const r = roleById.get(a.role_id);
+          const un = unitById.get(a.organization_unit_id);
+          return {
+            id: a.id,
+            role_id: a.role_id,
+            role: r?.name_en ?? '—',
+            role_am: r?.name_am ?? r?.name_en ?? '—',
+            unit_id: a.organization_unit_id,
+            unit: un?.name_en ?? '—',
+            unit_am: un?.name_am || un?.name_en || '—',
+            expires_at: a.expires_at,
+          };
+        }),
       };
     });
 
-    return { mode: 'live', data: { users: rows, roles, units: unitList } };
+    return { mode: 'live', data: { users: rows, roles, units: unitList, permissions } };
   } catch (e) {
     return { mode: 'error', error: message(e) };
   }
@@ -260,6 +314,64 @@ export async function changeUserRole(
   }
 }
 
+const AssignSchema = z.object({
+  userId: z.string().min(1),
+  roleId: z.string().min(1, 'Choose a role'),
+  unitId: z.string().min(1, 'Choose a unit'),
+  /** YYYY-MM-DD (the role ends at the end of that day) or '' for no end */
+  until: z.string().refine((v) => v === '' || /^\d{4}-\d{2}-\d{2}$/.test(v), 'Use a valid date'),
+});
+
+/** Gives an account one more role in a unit (e.g. a teacher who also heads a department), optionally until a date. */
+export async function addAssignment(input: z.input<typeof AssignSchema>): Promise<ActionResult> {
+  try {
+    const { me, db } = await authorize('USER_MANAGE');
+    const a = AssignSchema.parse(input);
+    if (me.systemUser.id === a.userId) throw new Error('You cannot change your own roles');
+    if (a.until && a.until < new Date().toISOString().slice(0, 10)) throw new Error('The end date is in the past');
+    await assertCanManageUser(db, me.systemUser.id, a.userId);
+    await assertCanGrantRole(db, me.systemUser.id, a.roleId);
+    // The same role in the same unit is kept once: an old (switched-off) one comes back
+    await db.from('user_unit_assignments')
+      .upsert(
+        {
+          system_user_id: a.userId,
+          organization_unit_id: a.unitId,
+          role_id: a.roleId,
+          is_active: true,
+          expires_at: a.until ? `${a.until}T23:59:59.999Z` : null,
+          assigned_by: me.systemUser.id,
+          assigned_at: new Date().toISOString(),
+        },
+        { onConflict: 'system_user_id,organization_unit_id,role_id' }
+      )
+      .then(check);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: message(e) };
+  }
+}
+
+/** Takes one role away. The last one cannot be removed — switch the account off instead. */
+export async function removeAssignment(assignmentId: string): Promise<ActionResult> {
+  try {
+    const { me, db } = await authorize('USER_MANAGE');
+    const row = (await db.from('user_unit_assignments').select('id, system_user_id, role_id').eq('id', assignmentId).maybeSingle().then(check)) as {
+      id: string; system_user_id: string; role_id: string;
+    } | null;
+    if (!row) throw new Error('This role assignment was not found');
+    if (row.system_user_id === me.systemUser.id) throw new Error('You cannot change your own roles');
+    await assertCanManageUser(db, me.systemUser.id, row.system_user_id);
+    await assertCanGrantRole(db, me.systemUser.id, row.role_id);
+    const others = (await liveAssignments(db)).filter((a) => a.system_user_id === row.system_user_id && a.id !== row.id);
+    if (others.length === 0) throw new Error('This is the account’s only role — give it another role first, or switch the account off');
+    await db.from('user_unit_assignments').update({ is_active: false }).eq('id', row.id).then(check);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: message(e) };
+  }
+}
+
 // ── Roles & permissions ──────────────────────────────────────────────────────
 
 export async function loadRoles(): Promise<
@@ -267,21 +379,95 @@ export async function loadRoles(): Promise<
 > {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
-    const { db } = await authorize('ROLE_MANAGE');
-    return { mode: 'live', data: await fetchRolesAndPermissions(db) };
+    const { me, db } = await authorize('ROLE_MANAGE');
+    const [data, holders] = await Promise.all([fetchRolesAndPermissions(db, me.tenant.access.modules), roleHolders(db)]);
+    return { mode: 'live', data: { ...data, roles: data.roles.map((r) => ({ ...r, holders: holders.get(r.id) ?? [] })) } };
   } catch (e) {
     return { mode: 'error', error: message(e) };
   }
 }
 
-export async function loadPermissions(): Promise<Loaded<AdminPermissionRow[]>> {
+/** The permission catalogue and every role, for the roles × permissions overview. */
+export async function loadPermissions(): Promise<Loaded<{ roles: AdminRoleRow[]; permissions: AdminPermissionRow[] }>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
-    const { db } = await authorize('ROLE_MANAGE');
-    const { permissions } = await fetchRolesAndPermissions(db);
-    return { mode: 'live', data: permissions };
+    const { me, db } = await authorize('ROLE_MANAGE');
+    const [data, holders] = await Promise.all([fetchRolesAndPermissions(db, me.tenant.access.modules), roleHolders(db)]);
+    return { mode: 'live', data: { ...data, roles: data.roles.map((r) => ({ ...r, holders: holders.get(r.id) ?? [] })) } };
   } catch (e) {
     return { mode: 'error', error: message(e) };
+  }
+}
+
+const UpdateRoleSchema = z.object({
+  nameEn: z.string().trim().min(2, 'Enter the role name in English'),
+  nameAm: z.string().trim(),
+  descEn: z.string().trim(),
+  descAm: z.string().trim(),
+  isActive: z.boolean(),
+});
+
+/** Name, description and on/off of a custom role. A role someone holds cannot be switched off. */
+export async function updateRole(roleId: string, input: z.input<typeof UpdateRoleSchema>): Promise<ActionResult> {
+  try {
+    const { me, db } = await authorize('ROLE_MANAGE');
+    const data = UpdateRoleSchema.parse(input);
+    const role = (await db.from('roles').select('id, is_system_role').eq('id', roleId).single().then(check)) as { id: string; is_system_role: boolean };
+    if (role.is_system_role) throw new Error('System roles are locked and cannot be edited');
+    const current = (await db.from('role_permissions').select('permission:permissions(code)').eq('role_id', roleId).then(check)) as unknown as { permission: { code: string } | null }[];
+    await assertCanEditRole(db, me.systemUser.id, roleId, current.map((c) => c.permission?.code).filter(Boolean) as string[]);
+    if (!data.isActive && (await liveAssignments(db)).some((a) => a.role_id === roleId)) {
+      throw new Error('People still hold this role — move them to another role first');
+    }
+    await db.from('roles')
+      .update({
+        name_en: data.nameEn,
+        name_am: data.nameAm || data.nameEn,
+        description_en: data.descEn || null,
+        description_am: data.descAm || null,
+        is_active: data.isActive,
+      })
+      .eq('id', roleId)
+      .then(check);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: message(e) };
+  }
+}
+
+/** A new custom role starting with another role's permissions (system roles too) — then adjust it. */
+export async function copyRole(sourceId: string, input: z.input<typeof CreateRoleSchema>): Promise<ActionResult> {
+  try {
+    const { me, db } = await authorize('ROLE_MANAGE');
+    const data = CreateRoleSchema.parse(input);
+    const links = (await db.from('role_permissions').select('permission_id, permission:permissions(code)').eq('role_id', sourceId).then(check)) as unknown as {
+      permission_id: string; permission: { code: string } | null;
+    }[];
+    const { data: created, error } = await db.from('roles')
+      .insert({
+        code: data.code,
+        name_en: data.nameEn,
+        name_am: data.nameAm || data.nameEn,
+        description_en: data.descEn || null,
+        description_am: data.descAm || null,
+        is_system_role: false,
+        is_active: true,
+      })
+      .select('id')
+      .single();
+    if (error || !created) throw new Error(error?.code === '23505' ? `A role with code ${data.code} already exists` : error?.message ?? 'Could not create the role');
+    try {
+      await assertCanEditRole(db, me.systemUser.id, created.id, links.map((l) => l.permission?.code).filter(Boolean) as string[]);
+      if (links.length) {
+        await db.from('role_permissions').insert(links.map((l) => ({ role_id: created.id, permission_id: l.permission_id }))).then(check);
+      }
+    } catch (e) {
+      await db.from('roles').delete().eq('id', created.id);
+      throw e;
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: message(e) };
   }
 }
 
@@ -376,6 +562,28 @@ export async function saveSettings(input: ParishSettings): Promise<ActionResult>
       .upsert({ key: SETTINGS_KEY, value, updated_by: me.systemUser.id })
       .then(check);
     refreshPublicSite();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: message(e) };
+  }
+}
+
+// ── Logins people make for themselves (lib/auth/self-login) ──────────────────
+
+export async function loadSelfLogin(): Promise<boolean | null> {
+  if (!isSupabaseEnabled()) return null;
+  try {
+    const { db } = await authorize('USER_MANAGE');
+    return await selfLoginAllowed(db);
+  } catch {
+    return null;
+  }
+}
+
+export async function setSelfLogin(enabled: boolean): Promise<ActionResult> {
+  try {
+    const { db } = await authorize('USER_MANAGE');
+    await db.from('system_settings').upsert({ key: SELF_LOGIN_KEY, value: { enabled: Boolean(enabled) } }, { onConflict: 'key' }).then(check);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: message(e) };

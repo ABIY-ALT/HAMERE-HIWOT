@@ -32,6 +32,7 @@ import {
   CheckSquare,
   QrCode,
   Globe,
+  LibraryBig,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -277,6 +278,8 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
           { labelEn: 'Expenses', labelAm: 'ወጪ', href: '/dashboard/finance/expenses', permissions: ['FINANCE_VIEW'] },
           { labelEn: 'Budget', labelAm: 'በጀት', href: '/dashboard/finance/budget', permissions: ['FINANCE_VIEW'] },
           { labelEn: 'Donations', labelAm: 'ስጦታዎች', href: '/dashboard/finance/donations', permissions: ['FINANCE_VIEW'] },
+          { labelEn: 'Bank Accounts', labelAm: 'የባንክ ሂሳቦች', href: '/dashboard/finance/accounts', permissions: ['FINANCE_VIEW'] },
+          { labelEn: 'Bank Reconciliation', labelAm: 'የባንክ ማስታረቅ', href: '/dashboard/finance/reconcile', permissions: ['FINANCE_VIEW'] },
         ],
       },
       {
@@ -290,6 +293,18 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
           { labelEn: 'Transfers', labelAm: 'ዝውውር', href: '/dashboard/property/transfers', permissions: ['ASSET_VIEW'] },
           { labelEn: 'Maintenance', labelAm: 'ጥገና', href: '/dashboard/property/maintenance', permissions: ['ASSET_VIEW'] },
           { labelEn: 'Inventory', labelAm: 'ዝርዝር', href: '/dashboard/property/inventory', permissions: ['ASSET_VIEW'] },
+        ],
+      },
+      {
+        labelEn: 'Library',
+        labelAm: 'ቤተ መጻሕፍት',
+        icon: LibraryBig,
+        permissions: ['LIBRARY_VIEW', 'LIBRARY_MANAGE'],
+        children: [
+          { labelEn: 'Overview', labelAm: 'አጠቃላይ', href: '/dashboard/library', permissions: ['LIBRARY_VIEW', 'LIBRARY_MANAGE'] },
+          { labelEn: 'Books', labelAm: 'መጻሕፍት', href: '/dashboard/library/books', permissions: ['LIBRARY_VIEW', 'LIBRARY_MANAGE'] },
+          { labelEn: 'Lending desk', labelAm: 'የውሰት ጠረጴዛ', href: '/dashboard/library/loans', permissions: ['LIBRARY_VIEW', 'LIBRARY_MANAGE'] },
+          { labelEn: 'Readers', labelAm: 'አንባቢዎች', href: '/dashboard/library/readers', permissions: ['LIBRARY_VIEW', 'LIBRARY_MANAGE'] },
         ],
       },
     ],

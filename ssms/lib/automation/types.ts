@@ -16,6 +16,8 @@ export interface AutomationSettings {
   roster_reminders: boolean;
   /** Vestments past their return day: the holder is reminded (again a week later if still out) */
   vestment_reminders: boolean;
+  /** Library books at home: the day before the return day, then weekly while late — the borrower (and a student's parents) */
+  library_reminders: boolean;
   /** The day after a task's due date: its department's heads are told it is overdue */
   overdue_tasks: boolean;
   /** Once a month: members who owe dues are reminded in the bot */
@@ -28,6 +30,7 @@ export const DEFAULT_AUTOMATION: AutomationSettings = {
   event_reminders: true,
   roster_reminders: true,
   vestment_reminders: true,
+  library_reminders: true,
   overdue_tasks: true,
   // Off until the office decides to send them
   dues_reminders: false,
@@ -35,13 +38,14 @@ export const DEFAULT_AUTOMATION: AutomationSettings = {
 };
 
 /** Repeating tasks always run: there is nothing to turn off. */
-export type JobName = 'repeating_tasks' | 'event_reminders' | 'roster_reminders' | 'vestment_reminders' | 'overdue_tasks' | 'dues_reminders';
+export type JobName = 'repeating_tasks' | 'event_reminders' | 'roster_reminders' | 'vestment_reminders' | 'library_reminders' | 'overdue_tasks' | 'dues_reminders';
 
 export const JOB_LABELS: Record<JobName, [string, string]> = {
   repeating_tasks: ['Repeating tasks given', 'ተደጋጋሚ ተግባራት ተሰጥተዋል'],
   event_reminders: ['Event reminders', 'የመርሐ ግብር ማስታወሻ'],
   roster_reminders: ['Choir roster reminders', 'የመዘምራን ምደባ ማስታወሻ'],
   vestment_reminders: ['Vestment reminders', 'የክብር ልብስ ማስታወሻ'],
+  library_reminders: ['Library book reminders', 'የመጻሕፍት መመለሻ ማስታወሻ'],
   overdue_tasks: ['Overdue task alerts', 'ጊዜው ያለፈ ተግባር ማሳወቂያ'],
   dues_reminders: ['Dues reminders', 'የመዋጮ ማስታወሻ'],
 };

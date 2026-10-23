@@ -41,13 +41,16 @@ export function LedgerPage({ type }: { type: TxnType }) {
     receipt_no: '',
     unit_id: '',
     description: '',
+    account_id: '',
   });
+  const [accountFilter, setAccountFilter] = useState('ALL');
 
   const all = fin.transactions.filter((x) => x.type === type);
   const needle = search.toLowerCase();
   const rows = all.filter(
     (x) =>
       (categoryFilter === 'ALL' || x.category === categoryFilter) &&
+      (accountFilter === 'ALL' || (accountFilter === 'NONE' ? !x.account : x.account === accountFilter)) &&
       (!month || x.date.startsWith(month)) &&
       (x.description.toLowerCase().includes(needle) ||
         x.party.toLowerCase().includes(needle) ||
@@ -86,11 +89,11 @@ export function LedgerPage({ type }: { type: TxnType }) {
     const header = [
       t('Date', 'ቀን'), t('Ethiopian date', 'የኢትዮጵያ ቀን'), t('Category', 'ዓይነት'), t('Amount (ETB)', 'መጠን (ብር)'),
       income ? t('Received from', 'ከማን') : t('Paid to', 'ለማን'), t('Receipt no.', 'ደረሰኝ'), t('Department', 'ክፍል'),
-      t('Request', 'ጥያቄ'), t('Description', 'መግለጫ'), t('Recorded by', 'የመዘገበው'),
+      t('Request', 'ጥያቄ'), t('Description', 'መግለጫ'), t('Recorded by', 'የመዘገበው'), t('Account', 'ሂሳብ'),
     ].map(headerCell);
     const body = rows.map((x) => [
       x.date, formatEthiopianDate(x.date, 'en'), categoryLabel(x.category, locale), x.amount,
-      cell(x.party), x.receipt_no, x.unit, x.request_no, cell(x.description), x.recorded_by,
+      cell(x.party), x.receipt_no, x.unit, x.request_no, cell(x.description), x.recorded_by, cell(x.account ?? ''),
     ]);
     try {
       await downloadXlsx(`${income ? 'income' : 'expenses'}_${todayIso()}`, [header, ...body], {
@@ -170,6 +173,15 @@ export function LedgerPage({ type }: { type: TxnType }) {
                 <option key={en} value={en}>{locale === 'am' ? am : en}</option>
               ))}
             </select>
+            {fin.accounts.length > 0 && (
+              <select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)} className="form-input text-xs py-1.5 px-3">
+                <option value="ALL">{t('All accounts', 'ሁሉም ሂሳቦች')}</option>
+                {fin.accounts.map((a) => (
+                  <option key={a.id} value={a.name}>{a.name}</option>
+                ))}
+                <option value="NONE">{t('No account given', 'ሂሳብ ያልተሰጠው')}</option>
+              </select>
+            )}
             <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="form-input text-xs py-1.5 px-3" />
           </div>
         </div>
@@ -204,7 +216,10 @@ export function LedgerPage({ type }: { type: TxnType }) {
                     {x.unit && <div className="text-[11px] text-slate-400">{x.unit}</div>}
                   </td>
                   <td className="text-xs text-slate-600">{x.party || '—'}</td>
-                  <td className="text-xs font-mono text-slate-500">{x.receipt_no || '—'}</td>
+                  <td className="text-xs font-mono text-slate-500">
+                    {x.receipt_no || '—'}
+                    {x.account && <div className="font-sans text-[11px] text-slate-400">{x.account}</div>}
+                  </td>
                   <td className={`text-right font-mono font-semibold whitespace-nowrap ${income ? 'text-emerald-700' : 'text-red-600'}`}>
                     {formatETB(x.amount)}
                   </td>
@@ -258,6 +273,16 @@ export function LedgerPage({ type }: { type: TxnType }) {
             <Field label={t('Receipt no.', 'የደረሰኝ ቁጥር')}>
               <input type="text" value={form.receipt_no} onChange={set('receipt_no')} className="form-input text-sm font-mono" />
             </Field>
+            {fin.accounts.length > 0 && (
+              <Field label={income ? t('Received into', 'የገባበት ሂሳብ') : t('Paid from', 'የተከፈለበት ሂሳብ')}>
+                <select value={form.account_id} onChange={set('account_id')} className="form-input text-sm">
+                  <option value="">—</option>
+                  {fin.accounts.map((a) => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>
+              </Field>
+            )}
             <Field label={t('Department (optional)', 'ክፍል (ካለ)')}>
               <select value={form.unit_id} onChange={set('unit_id')} className="form-input text-sm">
                 <option value="">—</option>

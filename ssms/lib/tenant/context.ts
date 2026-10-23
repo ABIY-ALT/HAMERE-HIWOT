@@ -40,7 +40,7 @@ export const TENANT_COLUMNS = 'id, slug, name_en, name_am, status, is_default, r
 export const RESERVED_SLUGS = new Set([
   'www', 'api', 'app', 'admin', 'platform', 'dashboard', 'login', 'logout', 'register', 'signup', 'billing',
   's', 'exam', 'profile', 'about', 'contact', 'events', 'news', 'gallery', 'help', 'support', 'status',
-  'template-defaults', 'static', 'assets', 'public', 'choose',
+  'template-defaults', 'static', 'assets', 'public', 'choose', 'start',
 ]);
 
 export const loadTenant = cache(async (id: string): Promise<TenantInfo | null> => {

@@ -512,6 +512,43 @@ export async function loadNotifications(): Promise<Loaded<Notice[]>> {
         }))
       );
     }
+    if (me.tenant.access.modules.includes('library')) {
+      if (can('LIBRARY_MANAGE')) {
+        sources.push(() =>
+          counted('library_requests', (q) => q.eq('status', 'WAITING'), 'requested_at', (n) => ({
+            id: 'library-requests', kind: 'alert', href: '/dashboard/library/loans',
+            en: `${n} book ${plural(n, 'request is', 'requests are')} waiting (asked on Telegram)`,
+            am: `${n} የመጽሐፍ ጥያቄ(ዎች) ይጠብቃሉ (በቴሌግራም የተጠየቁ)`,
+          }))
+        );
+        sources.push(() =>
+          counted('library_loans', (q) => q.eq('status', 'OUT').eq('kind', 'HOME').lt('due_date', today), 'due_date', (n) => ({
+            id: 'library-late', kind: 'alert', href: '/dashboard/library/loans?tab=LATE',
+            en: `${n} library ${plural(n, 'book is', 'books are')} past the return day`,
+            am: `${n} የቤተ መጻሕፍት መጽሐፍ(ት) የመመለሻ ቀን አልፏል`,
+          }))
+        );
+      }
+      // The signed-in person's own books: due tomorrow, or late
+      sources.push(async () => {
+        const { data, error } = await db.from('library_loans')
+          .select('id, due_date, book:library_books!library_loans_book_fkey(title)')
+          .eq('borrower_person_id', me.person.id)
+          .eq('status', 'OUT')
+          .eq('kind', 'HOME')
+          .lte('due_date', addDays(today, 1));
+        if (error) return [];
+        return ((data ?? []) as unknown as { id: string; due_date: string; book: { title: string } | null }[]).map((l) => {
+          const late = l.due_date < today;
+          const title = l.book?.title ?? '';
+          return {
+            id: `my-library-book-${l.id}`, version: `${l.due_date}:${late}`, kind: late ? ('alert' as const) : ('info' as const), href: '/dashboard', at: l.due_date,
+            en: late ? `The library book “${title}” was due on ${l.due_date} — please bring it back` : `Bring the library book “${title}” back by tomorrow`,
+            am: late ? `የቤተ መጻሕፍቱ መጽሐፍ «${title}» የመመለሻ ቀን አልፏል — እባክዎ ይመልሱ` : `የቤተ መጻሕፍቱን መጽሐፍ «${title}» ነገ ይመልሱ`,
+          };
+        });
+      });
+    }
     if (can('PROGRAM_VIEW', 'PROGRAM_CREATE')) {
       sources.push(async () => {
         const { data } = await db.from('programs')

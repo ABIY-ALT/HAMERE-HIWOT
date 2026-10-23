@@ -6,6 +6,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import { LogIn, Send } from 'lucide-react';
 import type { PublicSite } from '@/lib/site/public-data';
 import { siteVars } from '@/lib/branding';
 
@@ -52,7 +53,7 @@ export function SiteShell({ lang, path, site, children }: { lang: SiteLang; path
             <span className="min-w-0 leading-tight">
               <span className="block font-bold text-sm sm:text-base truncate">{t(site.brand.name_am, site.brand.name_en)}</span>
               {(site.brand.church_am || site.brand.church_en) && (
-                <span className="hidden sm:block text-[11px] text-indigo-200 truncate">{t(site.brand.church_am, site.brand.church_en)}</span>
+                <span className="hidden sm:block text-[11px] text-white/70 truncate">{t(site.brand.church_am, site.brand.church_en)}</span>
               )}
             </span>
           </Link>
@@ -61,7 +62,7 @@ export function SiteShell({ lang, path, site, children }: { lang: SiteLang; path
               <Link
                 key={p.path}
                 href={hrefFor(p.path, lang, site.base)}
-                className={`px-3 py-2 rounded-lg transition-colors ${isCurrent(path, p.path) ? 'bg-white/15 text-amber-300 font-semibold' : 'text-indigo-100 hover:bg-white/10'}`}
+                className={`px-3 py-2 rounded-lg transition-colors ${isCurrent(path, p.path) ? 'bg-white/15 text-amber-300 font-semibold' : 'text-white/80 hover:bg-white/10'}`}
               >
                 {t(p.am, p.en)}
               </Link>
@@ -82,7 +83,7 @@ export function SiteShell({ lang, path, site, children }: { lang: SiteLang; path
               <Link
                 key={p.path}
                 href={hrefFor(p.path, lang, site.base)}
-                className={`flex-1 shrink-0 text-center px-3 py-2 ${isCurrent(path, p.path) ? 'text-amber-300 font-semibold border-b-2 border-amber-400' : 'text-indigo-100'}`}
+                className={`flex-1 shrink-0 text-center px-3 py-2 ${isCurrent(path, p.path) ? 'text-amber-300 font-semibold border-b-2 border-amber-400' : 'text-white/80'}`}
               >
                 {t(p.am, p.en)}
               </Link>
@@ -93,12 +94,12 @@ export function SiteShell({ lang, path, site, children }: { lang: SiteLang; path
 
       <main className="flex-1">{children}</main>
 
-      <footer className="bg-[var(--site-dark)] text-indigo-100">
+      <footer className="bg-[var(--site-dark)] text-white/80">
         <div className="mx-auto max-w-6xl px-4 py-10 grid gap-8 sm:grid-cols-3 text-sm">
           <div className="space-y-1.5">
             <div className="font-bold text-white">{name}</div>
-            {site.parish.diocese && <div className="text-indigo-200 text-xs">{site.parish.diocese}</div>}
-            {site.parish.foundation_year && <div className="text-indigo-200 text-xs">{t('የተመሠረተው', 'Founded')} {site.parish.foundation_year}</div>}
+            {site.parish.diocese && <div className="text-white/70 text-xs">{site.parish.diocese}</div>}
+            {site.parish.foundation_year && <div className="text-white/70 text-xs">{t('የተመሠረተው', 'Founded')} {site.parish.foundation_year}</div>}
           </div>
           <div className="space-y-2">
             <div className="font-semibold text-white">{t('ገጾች', 'Pages')}</div>
@@ -114,19 +115,24 @@ export function SiteShell({ lang, path, site, children }: { lang: SiteLang; path
             <div className="font-semibold text-white">{t('ይገናኙን', 'Stay connected')}</div>
             {site.bot && (
               <a href={`https://t.me/${site.bot}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 hover:text-amber-300">
-                ✈️ {t('የቴሌግራም ቦታችን', 'Our Telegram bot')} — @{site.bot}
+                <Send size={15} className="text-amber-300" /> {t('የቴሌግራም ቦታችን', 'Our Telegram bot')} — @{site.bot}
               </a>
             )}
             <div>
-              <Link href="/login" className="inline-flex items-center gap-1 text-xs text-indigo-300 hover:text-white">
-                🔐 {t('ለአገልጋዮችና ለአባላት መግቢያ', 'Sign in (servants & members)')}
+              <Link href="/login" className="inline-flex items-center gap-1.5 text-xs text-white/60 hover:text-white">
+                <LogIn size={13} /> {t('ለአገልጋዮችና ለአባላት መግቢያ', 'Sign in (servants & members)')}
               </Link>
             </div>
           </div>
         </div>
-        <div className="border-t border-white/10 text-center text-[11px] text-indigo-300 py-4 px-4">
-          © {new Date().getFullYear()} {t(site.brand.name_am, site.brand.name_en)}
-          {site.parish.motto && <> · {site.parish.motto}</>}
+        <div className="border-t border-white/10 text-center text-[11px] text-white/60 py-4 px-4 space-y-1">
+          <div>
+            © {new Date().getFullYear()} {t(site.brand.name_am, site.brand.name_en)}
+            {site.parish.motto && <> · {site.parish.motto}</>}
+          </div>
+          <Link href={hrefFor('/start', lang)} className="inline-block text-white/45 hover:text-white">
+            {t('በሰንበት ትምህርት ቤት አስተዳደር ሥርዓት የተሠራ', 'Runs on the Sunday School Management System')}
+          </Link>
         </div>
       </footer>
     </div>
@@ -139,7 +145,7 @@ export function PageTitle({ title, subtitle }: { title: string; subtitle?: strin
     <section className="bg-gradient-to-b from-[var(--site-main)] to-[var(--site-light)] text-white">
       <div className="mx-auto max-w-6xl px-4 py-10 sm:py-14">
         <h1 className="text-2xl sm:text-3xl font-bold">{title}</h1>
-        {subtitle && <p className="mt-2 text-indigo-100 max-w-2xl text-sm sm:text-base">{subtitle}</p>}
+        {subtitle && <p className="mt-2 text-white/80 max-w-2xl text-sm sm:text-base">{subtitle}</p>}
       </div>
     </section>
   );

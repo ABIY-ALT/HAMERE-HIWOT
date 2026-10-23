@@ -22,6 +22,9 @@
 //   ✉️ Ask a department  a question to a department, answered on the website (lib/telegram/questions)
 //   ℹ️ About us          topics about the Sunday school written by the office (lib/telegram/about) — for anyone
 //   🔑 Forgot my PIN     a temporary PIN for the website: own login or a child's (lib/telegram/pin-flow)
+//   💰 Budget request    department heads only: ask Finance for money, see their requests (lib/telegram/budget-flow)
+//   🎶 Hymns             the hymn library: by type, by words, the next rehearsal; lyrics (lib/telegram/hymn-flow)
+//   📚 Library           own books and due dates; find a book, see if it is on the shelf, ask for it (lib/telegram/library-flow)
 //   /stop                stop all messages to this chat (and forget its number)
 // Always answers 200, so Telegram does not resend.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -57,6 +60,9 @@ import { continueTasks, startTasks, type TasksData } from '@/lib/telegram/tasks-
 import { continueCheckin, startCheckin, type CheckinData } from '@/lib/telegram/checkin-flow';
 import { continueService, startService, type ServiceData } from '@/lib/telegram/service-flow';
 import { continuePin, startPin, type PinData } from '@/lib/telegram/pin-flow';
+import { continueBudget, startBudget, type BudgetData } from '@/lib/telegram/budget-flow';
+import { continueHymns, startHymns, type HymnData } from '@/lib/telegram/hymn-flow';
+import { continueLibrary, startLibrary, type LibraryChatData } from '@/lib/telegram/library-flow';
 import { BACK_BUTTON, aboutMenu, isAboutMessage, loadAbout, topicButton, topicText } from '@/lib/telegram/about';
 
 
@@ -111,10 +117,18 @@ export async function handleTelegramWebhook(request: Request, tenantId: string):
   const access = await loadTenantAccess(tenantId);
   // Not in the plan, or the Sunday school is suspended: accept and ignore, so Telegram does not resend
   if (access.mode === 'blocked' || !access.modules.includes('telegram')) return NextResponse.json({ ok: true });
-  return runInTenant(tenantId, () => answer(request, tenantId, access.mode !== 'full'));
+  // Budget requests need the finance module and a Sunday school that may write
+  const budget = access.mode === 'full' && access.modules.includes('finance');
+  const features = { budget, hymns: access.modules.includes('sacred_arts'), library: access.modules.includes('library') };
+  return runInTenant(tenantId, () => answer(request, tenantId, access.mode !== 'full', features));
 }
 
-async function answer(request: Request, tenantId: string, readOnly: boolean): Promise<NextResponse> {
+async function answer(
+  request: Request,
+  tenantId: string,
+  readOnly: boolean,
+  features: { budget: boolean; hymns: boolean; library: boolean }
+): Promise<NextResponse> {
   const update = (await request.json().catch(() => null)) as Update | null;
   const message = update?.message;
   const chatId = message?.chat?.id;
@@ -141,7 +155,7 @@ async function answer(request: Request, tenantId: string, readOnly: boolean): Pr
         return NextResponse.json({ ok: true });
       }
       // "Connected as": member, student and/or parent of whom — and the buttons for that
-      const scope = await chatScope(db, chatId);
+      const scope = await chatScope(db, chatId, features);
       await sendTelegram(chatId, await connectedText(db, scope), menuFor(scope));
       return NextResponse.json({ ok: true });
     }
@@ -163,7 +177,7 @@ async function answer(request: Request, tenantId: string, readOnly: boolean): Pr
       }
       await db.from('telegram_links').upsert({ person_id: row.person_id, chat_id: chatId, telegram_name: telegramName || null }, { onConflict: 'person_id,chat_id' });
       await db.from('telegram_link_codes').delete().eq('code', startCode);
-      const scope = await chatScope(db, chatId);
+      const scope = await chatScope(db, chatId, features);
       await sendTelegram(
         chatId,
         `${await connectedText(db, scope)}\n\n` +
@@ -190,7 +204,7 @@ async function answer(request: Request, tenantId: string, readOnly: boolean): Pr
     // ── ℹ️ About us: for anyone, connected or not ──
     if (isAboutMessage(text)) {
       if (text === BACK_BUTTON) {
-        const scope = await chatScope(db, chatId);
+        const scope = await chatScope(db, chatId, features);
         await sendTelegram(chatId, escapeHtml(scope.linked ? helpFor(scope) : WELCOME), scope.linked ? menuFor(scope) : PHONE_KEYBOARD);
         return NextResponse.json({ ok: true });
       }
@@ -207,7 +221,7 @@ async function answer(request: Request, tenantId: string, readOnly: boolean): Pr
     if (refreshed?.added) await tellUpdated(db, chatId);
 
     // ── Everything else needs a linked chat ──
-    const scope = await chatScope(db, chatId);
+    const scope = await chatScope(db, chatId, features);
     if (!scope.linked) {
       // Shared a number that is on no record yet: it connects by itself once the office adds it
       const waiting = await savedChat(db, chatId);
@@ -228,6 +242,12 @@ async function answer(request: Request, tenantId: string, readOnly: boolean): Pr
         await continueTasks(db, chatId, session as unknown as { step: string; data: TasksData }, text, scope, menu);
       } else if (session.step.startsWith('PIN_')) {
         await continuePin(db, chatId, session as unknown as { step: string; data: PinData }, text, scope, menu);
+      } else if (session.step.startsWith('HYMN_')) {
+        await continueHymns(db, chatId, session as unknown as { step: string; data: HymnData }, text, scope, menu);
+      } else if (session.step.startsWith('LIB_')) {
+        await continueLibrary(db, chatId, session as unknown as { step: string; data: LibraryChatData }, text, scope, menu, readOnly);
+      } else if (session.step.startsWith('BUDGET_')) {
+        await continueBudget(db, chatId, session as unknown as { step: string; data: BudgetData }, text, scope, menu);
       } else if (session.step.startsWith('ASK_')) {
         await continueAsk(db, chatId, session as unknown as { step: string; data: AskData }, text, await askerOf(db, scope, telegramName), menu);
       } else {
@@ -249,6 +269,9 @@ async function answer(request: Request, tenantId: string, readOnly: boolean): Pr
     else if (asked(text, 'service', BUTTONS.service)) await startService(db, chatId, scope, menu);
     else if (asked(text, 'events', BUTTONS.events)) await sendTelegram(chatId, await eventsText(db, scope), menu);
     else if (asked(text, 'pin', BUTTONS.pin)) await startPin(db, chatId, scope, menu);
+    else if (asked(text, 'budget', BUTTONS.budget)) await startBudget(db, chatId, scope, menu, features.budget);
+    else if (asked(text, 'hymns', BUTTONS.hymns)) await startHymns(db, chatId, scope, menu, features.hymns);
+    else if (asked(text, 'library', BUTTONS.library)) await startLibrary(db, chatId, scope, menu, features.library);
     else await sendTelegram(chatId, escapeHtml(helpFor(scope)), menu);
   } catch (e) {
     console.error('telegram webhook failed', e);

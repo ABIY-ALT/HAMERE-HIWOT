@@ -16,7 +16,7 @@ export function EventCard({ event, lang, full = false }: { event: PublicEvent; l
       <div className="w-16 shrink-0 rounded-xl bg-[var(--site-main)] text-white text-center py-2 self-start">
         <div className="text-2xl font-bold leading-none">{d?.day ?? '—'}</div>
         <div className="text-[11px] mt-1 text-amber-300 font-semibold">{d ? ethiopianMonthName(d.month, lang) : ''}</div>
-        <div className="text-[10px] text-indigo-200">{d?.year}</div>
+        <div className="text-[10px] text-white/70">{d?.year}</div>
       </div>
       <div className="min-w-0 space-y-1">
         <div className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">{lang === 'am' ? typeAm : typeEn}</div>

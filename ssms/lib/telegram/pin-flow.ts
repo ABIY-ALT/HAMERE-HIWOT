@@ -18,6 +18,7 @@ import { chatsOf, escapeHtml, sendTelegram, telegramToChats } from '@/lib/telegr
 import { CANCEL, clearSession } from '@/lib/telegram/dues-flow';
 import type { ChatScope } from '@/lib/telegram/menu';
 import { isStudentLogin } from '@/lib/auth/student-login';
+import { createOwnLogin, ownLoginCandidates, selfLoginAllowed } from '@/lib/auth/self-login';
 import { rateLimit } from '@/lib/security/rate-limit';
 import {
   RESETS_PER_DAY,
@@ -36,7 +37,11 @@ const DAY = 24 * 60 * 60;
 
 export interface PinData {
   logins?: { id: string; button: string }[];
+  /** People of this chat without a login who may make their own (lib/auth/self-login) */
+  create?: { person_id: string; button: string }[];
 }
+
+const createButton = (name: string) => `🆕 መግቢያ ፍጠርልኝ · Create my login — ${name}`.slice(0, 60);
 
 interface Login {
   id: string;
@@ -78,7 +83,11 @@ async function loginsOfChat(db: SupabaseClient, chatId: number, scope: ChatScope
 /** "🔑 Forgot my PIN": which login? */
 export async function startPin(db: SupabaseClient, chatId: number, scope: ChatScope, menu: Record<string, unknown>) {
   const logins = await loginsOfChat(db, chatId, scope);
-  if (logins.length === 0) {
+  // Own records without a login: they may make their own (when the office allows it)
+  const create = (await selfLoginAllowed(db))
+    ? (await ownLoginCandidates(db, await ownPeople(db, chatId))).slice(0, 3).map((c) => ({ person_id: c.person_id, button: createButton(c.name) }))
+    : [];
+  if (logins.length === 0 && create.length === 0) {
     return sendTelegram(
       chatId,
       e('እርስዎም ሆኑ ልጆችዎ በድረ-ገጹ ላይ መግቢያ የላችሁም። ጽ/ቤቱ እንዲሠራላችሁ ይጠይቁ።\nNeither you nor your children have a login on the website yet. Ask the office to make one.'),
@@ -86,12 +95,42 @@ export async function startPin(db: SupabaseClient, chatId: number, scope: ChatSc
     );
   }
   const list = logins.slice(0, 8).map((l) => ({ id: l.id, button: `🔑 ${l.username} · ${l.name}`.slice(0, 60) }));
-  await save(db, chatId, { logins: list });
-  return sendTelegram(
-    chatId,
-    e('የትኛው መግቢያ አዲስ ሚስጥር ቁጥር ይፈልጋል?\nWhich login needs a new PIN?\n\nአዲሱ ጊዜያዊ ነው፤ ሲገቡ የራስዎን ይመርጣሉ። · The new one is temporary: you choose your own when you sign in.'),
-    keyboard([...list.map((l) => [l.button]), [CANCEL]])
-  );
+  await save(db, chatId, { logins: list, create });
+  const lines = [];
+  if (list.length) lines.push('የትኛው መግቢያ አዲስ ሚስጥር ቁጥር ይፈልጋል?\nWhich login needs a new PIN?\n\nአዲሱ ጊዜያዊ ነው፤ ሲገቡ የራስዎን ይመርጣሉ። · The new one is temporary: you choose your own when you sign in.');
+  if (create.length) lines.push('በድረ-ገጹ ላይ መግቢያ የለዎትም? «🆕 መግቢያ ፍጠርልኝ» ይጫኑ — ጊዜያዊ የይለፍ ቃል እዚህ ይደርስዎታል፤ ሲገቡ የራስዎን ይመርጣሉ።\nNo website login yet? Tap “🆕 Create my login” — a temporary password comes here; you choose your own when you sign in.');
+  return sendTelegram(chatId, e(lines.join('\n\n')), keyboard([...list.map((l) => [l.button]), ...create.map((c) => [c.button]), [CANCEL]]));
+}
+
+/** The people this chat is linked to as themselves */
+async function ownPeople(db: SupabaseClient, chatId: number): Promise<string[]> {
+  let res = await db.from('telegram_links').select('person_id, relation').eq('chat_id', chatId);
+  if (res.error) res = (await db.from('telegram_links').select('person_id').eq('chat_id', chatId)) as typeof res;
+  return ((res.data ?? []) as { person_id: string; relation?: string }[]).filter((l) => l.relation !== 'GUARDIAN').map((l) => l.person_id);
+}
+
+/** "🆕 Create my login": a login with a temporary password, sent to the person's own chats. */
+async function createLogin(db: SupabaseClient, chatId: number, personId: string, menu: Record<string, unknown>) {
+  if (!(await ownPeople(db, chatId)).includes(personId)) return sendTelegram(chatId, e('ይህ መዝገብ የእርስዎ አይደለም። · This record is not yours.'), menu);
+  if (!(await rateLimit(`self-login:${personId}`, RESETS_PER_DAY, DAY))) {
+    return sendTelegram(chatId, e('ዛሬ ብዙ ጊዜ ተሞክሯል። ነገ እንደገና ይሞክሩ። · Tried too many times today. Try again tomorrow.'), menu);
+  }
+  const res = await createOwnLogin(db, personId);
+  if (res.status === 'not_allowed') {
+    return sendTelegram(chatId, e('ለዚህ መዝገብ መግቢያ መፍጠር አልተቻለም — ጽ/ቤቱን ይጠይቁ። · A login cannot be made for this record — ask the office.'), menu);
+  }
+  if (res.status === 'linked') {
+    return sendTelegram(
+      chatId,
+      e(`✅ ${res.name}: በዚህ ስልክ (${res.username}) ቀድሞ የሚገቡበት መግቢያ ከዚህ ሰንበት ትምህርት ቤት ጋርም ተገናኝቷል። በነበረው የይለፍ ቃልዎ ይግቡ።\n✅ ${res.name}: the login you already use with this phone (${res.username}) now opens this Sunday school too. Sign in with your existing password.`),
+      menu
+    );
+  }
+  const chats = await chatsOf(db, [personId], 'SELF');
+  chats.add(chatId);
+  const delivered = await sendTemporary(chats, { name: res.name, login: res.username, secret: res.secret, pin: false });
+  await logReset(db, { systemUserId: res.systemUserId, actorId: null, via: 'bot', delivered });
+  return sendTelegram(chatId, e('✅ መግቢያዎ ተፈጥሯል — ጊዜያዊ የይለፍ ቃሉ ከላይ ባለው መልእክት ውስጥ ነው። · Your login is ready — the temporary password is in the message above.'), menu);
 }
 
 export async function continuePin(
@@ -106,9 +145,18 @@ export async function continuePin(
     await clearSession(db, chatId);
     return sendTelegram(chatId, e('ተሰርዟል። · Cancelled.'), menu);
   }
+  const making = session.data.create?.find((c) => c.button === text);
+  if (making) {
+    await clearSession(db, chatId);
+    return createLogin(db, chatId, making.person_id, menu);
+  }
   const picked = session.data.logins?.find((l) => l.button === text);
   if (!picked) {
-    return sendTelegram(chatId, e('እባክዎ ከታች ካሉት አዝራሮች አንዱን ይጫኑ። · Please tap one of the buttons below.'), keyboard([...(session.data.logins ?? []).map((l) => [l.button]), [CANCEL]]));
+    return sendTelegram(
+      chatId,
+      e('እባክዎ ከታች ካሉት አዝራሮች አንዱን ይጫኑ። · Please tap one of the buttons below.'),
+      keyboard([...(session.data.logins ?? []).map((l) => [l.button]), ...(session.data.create ?? []).map((c) => [c.button]), [CANCEL]])
+    );
   }
   await clearSession(db, chatId);
 

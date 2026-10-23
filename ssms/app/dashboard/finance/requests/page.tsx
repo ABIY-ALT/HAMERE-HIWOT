@@ -496,8 +496,10 @@ function RequestDetails({
   const [paidAt, setPaidAt] = useState(todayIso());
   const [reference, setReference] = useState('');
   const [payee, setPayee] = useState('');
+  const [accountId, setAccountId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const { accounts } = useFinance();
 
   const isMine = r.requested_by_id === myId;
   const canReview = isApprover && r.status === 'PENDING' && !isMine;
@@ -592,7 +594,7 @@ function RequestDetails({
         {/* Treasurer: pay */}
         {canPay && (
           <div className="space-y-2 pt-2 border-t border-slate-100">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div className={`grid grid-cols-1 gap-2 ${accounts.length > 0 ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>
               <Field label={t('Payment date', 'የተከፈለበት ቀን') + ' *'}>
                 <input type="date" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} className="form-input text-sm" />
               </Field>
@@ -602,10 +604,20 @@ function RequestDetails({
               <Field label={t('Paid to', 'የተከፈለው ለ')}>
                 <input type="text" value={payee} onChange={(e) => setPayee(e.target.value)} className="form-input text-sm" />
               </Field>
+              {accounts.length > 0 && (
+                <Field label={t('Paid from', 'የተከፈለበት ሂሳብ')}>
+                  <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className="form-input text-sm">
+                    <option value="">—</option>
+                    {accounts.map((a) => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
+                    ))}
+                  </select>
+                </Field>
+              )}
             </div>
             <button
               disabled={busy || !reference.trim()}
-              onClick={() => run(() => markRequestPaid(r.id, { paid_at: paidAt, reference, payee }, myName), t('Payment recorded as an expense', 'ክፍያው እንደ ወጪ ተመዝግቧል'))}
+              onClick={() => run(() => markRequestPaid(r.id, { paid_at: paidAt, reference, payee, account_id: accountId }, myName), t('Payment recorded as an expense', 'ክፍያው እንደ ወጪ ተመዝግቧል'))}
               className="btn btn-primary text-xs inline-flex items-center gap-1.5 disabled:opacity-50"
             >
               <Banknote size={14} /> {t('Mark as paid', 'እንደተከፈለ መዝግብ')}

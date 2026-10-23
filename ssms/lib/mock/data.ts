@@ -652,6 +652,8 @@ export const MOCK_PERMISSIONS: Permission[] = [
   { id: 'perm-p02', code: 'ASSET_CREATE', name_en: 'Register Assets', name_am: 'ንብረቶችን ይመዝግቡ', description_en: null, category: 'PROPERTY', is_active: true },
   { id: 'perm-p03', code: 'ASSET_ASSIGN', name_en: 'Assign Assets', name_am: 'ንብረቶችን ያስረክቡ', description_en: null, category: 'PROPERTY', is_active: true },
   { id: 'perm-p04', code: 'ASSET_TRANSFER', name_en: 'Transfer Assets', name_am: 'ንብረቶችን ያዛውሩ', description_en: null, category: 'PROPERTY', is_active: true },
+  { id: 'perm-lb1', code: 'LIBRARY_VIEW', name_en: 'View the library', name_am: 'ቤተ መጻሕፍትን ማየት', description_en: null, category: 'LIBRARY', is_active: true },
+  { id: 'perm-lb2', code: 'LIBRARY_MANAGE', name_en: 'Manage the library and lend books', name_am: 'ቤተ መጻሕፍትን ማስተዳደርና መጻሕፍት ማዋስ', description_en: null, category: 'LIBRARY', is_active: true },
   // Audit
   { id: 'perm-au1', code: 'AUDIT_VIEW_ALL', name_en: 'View All Audit Logs', name_am: 'ሁሉንም ኦዲት መዝገቦች ይመልከቱ', description_en: null, category: 'AUDIT', is_active: true },
   // Governance

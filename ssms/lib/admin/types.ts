@@ -16,6 +16,21 @@ export interface AdminUserRow {
   last_login: string | null; // ISO timestamp
   is_active: boolean;
   permissions: string[];
+  /** Every active role the account holds, each in a unit, some until a date */
+  assignments: AdminAssignment[];
+}
+
+/** One role held in one unit (user_unit_assignments) */
+export interface AdminAssignment {
+  id: string;
+  role_id: string;
+  role: string;
+  role_am: string;
+  unit_id: string;
+  unit: string;
+  unit_am: string;
+  /** ISO timestamp, or null for no end */
+  expires_at: string | null;
 }
 
 export interface AdminRoleRow {
@@ -28,6 +43,8 @@ export interface AdminRoleRow {
   is_system_role: boolean;
   is_active: boolean;
   permissions: string[]; // permission codes
+  /** Who holds this role now (active, unexpired assignments) */
+  holders?: { user_id: string; name: string; name_am: string; unit: string; unit_am: string }[];
 }
 
 export interface AdminPermissionRow {
@@ -37,6 +54,8 @@ export interface AdminPermissionRow {
   name_am: string;
   category: string;
   is_active: boolean;
+  /** Its module is not in this Sunday school's plan: holding it does nothing for now */
+  unavailable?: boolean;
 }
 
 export interface AdminUnitRow {

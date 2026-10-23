@@ -21,6 +21,8 @@ export const TENANT_TABLES = new Set<string>([
   'unit_plans', 'plan_activities', 'plan_updates', 'member_questions',
   'checkin_events', 'checkins', 'service_roster', 'vestments', 'vestment_loans',
   'automation_log', 'site_posts', 'site_albums', 'site_photos',
+  'bank_accounts', 'account_transfers', 'bank_statements', 'bank_statement_lines',
+  'library_books', 'library_copies', 'library_loans', 'library_requests',
   // view (carries tenant_id)
   'attendance_session_totals',
 ]);
@@ -35,6 +37,7 @@ export const GLOBAL_READ_TABLES = new Set<string>(['permissions']);
 export const TENANT_KEYED_CONFLICTS: Record<string, string[]> = {
   system_settings: ['key'],
   dues_rates: ['year'],
+  bank_statement_lines: ['bank_account_id,fingerprint'],
   telegram_sessions: ['chat_id'],
   telegram_chats: ['chat_id'],
   automation_log: ['job,ref'],

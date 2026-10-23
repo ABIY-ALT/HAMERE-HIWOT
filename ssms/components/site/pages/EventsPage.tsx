@@ -25,7 +25,7 @@ export async function EventsPage({ tenant, lang }: { tenant: TenantInfo; lang: S
         {site.bot && (
           <p className="pt-4 text-sm text-slate-600">
             {t('ስልካቸውን ለቴሌግራም ቦታችን ያጋሩ አባላትና ወላጆች ከመርሐ ግብሩ አንድ ቀን በፊት ማስታወሻ ይደርሳቸዋል፦ ', 'Members and parents who share their phone number with our Telegram bot get a reminder the day before: ')}
-            <a href={`https://t.me/${site.bot}`} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#2f43c8] hover:underline">@{site.bot}</a>
+            <a href={`https://t.me/${site.bot}`} target="_blank" rel="noopener noreferrer" className="font-semibold text-[var(--site-main)] hover:underline">@{site.bot}</a>
           </p>
         )}
       </div>

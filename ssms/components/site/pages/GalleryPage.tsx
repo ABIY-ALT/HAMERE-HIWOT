@@ -31,7 +31,7 @@ export async function GalleryPage({ tenant, lang }: { tenant: TenantInfo; lang: 
                   </span>
                 </div>
                 <div className="p-4">
-                  <h2 className="font-bold text-slate-900 group-hover:text-[#2f43c8]">{(lang === 'en' && a.title_en) || a.title_am}</h2>
+                  <h2 className="font-bold text-slate-900 group-hover:text-[var(--site-main)]">{(lang === 'en' && a.title_en) || a.title_am}</h2>
                   {a.event_date && <div className="text-xs text-slate-500 mt-0.5">{formatEthiopianDate(a.event_date, lang)}</div>}
                 </div>
               </Link>

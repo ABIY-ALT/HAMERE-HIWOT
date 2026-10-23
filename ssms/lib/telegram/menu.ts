@@ -19,6 +19,7 @@ import { escapeHtml, siteUrl } from '@/lib/telegram/bot';
 import { nonMemberIds } from '@/lib/members/membership';
 import { openPeriods } from '@/lib/telegram/dues-flow';
 import { ABOUT_BUTTON } from '@/lib/telegram/about';
+import { headUnitsOf, type HeadUnit } from '@/lib/telegram/budget-flow';
 
 export const BUTTONS = {
   membership: '🪪 አባልነቴ · My membership',
@@ -33,6 +34,9 @@ export const BUTTONS = {
   mytasks: '🗂️ ተግባሮቼ · My tasks',
   here: '✅ ተገኝቻለሁ · I’m here',
   service: '🎵 ምደባዬ · My roster',
+  budget: '💰 የበጀት ጥያቄ · Budget request',
+  hymns: '🎶 መዝሙራት · Hymns',
+  library: '📚 መጻሕፍት · Library',
   pin: '🔑 ሚስጥር ቁጥሬን ረሳሁ · Forgot my PIN',
   help: '❓ እርዳታ · Help',
 } as const;
@@ -53,11 +57,25 @@ export interface ChatScope {
   duesPersonIds: string[];
   /** One of them is an active choir member: service roster and vestments (037) */
   inChoir: boolean;
+  /** Departments / coordinations one of them heads: "💰 Budget request" (lib/telegram/budget-flow) */
+  headUnits: HeadUnit[];
+  /** The people it is linked to as themselves (members, students, parents' own records) */
+  ownPersonIds: string[];
+  /** 🎶 Hymns (sacred arts in the plan) and 📚 Library (library in the plan) */
+  hymns: boolean;
+  library: boolean;
 }
 
-const NOBODY: ChatScope = { linked: false, studentIds: [], selfStudentIds: [], childStudentIds: [], memberPersonIds: [], duesPersonIds: [], inChoir: false };
+const NOBODY: ChatScope = {
+  linked: false, studentIds: [], selfStudentIds: [], childStudentIds: [], memberPersonIds: [], duesPersonIds: [], inChoir: false, headUnits: [], ownPersonIds: [], hymns: false, library: false,
+};
 
-export async function chatScope(db: SupabaseClient, chatId: number): Promise<ChatScope> {
+/** options.budget: false when budget requests are not available (finance not in the plan, or read-only) */
+export async function chatScope(
+  db: SupabaseClient,
+  chatId: number,
+  options: { budget?: boolean; hymns?: boolean; library?: boolean } = {}
+): Promise<ChatScope> {
   // `relation` exists from migration 027; before it every link is the person's own
   let res = await db.from('telegram_links').select('person_id, relation').eq('chat_id', chatId);
   if (res.error) res = (await db.from('telegram_links').select('person_id').eq('chat_id', chatId)) as typeof res;
@@ -81,6 +99,7 @@ export async function chatScope(db: SupabaseClient, chatId: number): Promise<Cha
     ...new Set([...studentRows.filter((s) => !selfSet.has(s.person_id)).map((s) => s.id), ...((children ?? []) as { student_id: string }[]).map((c) => c.student_id)]),
   ].filter((id) => !selfStudentIds.includes(id));
   const memberPersonIds = self.filter((p) => !notMembers.has(p));
+  const headUnits = options.budget === false ? [] : await headUnitsOf(db, memberPersonIds);
   const honorary = new Set(((types ?? []) as { id: string; membership_type: string | null }[]).filter((t) => t.membership_type === 'HONORARY').map((t) => t.id));
   return {
     linked: true,
@@ -90,6 +109,10 @@ export async function chatScope(db: SupabaseClient, chatId: number): Promise<Cha
     memberPersonIds,
     duesPersonIds: memberPersonIds.filter((p) => !honorary.has(p)),
     inChoir: ((choir ?? []) as { person_id: string }[]).some((c) => memberPersonIds.includes(c.person_id)),
+    headUnits,
+    ownPersonIds: self,
+    hymns: options.hymns !== false,
+    library: options.library !== false,
   };
 }
 
@@ -111,6 +134,10 @@ export function menuFor(scope: ChatScope) {
   if (scope.memberPersonIds.length || scope.studentIds.length) middle.push(BUTTONS.attendance);
   if (middle.length) rows.push(middle);
   if (scope.studentIds.length) rows.push([BUTTONS.results, BUTTONS.exams]);
+  // Department heads only
+  if (scope.headUnits.length) rows.push([BUTTONS.budget]);
+  const extras = [...(scope.hymns ? [BUTTONS.hymns] : []), ...(scope.library && scope.ownPersonIds.length ? [BUTTONS.library] : [])];
+  if (extras.length) rows.push(extras);
   if (scope.memberPersonIds.length) rows.push([BUTTONS.mytasks, BUTTONS.ask], [BUTTONS.events, BUTTONS.about], [BUTTONS.pin, BUTTONS.help]);
   else rows.push([BUTTONS.events, BUTTONS.about], [BUTTONS.ask, BUTTONS.pin], [BUTTONS.help]);
   return { reply_markup: { keyboard: rows.map((r) => r.map((text) => ({ text }))), resize_keyboard: true, is_persistent: true } };
@@ -173,6 +200,10 @@ export function helpFor(scope: ChatScope): string {
       am.push('💳 ከፍያለሁ — የከፈሉትን (አንድ ወይም ብዙ ወር) ለፋይናንስ ያሳውቁ');
       en.push('💳 I paid — tell Finance you paid (one month or several)');
     }
+    if (scope.headUnits.length) {
+      am.push('💰 የበጀት ጥያቄ — ለሚመሩት ክፍል ከፋይናንስ ገንዘብ ይጠይቁ፤ የቀደሙ ጥያቄዎችዎን ሁኔታ ይመልከቱ');
+      en.push('💰 Budget request — ask Finance for money for the unit you head; see where your requests are');
+    }
   }
   if (scope.selfStudentIds.length) {
     am.push('📊 📋 🖊️ — የእርስዎ ውጤት፣ የክፍል ክትትልና ፈተና');
@@ -192,8 +223,12 @@ export function helpFor(scope: ChatScope): string {
   }
   am.push('📅 መርሐ ግብር — የሚመጡ የትምህርት ቤቱ መርሐ ግብሮች', 'ℹ️ ስለ እኛ — ስለ ሰንበት ትምህርት ቤቱ ማወቅ የሚፈልጉት', '✉️ ጥያቄ — ለአንድ ክፍል ጥያቄ ይላኩ፤ መልሱ እዚህ ይደርስዎታል');
   en.push('📅 Events — the school’s coming programs', 'ℹ️ About us — what you want to know about the Sunday school', '✉️ Ask a department — send a question; the answer comes here');
-  am.push('🔑 ሚስጥር ቁጥሬን ረሳሁ — ለድረ-ገጹ መግቢያ አዲስ ጊዜያዊ ሚስጥር ቁጥር (የእርስዎ ወይም የልጅዎ)');
-  en.push('🔑 Forgot my PIN — a new temporary PIN for the website (yours or your child’s)');
+  if (scope.hymns) am.push('🎶 መዝሙራት — የመዝሙራት ማውጫ፦ በዓይነት ወይም በቃል ፈልገው ግጥሙን ያግኙ');
+  if (scope.library && scope.ownPersonIds.length) am.push('📚 መጻሕፍት — ያለዎት መጽሐፍና የሚመለስበት ቀን፤ መጽሐፍ ፈልገው መኖሩን ይዩ፣ ይጠይቁ');
+  am.push('🔑 ሚስጥር ቁጥሬን ረሳሁ — ለድረ-ገጹ አዲስ ጊዜያዊ ሚስጥር ቁጥር (የእርስዎ ወይም የልጅዎ)፤ መግቢያ ከሌለዎት «መግቢያ ፍጠርልኝ»');
+  if (scope.hymns) en.push('🎶 Hymns — the hymn library: find a hymn by type or words and get its lyrics');
+  if (scope.library && scope.ownPersonIds.length) en.push('📚 Library — the books you have and when they are due; find a book, see if it is on the shelf, ask for it');
+  en.push('🔑 Forgot my PIN — a new temporary PIN for the website (yours or your child’s); no login yet? “Create my login”');
   am.push('መልእክት ለማቆም /stop');
   en.push('To stop messages: /stop');
   return `${am.join('\n')}\n\n${en.join('\n')}`;

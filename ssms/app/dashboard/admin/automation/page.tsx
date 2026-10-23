@@ -79,6 +79,11 @@ export default function AutomationAdminPage() {
       hintAm: 'የመመለሻ ቀናቸው ያለፈ የክብር ልብሶች፦ የያዙት ይታወሳሉ፤ እስኪመለስ በየሳምንቱ።',
     },
     {
+      key: 'library_reminders', en: 'Library book reminders', am: 'የመጻሕፍት መመለሻ ማስታወሻ',
+      hintEn: 'Books taken home: the borrower (and a student’s parents) is reminded the day before the return day, then every week while it is late.',
+      hintAm: 'ወደ ቤት የተወሰዱ መጻሕፍት፦ ተዋሹ (የተማሪ ወላጆችም) ከመመለሻው ቀን አንድ ቀን በፊት፣ ከዚያም እስኪመለስ በየሳምንቱ ይታወሳሉ።',
+    },
+    {
       key: 'overdue_tasks', en: 'Overdue task alerts', am: 'ጊዜው ያለፈ ተግባር ማሳወቂያ',
       hintEn: 'The day after a task’s due date, its department’s heads are told it is still open.',
       hintAm: 'የተግባር የማብቂያ ቀን ባለፈ ማግስት የክፍሉ ኃላፊዎች ተግባሩ እንዳልተጠናቀቀ ይነገራቸዋል።',

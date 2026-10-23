@@ -3,8 +3,9 @@
 // client held to that Sunday school, and every query here names its columns:
 // only what the office chose to publish — the parish profile, the About
 // topics written for the bot, programs added under Public Website → Events,
-// the department names for the contact form, and published news posts and
-// photo albums (039). Never people, students, finance or anything else.
+// the department names for the contact form, published news posts and photo
+// albums (039), and how many active members and students there are (counts
+// only). Never people, students, finance or anything else.
 // The default Sunday school is served at /, others at /s/<slug> (publicPath).
 // Cached for 5 minutes per Sunday school; saving any of these refreshes it
 // (lib/site/cache).
@@ -65,11 +66,13 @@ export interface PublicSite {
   departments: { id: string; name_en: string; name_am: string }[];
   /** The bot's @username, for t.me links */
   bot: string | null;
+  /** Active members and students — numbers only, for the home page */
+  stats: { members: number; students: number };
 }
 
 type SiteData = Omit<PublicSite, 'base' | 'brand'>;
 
-const EMPTY: SiteData = { parish: DEFAULT_PARISH_SETTINGS, topics: [], events: [], departments: [], bot: null };
+const EMPTY: SiteData = { parish: DEFAULT_PARISH_SETTINGS, topics: [], events: [], departments: [], bot: null, stats: { members: 0, students: 0 } };
 
 /** Hamere Hiwot (the default Sunday school) keeps its own look */
 const DEFAULT_BRAND: SiteBrand = {
@@ -100,7 +103,7 @@ async function load(tenantId: string, today: string): Promise<SiteData> {
   if (!isSupabaseEnabled()) return EMPTY;
   return runInTenant(tenantId, async () => {
     const db = tenantClient(tenantId);
-    const [parish, topics, events, units, bot] = await Promise.all([
+    const [parish, topics, events, units, bot, members, students] = await Promise.all([
       db.from('system_settings').select('value').eq('key', PARISH_SETTINGS_KEY).maybeSingle(),
       loadAbout(db).catch(() => []),
       // Before migration 038 there is no is_public: nothing is published yet
@@ -118,6 +121,8 @@ async function load(tenantId: string, today: string): Promise<SiteData> {
         .in('unit_type', ['DEPARTMENT', 'COORDINATION'])
         .order('sort_order'),
       (await telegramConfigured()) ? botUsername() : Promise.resolve(null),
+      db.from('persons').select('id', { count: 'exact', head: true }).eq('status', 'ACTIVE').not('membership_type', 'is', null),
+      db.from('students').select('id', { count: 'exact', head: true }).eq('status', 'ACTIVE'),
     ]);
     // A new Sunday school has not written its profile yet: its own name, not the default one
     const saved = (parish.data as { value?: Partial<ParishSettings> } | null)?.value;
@@ -137,11 +142,12 @@ async function load(tenantId: string, today: string): Promise<SiteData> {
       })),
       departments: ((units.data ?? []) as { id: string; name_en: string; name_am: string | null }[]).map((u) => ({ ...u, name_am: u.name_am || u.name_en })),
       bot,
+      stats: { members: members.count ?? 0, students: students.count ?? 0 },
     };
   });
 }
 
-const cached = unstable_cache(load, ['public-site-v2'], { revalidate: 300, tags: [SITE_TAG] });
+const cached = unstable_cache(load, ['public-site-v3'], { revalidate: 300, tags: [SITE_TAG] });
 
 export async function publicSite(tenant: TenantInfo): Promise<PublicSite> {
   let data: SiteData;

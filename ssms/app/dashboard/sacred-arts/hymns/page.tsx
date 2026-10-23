@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { AlertCircle, BookOpen, Download, Plus, Printer, Search } from 'lucide-react';
+import { AlertCircle, BookOpen, Download, Plus, Printer, Search, Upload } from 'lucide-react';
+import { HymnImportDialog } from '@/components/choir/HymnImportDialog';
 import { useLang } from '@/contexts/LangContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Modal } from '@/components/ui/Modal';
@@ -36,6 +37,7 @@ export default function HymnLibraryPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [toast, setToast] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const active = choir.hymns.filter((h) => h.is_active);
   const feasts = [...new Set(choir.hymns.map((h) => h.feast).filter(Boolean))].sort();
@@ -100,9 +102,21 @@ export default function HymnLibraryPage() {
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
           <button onClick={exportExcel} disabled={rows.length === 0} className="btn btn-secondary text-xs inline-flex items-center gap-1.5 disabled:opacity-50"><Download size={14} /> {t('Export Excel', 'ወደ ኤክሴል')}</button>
+          {canManage && <button onClick={() => setImporting(true)} className="btn btn-secondary text-xs inline-flex items-center gap-1.5"><Upload size={14} /> {t('Import from Excel', 'ከኤክሴል አስገባ')}</button>}
           {canManage && <button onClick={() => open('new')} className="btn btn-primary text-xs inline-flex items-center gap-1.5"><Plus size={14} /> {t('Add Hymn', 'መዝሙር ጨምር')}</button>}
         </div>
       </div>
+
+      {importing && (
+        <HymnImportDialog
+          onClose={() => setImporting(false)}
+          onDone={(text) => {
+            setImporting(false);
+            setToast({ kind: 'success', text });
+            setTimeout(() => setToast(null), 3500);
+          }}
+        />
+      )}
 
       <AdminModeNotice mode={choir.mode} error={choir.error} />
 

@@ -11,6 +11,7 @@ import { authorizeIn, check, errorMessage, selectAll } from '@/lib/auth/authoriz
 import { nonMemberIds } from '@/lib/members/membership';
 import { telegramLater, telegramToPersons } from '@/lib/telegram/bot';
 import { cancelledText, sessionTitle } from '@/lib/choir/service-core';
+import { titleKey } from '@/lib/import/hymns';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import type { AttendanceStatus } from '@/lib/attendance/store';
 import {
@@ -212,6 +213,31 @@ export async function saveHymn(id: string | null, input: HymnInput): Promise<Act
     if (id) await db.from('hymns').update(fields).eq('id', id).then(check);
     else await db.from('hymns').insert(fields).then(check);
     return { ok: true };
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) };
+  }
+}
+
+/** Hymns from the import template (lib/import/hymns). Titles already in the library are refused. */
+export async function importHymns(input: HymnInput[]): Promise<{ ok: true; added: number } | { ok: false; error: string }> {
+  try {
+    const { db } = await authorizeIn('sacred_arts', 'CHOIR_MANAGE');
+    const rows = z.array(HymnSchema).min(1, 'Nothing to import').max(500, 'Import at most 500 hymns at a time').parse(input);
+    const existing = new Set(((await db.from('hymns').select('title_am').then(check)) as { title_am: string }[]).map((h) => titleKey(h.title_am)));
+    const fresh = rows.filter((h) => !existing.has(titleKey(h.title_am)));
+    if (fresh.length === 0) throw new Error('Every hymn in the file is already in the library');
+    await db.from('hymns')
+      .insert(fresh.map((h) => ({
+        title_am: h.title_am,
+        title_en: h.title_en || null,
+        category: h.category,
+        feast: h.feast || null,
+        lyrics: h.lyrics || null,
+        notes: h.notes || null,
+        is_active: true,
+      })))
+      .then(check);
+    return { ok: true, added: fresh.length };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
   }

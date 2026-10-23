@@ -22,6 +22,7 @@ import { formatETB } from '@/lib/finance/types';
 import type {
   BudgetLine,
   BudgetYear,
+  FinanceAccount,
   FinanceData,
   FinanceRequest,
   FinanceTxn,
@@ -97,6 +98,12 @@ export async function loadFinance(): Promise<Loaded<FinanceData>> {
       };
     });
 
+    // Accounts (migration 042): none before it, and the ledger works as before
+    const accountRows = staff
+      ? (((await db.from('bank_accounts').select('id, name, kind, is_active').order('name')).data ?? []) as (FinanceAccount & { is_active: boolean })[])
+      : [];
+    const accountName = new Map(accountRows.map((a) => [a.id, a.name]));
+
     let transactions: FinanceTxn[] = [];
     if (me.permissions.includes('FINANCE_VIEW')) {
       const txnRows = await selectAll<Row>((a, b) =>
@@ -118,6 +125,7 @@ export async function loadFinance(): Promise<Loaded<FinanceData>> {
         unit: ((t.unit as { name_en?: string } | null)?.name_en) ?? '',
         request_no: ((t.request as { request_no?: string } | null)?.request_no) ?? '',
         recorded_by: personName(t.recorder),
+        account: accountName.get(t.bank_account_id as string) ?? '',
       }));
     }
 
@@ -137,7 +145,8 @@ export async function loadFinance(): Promise<Loaded<FinanceData>> {
       // Budget table not created yet (migration 009) — the pages simply show no budget
     }
 
-    return { mode: 'live', data: { requests, transactions, units, budget, budgetYear } };
+    const accounts = accountRows.filter((a) => a.is_active).map(({ id, name, kind }) => ({ id, name, kind }));
+    return { mode: 'live', data: { requests, transactions, units, budget, budgetYear, accounts } };
   } catch (e) {
     return { mode: 'error', error: errorMessage(e) };
   }
@@ -289,7 +298,12 @@ const PaySchema = z.object({
   paid_at: isoDate,
   reference: z.string().trim().min(1, 'Enter the receipt or voucher number'),
   payee: z.string().trim(),
+  /** The account it was paid from ('' = not given) */
+  account_id: z.string().optional(),
 });
+
+/** { bank_account_id } when an account is given — nothing otherwise, so the ledger works before migration 042 */
+const accountField = (id: string | undefined) => (id ? { bank_account_id: id } : {});
 
 /** Pay an approved request: marks it COMPLETED and writes the expense to the ledger. */
 export async function markRequestPaid(id: string, input: z.input<typeof PaySchema>): Promise<ActionResult> {
@@ -324,6 +338,7 @@ export async function markRequestPaid(id: string, input: z.input<typeof PaySchem
       organization_unit_id: req.organization_unit_id,
       request_id: req.id,
       recorded_by: me.systemUser.id,
+      ...accountField(p.account_id),
     });
     if (error) {
       // Keep the request and the ledger consistent
@@ -353,6 +368,7 @@ const TxnSchema = z.object({
   receipt_no: z.string().trim(),
   unit_id: z.string(),
   description: z.string().trim(),
+  account_id: z.string().optional(),
 });
 
 export async function recordTransaction(input: z.input<typeof TxnSchema>): Promise<ActionResult> {
@@ -370,6 +386,7 @@ export async function recordTransaction(input: z.input<typeof TxnSchema>): Promi
         organization_unit_id: t.unit_id || null,
         description: t.description || null,
         recorded_by: me.systemUser.id,
+        ...accountField(t.account_id),
       })
       .then(check);
     return { ok: true };

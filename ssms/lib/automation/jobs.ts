@@ -8,6 +8,7 @@
 //   event_reminders     tomorrow's public programs → every chat connected to the bot
 //   roster_reminders    tomorrow's choir service → each member on its published roster
 //   vestment_reminders  vestments past their return day → the holder (again a week later)
+//   library_reminders   library books: the day before the return day, then weekly while late → the borrower
 //   overdue_tasks       tasks whose due date passed → their department's heads
 //   dues_reminders      from the chosen day of each Ethiopian month → members who owe
 // ─────────────────────────────────────────────────────────────────────────────
@@ -24,6 +25,7 @@ import { vestmentLabel } from '@/lib/choir/service';
 import { issueRepeatingTasks } from '@/lib/tasks/recurring';
 import { addDays } from '@/lib/hr/types';
 import { formatEthiopianDate, isoToEthiopian, todayIso } from '@/lib/utils/ethiopian-calendar';
+import { borrowerChats, libraryText } from '@/lib/library/notify';
 import {
   AUTOMATION_KEY,
   DEFAULT_AUTOMATION,
@@ -153,6 +155,46 @@ async function vestmentReminders(db: SupabaseClient, today: string): Promise<num
   return delivered;
 }
 
+/**
+ * Library books at home (migration 043): the day before the return day a
+ * reminder, then on the first late day and once a week while still out.
+ * A student's parents get them too (lib/library/notify).
+ */
+async function libraryReminders(db: SupabaseClient, today: string): Promise<number | JobResult> {
+  const tomorrow = addDays(today, 1);
+  const { data, error } = await db.from('library_loans')
+    .select('id, due_date, borrower_person_id, borrower:persons!library_loans_borrower_fkey(full_name_en, full_name_am), book:library_books!library_loans_book_fkey(title)')
+    .eq('status', 'OUT')
+    .eq('kind', 'HOME')
+    .lte('due_date', tomorrow);
+  if (error) {
+    if (/library_loans/.test(error.message)) return { job: 'library_reminders', count: 0, note: 'Run database migration 043 (library) first' };
+    throw new Error(error.message);
+  }
+  const loans = (data ?? []) as unknown as {
+    id: string; due_date: string; borrower_person_id: string; borrower: { full_name_en: string; full_name_am: string | null } | null; book: { title: string } | null;
+  }[];
+  const refOf = (l: (typeof loans)[number]) => {
+    if (l.due_date === tomorrow) return `${l.id}:due:${l.due_date}`;
+    if (l.due_date >= today) return null;
+    const late = Math.round((Date.parse(today) - Date.parse(l.due_date)) / 86_400_000);
+    return `${l.id}:late:${l.due_date}:${Math.floor((late - 1) / 7)}`;
+  };
+  const wanted = loans.map((l) => ({ l, ref: refOf(l) })).filter((x): x is { l: (typeof loans)[number]; ref: string } => Boolean(x.ref));
+  const fresh = await claim(db, 'library_reminders', wanted.map((x) => x.ref));
+  let delivered = 0;
+  for (const { l, ref } of wanted.filter((x) => fresh.has(x.ref))) {
+    const name = l.borrower?.full_name_am || l.borrower?.full_name_en || '';
+    const title = l.book?.title ?? '';
+    const late = Math.round((Date.parse(today) - Date.parse(l.due_date)) / 86_400_000);
+    const html = ref.includes(':due:')
+      ? libraryText({ kind: 'DUE_TOMORROW', title, due: l.due_date }, name)
+      : libraryText({ kind: 'LATE', title, due: l.due_date, days: late }, name);
+    delivered += (await telegramToChats(db, await borrowerChats(db, l.borrower_person_id), html)).delivered;
+  }
+  return delivered;
+}
+
 async function overdueTasks(db: SupabaseClient, today: string): Promise<number> {
   const { data } = await db.from('tasks')
     .select('id, task_no, title, unit_id, due_date')
@@ -252,6 +294,7 @@ export async function runDaily(db: SupabaseClient, trigger: LastRun['trigger']):
   await run('event_reminders', settings.event_reminders, () => eventReminders(db, today));
   await run('roster_reminders', settings.roster_reminders, () => rosterReminders(db, today));
   await run('vestment_reminders', settings.vestment_reminders, () => vestmentReminders(db, today));
+  await run('library_reminders', settings.library_reminders, () => libraryReminders(db, today));
   // Push and/or Telegram — notifyLater sends by whichever is set up
   await run('overdue_tasks', settings.overdue_tasks, () => overdueTasks(db, today), false);
   await run('dues_reminders', settings.dues_reminders, () => duesReminders(db, today, settings));
