@@ -26,6 +26,8 @@ export interface ProvisionInput {
   assignedBy: string | null;
   /** The password was made by someone else: the person must choose their own at the first sign-in (lib/auth/temp-password) */
   temporary?: boolean;
+  /** An existing person record (a member already in the records) to give the login to, instead of a new one */
+  personId?: string;
   /** The login already using this phone in any Sunday school (or as platform admin), if any */
   existingLogin?: (phone: string) => Promise<string | null>;
 }
@@ -69,7 +71,7 @@ export async function provisionSystemUser(
   let personId: string | null = null;
   let systemUserId: string | null = null;
   try {
-    personId = await insertPerson(db, input);
+    personId = input.personId ?? (await insertPerson(db, input));
 
     const { data: systemUser, error: suError } = await db
       .from('system_users')
@@ -91,7 +93,8 @@ export async function provisionSystemUser(
     return { id: systemUserId, linked };
   } catch (e) {
     if (systemUserId) await db.from('system_users').delete().eq('id', systemUserId);
-    if (personId) await db.from('persons').delete().eq('id', personId);
+    // Only a record made here is removed — never an existing member's
+    if (personId && !input.personId) await db.from('persons').delete().eq('id', personId);
     // Only a login made here is removed — never someone's existing one
     if (!linked) await db.auth.admin.deleteUser(authUserId);
     throw e;

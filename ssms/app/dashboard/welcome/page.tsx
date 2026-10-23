@@ -49,7 +49,7 @@ export default function WelcomePage() {
   ].filter((s) => s.show);
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">
           {t(`Welcome to ${tenant?.name_en ?? 'your Sunday school'}`, `እንኳን ወደ ${tenant?.name_am || tenant?.name_en || 'ሰንበት ትምህርት ቤትዎ'} በደህና መጡ`)}

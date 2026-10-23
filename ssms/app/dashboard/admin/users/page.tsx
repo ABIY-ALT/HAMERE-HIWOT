@@ -13,7 +13,7 @@ import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice'
 import { demoPermissions, demoRoles, demoUnits, demoUsers } from '@/lib/admin/demo';
 import type { AdminPermissionRow, AdminRoleRow, AdminUnitRow, AdminUserRow, LoadMode } from '@/lib/admin/types';
 import { formatEthiopianDate, todayIso } from '@/lib/utils/ethiopian-calendar';
-import { addAssignment, createUser, loadSelfLogin, loadUsers, removeAssignment, resetUserPassword, sendPasswordByTelegram, setSelfLogin, setUserActive } from '../actions';
+import { addAssignment, createUser, issueTemporaryPassword, loadSelfLogin, loadUsers, removeAssignment, setSelfLogin, setUserActive, type PasswordOutcome } from '../actions';
 
 type Toast = { kind: 'success' | 'error'; text: string } | null;
 const SOON_DAYS = 30;
@@ -39,7 +39,6 @@ export default function AdminUsersPage() {
 
   // Create form
   const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
   const [nameEn, setNameEn] = useState('');
   const [nameAm, setNameAm] = useState('');
   const [gender, setGender] = useState<'MALE' | 'FEMALE'>('MALE');
@@ -51,7 +50,8 @@ export default function AdminUsersPage() {
   const [addRoleId, setAddRoleId] = useState('');
   const [addUnitId, setAddUnitId] = useState('');
   const [addUntil, setAddUntil] = useState('');
-  const [newPassword, setNewPassword] = useState('');
+  /** How the last new / reset password reached the person (shown once) */
+  const [issued, setIssued] = useState<{ name: string; outcome: Extract<PasswordOutcome, { ok: true }> } | null>(null);
   const [openCats, setOpenCats] = useState<Set<string>>(new Set());
   /** null = not known (demo mode, or no right to change it) */
   const [selfLogin, setSelfLoginState] = useState<boolean | null>(null);
@@ -112,7 +112,6 @@ export default function AdminUsersPage() {
     setAddRoleId(activeRoles[0]?.id ?? '');
     setAddUnitId(units[0]?.id ?? '');
     setAddUntil('');
-    setNewPassword('');
     setOpenCats(new Set());
   };
 
@@ -124,12 +123,13 @@ export default function AdminUsersPage() {
 
     if (live) {
       setBusy(true);
-      const res = await createUser({ phone, password, nameEn, nameAm, gender, roleId, unitId });
+      const res = await createUser({ phone, nameEn, nameAm, gender, roleId, unitId });
       setBusy(false);
       if (!res.ok) {
         setFormError(res.error);
         return;
       }
+      setIssued({ name: nameAm || nameEn, outcome: res });
       await refresh();
     } else {
       setUsers((prev) => [
@@ -158,7 +158,6 @@ export default function AdminUsersPage() {
     setIsAddModalOpen(false);
     showToast('success', t(`User ${phone.trim()} created`, `ተጠቃሚ ${phone.trim()} ተፈጥሯል`));
     setPhone('');
-    setPassword('');
     setNameEn('');
     setNameAm('');
   };
@@ -202,33 +201,18 @@ export default function AdminUsersPage() {
     showToast('success', next ? t('Account enabled', 'መለያ ተከፍቷል') : t('Account disabled', 'መለያ ተዘግቷል'));
   };
 
-  const handleResetPassword = async () => {
-    if (!selectedUser) return;
-    if (newPassword.length < 8) {
-      return showToast('error', t('Password must be at least 8 characters', 'የይለፍ ቃል ቢያንስ 8 ፊደል መሆን አለበት'));
-    }
-    if (live) {
-      setBusy(true);
-      const res = await resetUserPassword(selectedUser.id, newPassword);
-      setBusy(false);
-      if (!res.ok) return showToast('error', res.error);
-    }
-    setNewPassword('');
-    showToast('success', t('Password changed — they choose their own at the next sign-in', 'የይለፍ ቃል ተቀይሯል — በሚቀጥለው ሲገቡ የራሳቸውን ይመርጣሉ'));
-  };
-
-  const handleSendByTelegram = async () => {
+  const handleIssue = async () => {
     if (!selectedUser) return;
     const name = locale === 'am' ? selectedUser.name_am : selectedUser.name;
     if (!window.confirm(t(
-      `Send ${name} a new password on Telegram?\n\nTheir current password stops working. They choose their own when they sign in.`,
-      `ለ${name} አዲስ የይለፍ ቃል በቴሌግራም ይላክ?\n\nአሁን ያለው መሥራት ያቆማል። ሲገቡ የራሳቸውን ይመርጣሉ።`
+      `Give ${name} a new temporary password?\n\nTheir current one stops working. They choose their own when they sign in.`,
+      `ለ${name} አዲስ ጊዜያዊ የይለፍ ቃል ይሰጥ?\n\nአሁን ያለው መሥራት ያቆማል። ሲገቡ የራሳቸውን ይመርጣሉ።`
     ))) return;
     setBusy(true);
-    const res = await sendPasswordByTelegram(selectedUser.id);
+    const res = await issueTemporaryPassword(selectedUser.id);
     setBusy(false);
     if (!res.ok) return showToast('error', res.error);
-    showToast('success', t('A new password was sent on Telegram', 'አዲስ የይለፍ ቃል በቴሌግራም ተልኳል'));
+    setIssued({ name, outcome: res });
   };
 
   const q = search.toLowerCase();
@@ -400,7 +384,7 @@ export default function AdminUsersPage() {
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
         title={t('Add user', 'ተጠቃሚ ጨምር')}
-        subtitle={t('They sign in with this phone number and password; more roles can be added afterwards', 'በዚህ ስልክ ቁጥርና የይለፍ ቃል ይገባሉ፤ ተጨማሪ ሚናዎች በኋላ ሊሰጡ ይችላሉ')}
+        subtitle={t('They sign in with this phone number; the password comes to their Telegram. More roles can be added afterwards.', 'በዚህ ስልክ ቁጥር ይገባሉ፤ የይለፍ ቃሉ ወደ ቴሌግራማቸው ይመጣል። ተጨማሪ ሚናዎች በኋላ ሊሰጡ ይችላሉ።')}
       >
         <form onSubmit={handleCreateUser} className="space-y-4">
           {formError && (
@@ -413,18 +397,12 @@ export default function AdminUsersPage() {
             <Field label={t('Phone number (login)', 'ስልክ ቁጥር (መግቢያ)') + ' *'}>
               <input type="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="09..." className="form-input text-sm font-mono" />
             </Field>
-            <Field label={t('First password', 'የመጀመሪያ የይለፍ ቃል') + ' *'}>
-              <input
-                type="text"
-                required
-                minLength={8}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={t('At least 8 characters', 'ቢያንስ 8 ፊደል')}
-                className="form-input text-sm font-mono"
-                autoComplete="new-password"
-              />
-            </Field>
+            <div className="text-[11px] text-slate-500 self-end pb-1">
+              {t(
+                'No password to type: the system makes a temporary one and sends it to their Telegram (or shows it to you once). If this phone is already on a member’s record, that record gets the login.',
+                'የይለፍ ቃል መጻፍ አያስፈልግም፦ ሥርዓቱ ጊዜያዊ ሠርቶ ወደ ቴሌግራማቸው ይልካል (ወይም አንድ ጊዜ ይታይዎታል)። ስልኩ በአባል መዝገብ ላይ ካለ መግቢያው ለዚያው መዝገብ ይሰጣል።'
+              )}
+            </div>
             <Field label={t('Full name (English)', 'ሙሉ ስም (እንግሊዝኛ)') + ' *'}>
               <input type="text" required value={nameEn} onChange={(e) => setNameEn(e.target.value)} placeholder="e.g. Solomon Girma" className="form-input text-sm" />
             </Field>
@@ -557,35 +535,24 @@ export default function AdminUsersPage() {
               )}
             </section>
 
-            {/* Password */}
-            <section className="space-y-2">
-              <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                <KeyRound size={14} className="text-blue-600" />
-                {t('New password', 'አዲስ የይለፍ ቃል')}
-              </h4>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder={t('At least 8 characters', 'ቢያንስ 8 ፊደል')}
-                  className="form-input text-sm font-mono flex-1"
-                  autoComplete="new-password"
-                />
-                <button onClick={handleResetPassword} disabled={busy || !newPassword} className="btn btn-secondary text-xs disabled:opacity-50">{t('Change', 'ቀይር')}</button>
-              </div>
-              {!isSelf && (
-                <button onClick={handleSendByTelegram} disabled={busy || !live} className="btn btn-secondary text-xs inline-flex items-center gap-1.5 disabled:opacity-50">
-                  <Send size={14} /> {t('Send a new one by Telegram', 'አዲስ በቴሌግራም ላክ')}
+            {/* Password: never typed by the office */}
+            {!isSelf && (
+              <section className="space-y-2">
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <KeyRound size={14} className="text-blue-600" />
+                  {t('Forgot their password?', 'የይለፍ ቃላቸውን ረሱ?')}
+                </h4>
+                <button onClick={handleIssue} disabled={busy || !live} className="btn btn-secondary text-xs inline-flex items-center gap-1.5 disabled:opacity-50">
+                  <Send size={14} /> {t('Give a new temporary password', 'አዲስ ጊዜያዊ የይለፍ ቃል ስጥ')}
                 </button>
-              )}
-              <p className="text-[11px] text-slate-500">
-                {t(
-                  'Either way it is temporary: they choose their own when they next sign in. Telegram goes to their own chat only.',
-                  'በሁለቱም መንገድ ጊዜያዊ ነው፤ በሚቀጥለው ሲገቡ የራሳቸውን ይመርጣሉ። ቴሌግራሙ ወደ ራሳቸው ቻት ብቻ ይሄዳል።'
-                )}
-              </p>
-            </section>
+                <p className="text-[11px] text-slate-500">
+                  {t(
+                    'Made by the system and sent to their own Telegram; if they are not on Telegram you see it once to give them. They choose their own when they next sign in.',
+                    'ሥርዓቱ ይሠራዋል፤ ወደ ራሳቸው ቴሌግራም ይላካል፤ ቴሌግራም ከሌላቸው እንዲሰጧቸው አንድ ጊዜ ይታይዎታል። በሚቀጥለው ሲገቡ የራሳቸውን ይመርጣሉ።'
+                  )}
+                </p>
+              </section>
+            )}
 
             <div className="flex justify-between pt-2 border-t border-slate-100">
               <button
@@ -596,6 +563,52 @@ export default function AdminUsersPage() {
                 {selectedUser.is_active ? t('Switch account off', 'መለያ ዝጋ') : t('Switch account on', 'መለያ ክፈት')}
               </button>
               <button onClick={() => setSelectedId(null)} className="btn btn-secondary text-xs">{t('Close', 'ዝጋ')}</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* How the new password reached them — shown once */}
+      {issued && (
+        <Modal isOpen onClose={() => setIssued(null)} title={issued.name} subtitle={issued.outcome.login}>
+          <div className="space-y-4 text-sm">
+            {issued.outcome.reused && (
+              <p className="text-xs text-blue-800 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                {t('This phone was already on a member’s record — the login was given to that record (no second copy of the person).', 'ይህ ስልክ በአባል መዝገብ ላይ ነበር — መግቢያው ለዚያው መዝገብ ተሰጥቷል (የሰውየው ሁለተኛ መዝገብ አልተፈጠረም)።')}
+              </p>
+            )}
+            {issued.outcome.via === 'telegram' && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900 flex gap-3">
+                <CheckCircle2 size={20} className="shrink-0 text-emerald-600" />
+                <div>
+                  <div className="font-semibold">{t('Sent to their Telegram', 'ወደ ቴሌግራማቸው ተልኳል')}</div>
+                  <div className="text-xs mt-0.5">{t('Only they can see it; it disappears from the chat after 30 minutes. They choose their own password when they sign in.', 'ማየት የሚችሉት እነሱ ብቻ ናቸው፤ ከ30 ደቂቃ በኋላ ከቻቱ ይጠፋል። ሲገቡ የራሳቸውን ይመርጣሉ።')}</div>
+                </div>
+              </div>
+            )}
+            {issued.outcome.via === 'existing' && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-slate-700">
+                {t('This phone already signs in (for another Sunday school). They use the password they already have — nothing to send.', 'ይህ ስልክ ቀድሞ ይገባል (ለሌላ ሰንበት ትምህርት ቤት)። ያላቸውን የይለፍ ቃል ይጠቀማሉ — የሚላክ የለም።')}
+              </div>
+            )}
+            {issued.outcome.via === 'shown' && (
+              <>
+                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  {t('They are not connected to the Telegram bot, so give them this on paper. It is shown only now. At the first sign-in they must choose their own.', 'ከቴሌግራም ቦቱ ጋር አልተገናኙም፤ ስለዚህ ይህን በወረቀት ይስጧቸው። የሚታየው አሁን ብቻ ነው። መጀመሪያ ሲገቡ የራሳቸውን መምረጥ አለባቸው።')}
+                </p>
+                <div className="rounded-xl border-2 border-dashed border-slate-300 p-4 text-center space-y-1">
+                  <div className="text-xs text-slate-500">{t('Login', 'መግቢያ')}</div>
+                  <div className="font-mono text-lg font-bold text-slate-900">{issued.outcome.login}</div>
+                  <div className="text-xs text-slate-500 pt-2">{issued.outcome.pin ? t('Temporary PIN', 'ጊዜያዊ ሚስጥር ቁጥር') : t('Temporary password', 'ጊዜያዊ የይለፍ ቃል')}</div>
+                  <div className="font-mono text-2xl font-bold tracking-widest text-slate-900 select-all">{issued.outcome.secret}</div>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  {t('Better next time: ask them to open the bot and share their phone — then it goes straight to them.', 'ለሚቀጥለው ጊዜ፦ ቦቱን ከፍተው ስልካቸውን እንዲያጋሩ ይንገሯቸው — ያኔ በቀጥታ ወደ እነሱ ይሄዳል።')}
+                </p>
+              </>
+            )}
+            <div className="flex justify-end pt-2 border-t border-slate-100">
+              <button onClick={() => setIssued(null)} className="btn btn-primary text-xs">{t('Done', 'ጨርሻለሁ')}</button>
             </div>
           </div>
         </Modal>

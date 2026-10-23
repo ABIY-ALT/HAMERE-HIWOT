@@ -79,7 +79,7 @@ export default function WebsiteOverviewPage() {
   ];
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2"><Globe size={22} /> {t('Public website', 'የሕዝብ ድረ-ገጽ')}</h1>

@@ -120,7 +120,7 @@ export default function ProfilePage() {
   for (const perm of profile?.permissions ?? []) byCategory.set(perm.category, [...(byCategory.get(perm.category) ?? []), perm]);
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6">
       <AdminToast toast={toast} />
       {mode !== 'live' && <AdminModeNotice mode={mode} error={error} />}
 

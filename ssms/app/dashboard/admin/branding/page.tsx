@@ -83,7 +83,7 @@ export default function BrandingAdminPage() {
   const light = isHexColor(color) && tooLight(color);
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6">
       <AdminToast toast={toast} />
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">{t('Branding', 'መለያ ገጽታ')}</h1>

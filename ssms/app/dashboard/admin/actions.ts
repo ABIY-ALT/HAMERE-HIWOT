@@ -13,7 +13,9 @@ import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage } from '@/lib/auth/authorize';
 import { isValidPhone, normalizePhone, phoneToAuthEmail } from '@/lib/auth/phone';
 import { provisionSystemUser } from '@/lib/admin/provision';
-import { NOT_DELIVERED, loginPowers, logReset, newTemporary, officeTargets, pinOnly, sendTemporary, setTemporaryPassword } from '@/lib/auth/temp-password';
+import { chatsForLogin, loginPowers, logReset, newTemporary, pinOnly, sendTemporary, setTemporaryPassword } from '@/lib/auth/temp-password';
+import { chatsOf, telegramConfigured } from '@/lib/telegram/bot';
+import { studentOnlyIds } from '@/lib/members/membership';
 import { existingLoginForPhone, setLoginBanned } from '@/lib/tenant/accounts';
 import { assertCanEditRole, assertCanGrantRole, assertCanManageUser } from '@/lib/auth/grant';
 import { refreshPublicSite } from '@/lib/site/cache';
@@ -194,7 +196,6 @@ export async function loadUsers(): Promise<
 
 const CreateUserSchema = z.object({
   phone: z.string().transform(normalizePhone).refine(isValidPhone, 'Enter a valid phone number, e.g. 0912345678'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
   nameEn: z.string().trim().min(2, 'Enter the full name in English'),
   nameAm: z.string().trim(),
   gender: z.enum(['MALE', 'FEMALE']),
@@ -202,20 +203,83 @@ const CreateUserSchema = z.object({
   unitId: z.string().min(1, 'Choose a unit'),
 });
 
-export async function createUser(input: z.input<typeof CreateUserSchema>): Promise<ActionResult> {
+/**
+ * How a new or reset password reached the person. Nobody types a password for
+ * someone else: it is made here, temporary, and changed at the next sign-in.
+ *   telegram  sent to the person's own Telegram chat(s) — nobody else sees it
+ *   shown     not on Telegram: shown once to the office, to give on paper
+ *   existing  the phone already signs in (another Sunday school): their own password stays
+ */
+export type PasswordOutcome =
+  | { ok: true; via: 'telegram'; delivered: number; login: string; reused?: boolean }
+  | { ok: true; via: 'shown'; secret: string; login: string; pin: boolean; reused?: boolean }
+  | { ok: true; via: 'existing'; login: string; reused?: boolean }
+  | { ok: false; error: string };
+
+/** A person already in the records with this phone and no login (not a parent-only or student-only record). */
+async function recordForPhone(db: SupabaseClient, phone: string): Promise<string | null> {
+  const tail = `%${phone.slice(1).split('').join('%')}`;
+  const { data } = await db.from('persons').select('id, phone_primary, is_guardian_only').eq('status', 'ACTIVE').ilike('phone_primary', tail).limit(10);
+  const same = ((data ?? []) as { id: string; phone_primary: string | null; is_guardian_only?: boolean | null }[])
+    .filter((p) => normalizePhone(p.phone_primary ?? '') === phone && !p.is_guardian_only)
+    .map((p) => p.id);
+  if (same.length === 0) return null;
+  const [{ data: accounts }, studentOnly] = await Promise.all([
+    db.from('system_users').select('person_id').in('person_id', same),
+    studentOnlyIds(db, same),
+  ]);
+  const taken = new Set(((accounts ?? []) as { person_id: string }[]).map((a) => a.person_id));
+  return same.find((id) => !taken.has(id) && !studentOnly.has(id)) ?? null;
+}
+
+/** The temporary password to the person's own chats, or back to the office when they are not on Telegram. */
+async function deliver(
+  db: SupabaseClient,
+  who: { systemUserId: string; personId: string; name: string; login: string; secret: string; pin: boolean },
+  actorId: string,
+  chats: Set<number>
+): Promise<PasswordOutcome> {
+  if (chats.size) {
+    const delivered = await sendTemporary(chats, { name: who.name, login: who.login, secret: who.secret, pin: who.pin });
+    if (delivered > 0) {
+      await logReset(db, { systemUserId: who.systemUserId, actorId, via: 'office_telegram', delivered });
+      return { ok: true, via: 'telegram', delivered, login: who.login };
+    }
+  }
+  await logReset(db, { systemUserId: who.systemUserId, actorId, via: 'office' });
+  return { ok: true, via: 'shown', secret: who.secret, login: who.login, pin: who.pin };
+}
+
+const ownChats = async (db: SupabaseClient, personId: string) => ((await telegramConfigured()) ? chatsOf(db, [personId], 'SELF') : new Set<number>());
+
+/**
+ * A new account. If the person is already in the records (same phone), the
+ * login is given to that record — no second copy of them. The password is
+ * made here and sent to their Telegram (or shown once to the office).
+ */
+export async function createUser(input: z.input<typeof CreateUserSchema>): Promise<PasswordOutcome> {
   try {
     const { me, db } = await authorize('USER_MANAGE');
     const data = CreateUserSchema.parse(input);
     await assertCanGrantRole(db, me.systemUser.id, data.roleId);
-    await provisionSystemUser(db, {
+    const personId = await recordForPhone(db, data.phone);
+    const secret = newTemporary(false);
+    const made = await provisionSystemUser(db, {
       ...data,
+      password: secret,
+      personId: personId ?? undefined,
       email: phoneToAuthEmail(data.phone),
       assignedBy: me.systemUser.id,
       temporary: true,
       // The person may already sign in for another Sunday school: same login, their own password
       existingLogin: existingLoginForPhone,
     });
-    return { ok: true };
+    const reused = Boolean(personId);
+    if (made.linked) return { ok: true, via: 'existing', login: data.phone, reused };
+    const { data: su } = await db.from('system_users').select('person_id').eq('id', made.id).single();
+    const pid = (su as { person_id: string }).person_id;
+    const out = await deliver(db, { systemUserId: made.id, personId: pid, name: data.nameAm || data.nameEn, login: data.phone, secret, pin: false }, me.systemUser.id, await ownChats(db, pid));
+    return out.ok ? { ...out, reused } : out;
   } catch (e) {
     return { ok: false, error: message(e) };
   }
@@ -244,39 +308,32 @@ export async function setUserActive(systemUserId: string, active: boolean): Prom
   }
 }
 
-export async function resetUserPassword(systemUserId: string, password: string): Promise<ActionResult> {
-  try {
-    const { me, db } = await authorize('USER_MANAGE');
-    if (password.length < 8) throw new Error('Password must be at least 8 characters');
-    await assertCanManageUser(db, me.systemUser.id, systemUserId);
-    const authUserId = await authUserIdFor(db, systemUserId);
-    // Temporary: they choose their own at the next sign-in
-    await setTemporaryPassword(authUserId, password);
-    await logReset(db, { systemUserId, actorId: me.systemUser.id, via: 'office' });
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: message(e) };
-  }
-}
-
-/** A new temporary PIN / password sent to the person's own Telegram chat (no SMS or e-mail yet). */
-export async function sendPasswordByTelegram(systemUserId: string): Promise<{ ok: true; delivered: number } | { ok: false; error: string }> {
+/**
+ * A new temporary password (or PIN for students and parents) for someone who
+ * forgot theirs: to their own Telegram when connected (a student's parents
+ * too), else shown once to the office. Only for accounts with no more rights
+ * than the one doing it.
+ */
+export async function issueTemporaryPassword(systemUserId: string): Promise<PasswordOutcome> {
   try {
     const { me, db } = await authorize('USER_MANAGE');
     if (me.systemUser.id === systemUserId) throw new Error('Change your own password under My profile');
+    await assertCanManageUser(db, me.systemUser.id, systemUserId);
     const user = (await db.from('system_users')
       .select('id, auth_user_id, person_id, username, person:persons!system_users_person_id_fkey(full_name_en, full_name_am)')
       .eq('id', systemUserId)
       .single()
       .then(check)) as unknown as { id: string; auth_user_id: string; person_id: string; username: string; person: { full_name_en: string; full_name_am: string | null } | null };
-    const chats = await officeTargets(db, user);
     const pin = pinOnly(user.username, [...(await loginPowers(user.auth_user_id)).codes]);
     const secret = newTemporary(pin);
     await setTemporaryPassword(user.auth_user_id, secret);
-    const delivered = await sendTemporary(chats, { name: user.person?.full_name_am || user.person?.full_name_en || user.username, login: user.username, secret, pin });
-    await logReset(db, { systemUserId: user.id, actorId: me.systemUser.id, via: 'office_telegram', delivered });
-    if (delivered === 0) throw new Error(NOT_DELIVERED);
-    return { ok: true, delivered };
+    const chats = (await telegramConfigured()) ? await chatsForLogin(db, user) : new Set<number>();
+    return await deliver(
+      db,
+      { systemUserId: user.id, personId: user.person_id, name: user.person?.full_name_am || user.person?.full_name_en || user.username, login: user.username, secret, pin },
+      me.systemUser.id,
+      chats
+    );
   } catch (e) {
     return { ok: false, error: message(e) };
   }

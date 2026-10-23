@@ -45,7 +45,7 @@ export default function MyTasksPage() {
   const waiting = open.filter((x) => x.status === 'SUBMITTED').length;
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6">
       <AdminToast toast={toast} />
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900 inline-flex items-center gap-2">
