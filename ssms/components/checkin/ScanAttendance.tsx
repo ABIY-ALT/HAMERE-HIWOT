@@ -5,6 +5,10 @@
 // Telegram bot or on the website. Everyone scanned is marked present at once
 // (app/dashboard/check-in/actions → scanPresent), with their photo shown so
 // the leader can see it is really them. A code can be typed as well.
+// Against someone else's QR: the bot / website QR is live (it expires within
+// minutes, so a forwarded screenshot is refused); printed cards and typed
+// codes never expire, so the leader chooses whether to accept them here, and
+// they are marked "check the photo".
 
 import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -39,17 +43,33 @@ export function ScanAttendance({ eventId, title, onClose }: { eventId: string; t
   const [last, setLast] = useState<Shown | null>(null);
   const [history, setHistory] = useState<Shown[]>([]);
   const [typed, setTyped] = useState('');
+  // Remembered on this device
+  const [acceptCards, setAcceptCards] = useState(() => {
+    try {
+      return typeof window === 'undefined' || window.localStorage.getItem('scan-accept-cards') !== 'no';
+    } catch {
+      return true;
+    }
+  });
+  const toggleCards = (on: boolean) => {
+    setAcceptCards(on);
+    try {
+      window.localStorage.setItem('scan-accept-cards', on ? 'yes' : 'no');
+    } catch {
+      // not remembered
+    }
+  };
   const busy = useRef(false);
 
   const handle = async (code: string) => {
     if (busy.current) return;
     busy.current = true;
-    const result = await scanPresent(eventId, code);
+    const result = await scanPresent(eventId, code, acceptCards);
     busy.current = false;
     const shown = { at: Date.now(), code, result };
     setLast(shown);
     setHistory((h) => [shown, ...h].slice(0, 30));
-    beep(result.ok && !result.already && !result.not_in_choir);
+    beep(result.ok && !result.already && !result.not_in_choir && result.source === 'LIVE' && result.person.photo);
     if (navigator.vibrate) navigator.vibrate(result.ok ? 60 : [80, 60, 80]);
   };
 
@@ -79,6 +99,19 @@ export function ScanAttendance({ eventId, title, onClose }: { eventId: string; t
           </div>
 
           {last && <ResultCard shown={last} />}
+
+          <label className="flex items-start gap-2 rounded-xl bg-white/5 p-3 text-xs text-slate-300">
+            <input type="checkbox" checked={acceptCards} onChange={(e) => toggleCards(e.target.checked)} className="mt-0.5 h-4 w-4" />
+            <span>
+              <span className="font-semibold text-white">{t('Also accept printed cards and typed codes', 'የታተመ ካርድና የተጻፈ ኮድም ተቀበል')}</span>
+              <span className="block text-slate-400">
+                {t(
+                  'Live QRs from the bot or the website expire within minutes, so a forwarded screenshot does not work. A card or a typed code never expires: compare the photo every time. Turn this off where everyone has a phone.',
+                  'ከቦቱ ወይም ከድረ-ገጹ የሚመጣ ሕያው QR በደቂቃዎች ውስጥ ጊዜው ያልፋል፤ ስለዚህ የተላከ ፎቶ አይሠራም። ካርድ ወይም የተጻፈ ኮድ ጊዜው አያልፍም፦ ሁልጊዜ ፎቶውን ያነጻጽሩ። ሁሉም ስልክ ባለበት ቦታ ይህን ያጥፉት።'
+                )}
+              </span>
+            </span>
+          </label>
 
           <form
             onSubmit={(e) => {
@@ -129,7 +162,7 @@ function ResultCard({ shown }: { shown: Shown }) {
       </div>
     );
   }
-  const tone = r.not_in_choir ? 'bg-amber-500/15 border-amber-400/40' : r.already ? 'bg-white/5 border-white/15' : 'bg-emerald-500/15 border-emerald-400/40';
+  const tone = r.not_in_choir || r.source === 'CARD' || !r.person.photo ? 'bg-amber-500/15 border-amber-400/40' : r.already ? 'bg-white/5 border-white/15' : 'bg-emerald-500/15 border-emerald-400/40';
   return (
     <div key={shown.at} className={`rounded-2xl border p-4 flex items-center gap-4 ${tone}`}>
       {r.person.photo ? (
@@ -148,6 +181,16 @@ function ResultCard({ shown }: { shown: Shown }) {
             <span className="text-emerald-300 font-semibold">✓ {t('Present', 'ተገኝቷል')}</span>
           )}
         </div>
+        {r.source === 'CARD' && (
+          <div className="mt-1 text-xs text-amber-300 flex items-center gap-1">
+            <AlertTriangle size={12} className="shrink-0" /> {t('Printed card or typed code — compare the photo with the person', 'የታተመ ካርድ ወይም የተጻፈ ኮድ — ፎቶውን ከሰውየው ጋር ያነጻጽሩ')}
+          </div>
+        )}
+        {!r.person.photo && (
+          <div className="mt-1 text-xs text-amber-300 flex items-center gap-1">
+            <AlertTriangle size={12} className="shrink-0" /> {t('No photo on record — make sure you know this person', 'በመዝገቡ ፎቶ የለም — ሰውየውን እንደሚያውቁት ያረጋግጡ')}
+          </div>
+        )}
         {r.not_in_choir && (
           <div className="mt-1 text-xs text-amber-300 inline-flex items-center gap-1">
             <AlertTriangle size={12} /> {t('Not a choir member — counted here, but not in the choir attendance', 'የመዘምራን አባል አይደሉም — እዚህ ተቆጥረዋል፣ በመዘምራን ክትትል ግን አይገቡም')}

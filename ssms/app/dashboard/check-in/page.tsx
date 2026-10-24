@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, Expand, Lock, MapPin, Plus, QrCode, Search
 import { useLang } from '@/contexts/LangContext';
 import { QrScanButton } from '@/components/common/QrScanButton';
 import { ScanAttendance } from '@/components/checkin/ScanAttendance';
+import { codeFromScan } from '@/lib/checkin/qr-format';
 import { Modal } from '@/components/ui/Modal';
 import { EthiopianDateInput } from '@/components/ui/EthiopianDateInput';
 import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
@@ -513,7 +514,7 @@ function EventDialog({ eventId, onClose, notify }: { eventId: string; onClose: (
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
                   <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('Name, member ID or phone…', 'ስም፣ የአባልነት ቁጥር ወይም ስልክ…')} className="form-input text-sm pl-9" />
                 </div>
-                <QrScanButton onScan={setSearch} />
+                <QrScanButton onScan={(v) => setSearch(codeFromScan(v))} />
               </div>
               {search.trim().length >= 2 && found.length > 0 && (
                 <ul className="rounded-lg border border-slate-200 divide-y divide-slate-100 max-h-48 overflow-y-auto">

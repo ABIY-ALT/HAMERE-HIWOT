@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Award, CalendarCheck, ClipboardList, ChevronRight } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { PortalNotice, StartExamButton, attendanceCounts, useMyPortal } from '@/components/student/portal';
-import { QrCode } from '@/components/common/QrCode';
+import { MyLiveQr } from '@/components/checkin/MyLiveQr';
 
 /** A student's home: open exams, results and attendance at a glance. */
 export default function MyHomePage() {
@@ -35,8 +35,7 @@ export default function MyHomePage() {
             <ChevronRight size={16} className="text-slate-400 group-open:rotate-90 transition-transform" />
           </summary>
           <div className="pt-4 text-center space-y-1">
-            <div className="inline-block rounded-2xl bg-white p-3 border border-slate-200"><QrCode value={s.reg_no} size={200} /></div>
-            <div className="font-mono text-sm text-slate-500">{s.reg_no}</div>
+            <MyLiveQr size={200} />
             <p className="text-xs text-slate-500">{t('At programs and choir rehearsals the leader scans it and you are counted.', 'በመርሐ ግብሮችና በመዝሙር ጥናት መሪው ሲቃኘው ይቆጠራሉ።')}</p>
           </div>
         </details>

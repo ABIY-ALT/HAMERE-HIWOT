@@ -17,6 +17,7 @@ import type { SessionUser } from '@/lib/auth/session';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import type { PermissionCode } from '@/types';
 import { checkIn, codeAt, newSecret, openEventsNow, secondsLeft, type EventRow } from '@/lib/checkin/core';
+import { WEB_QR_SECONDS, liveQr, readScanned } from '@/lib/checkin/live-qr';
 import { checkinOpen, type CheckinEvent, type CheckinFlag, type CheckinRow, type CheckinStatus, type EventKind } from '@/lib/checkin/types';
 
 type Row = Record<string, unknown>;
@@ -253,6 +254,8 @@ export type ScanResult =
   | {
       ok: true;
       person: { id: string; name: string; code: string; photo: boolean };
+      /** LIVE: the signed QR from the bot / website · CARD: a printed card or a typed code (check the photo) */
+      source: 'LIVE' | 'CARD';
       /** Was already present */
       already: boolean;
       /** A choir rehearsal, and this person is not an active choir member */
@@ -261,16 +264,24 @@ export type ScanResult =
   | { ok: false; error: string };
 
 /**
- * The leader scans someone's QR (member card, or "My QR" from the bot or the
- * website — both hold the member code) or types the code / registration
- * number: they are marked present at once.
+ * The leader scans someone's QR or types a code: they are marked present at once.
+ *   Live QR ("📲 My QR" in the bot, "My QR" on the website): signed and
+ *     valid for minutes (lib/checkin/live-qr) — an expired one (a screenshot,
+ *     an old picture) or a made-up one is refused.
+ *   Printed card / typed member code or reg. no.: only when the leader allows
+ *     it (acceptCards), and shown as CARD so the leader checks the photo.
  */
-export async function scanPresent(eventId: string, scanned: string): Promise<ScanResult> {
+export async function scanPresent(eventId: string, scanned: string, acceptCards = true): Promise<ScanResult> {
   try {
     const { me, db } = await authorizeIn('check_in', ...RUNNERS);
     const e = await ownEvent(db, me, eventId);
     if (e.status !== 'OPEN') throw new Error('This event is closed');
-    const code = z.string().trim().min(3, 'Scan or type a code').max(60).parse(scanned);
+    const value = z.string().trim().min(3, 'Scan or type a code').max(120).parse(scanned);
+    const read = readScanned(me.tenant.id, value);
+    if (read.kind === 'FORGED') throw new Error('This is not a valid QR of this Sunday school');
+    if (read.kind === 'EXPIRED') throw new Error('This QR has expired — it is an old picture or a screenshot. Ask them to open “📲 My QR” again now.');
+    if (read.kind === 'PLAIN' && !acceptCards) throw new Error('Printed cards and typed codes are off for this scan — ask for their live “📲 My QR”.');
+    const code = read.code;
 
     type P = { id: string; full_name_en: string; full_name_am: string | null; membership_code: string; profile_photo_url: string | null; status: string };
     const COLS = 'id, full_name_en, full_name_am, membership_code, profile_photo_url, status';
@@ -300,6 +311,7 @@ export async function scanPresent(eventId: string, scanned: string): Promise<Sca
     return {
       ok: true,
       person: { id: person.id, name: person.full_name_am || person.full_name_en, code: person.membership_code, photo: Boolean(person.profile_photo_url) },
+      source: read.kind === 'LIVE' ? 'LIVE' : 'CARD',
       already,
       not_in_choir: !choir.data,
     };
@@ -482,5 +494,25 @@ export async function loadCheckinExport(from: string): Promise<{ ok: true; rows:
     return { ok: true, rows };
   } catch (e) {
     return { ok: false, error: missing(errorMessage(e)) };
+  }
+}
+
+export type MyLiveQr = { ok: true; value: string; expiresAt: number; name: string; code: string } | { ok: false; error: string };
+
+/**
+ * "My QR" on the website (and in the student portal): a live QR for the
+ * signed-in person, valid for a minute — the page asks for a new one before
+ * then, so a screenshot of it soon stops working.
+ */
+export async function myLiveQr(): Promise<MyLiveQr> {
+  try {
+    const { me, db } = await authorizeIn('check_in');
+    const { data } = await db.from('persons').select('full_name_en, full_name_am, membership_code').eq('id', me.person.id).maybeSingle();
+    const p = data as { full_name_en: string; full_name_am: string | null; membership_code: string } | null;
+    if (!p?.membership_code) throw new Error('Your record has no member code — ask the office');
+    const qr = liveQr(me.tenant.id, p.membership_code, WEB_QR_SECONDS);
+    return { ok: true, value: qr.value, expiresAt: qr.expiresAt, name: p.full_name_am || p.full_name_en, code: p.membership_code };
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) };
   }
 }

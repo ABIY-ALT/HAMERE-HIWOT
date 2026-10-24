@@ -279,7 +279,7 @@ async function answer(
     else if (asked(text, 'ask', BUTTONS.ask)) await startAsk(db, chatId, scope);
     else if (asked(text, 'tasks', BUTTONS.mytasks)) await startTasks(db, chatId, scope, menu);
     else if (asked(text, 'here', BUTTONS.here)) await startCheckin(db, chatId, scope, menu);
-    else if (asked(text, 'qr', BUTTONS.myqr)) await sendMyQr(db, chatId, scope, menu);
+    else if (asked(text, 'qr', BUTTONS.myqr)) await sendMyQr(db, tenantId, chatId, scope, menu);
     else if (asked(text, 'service', BUTTONS.service)) await startService(db, chatId, scope, menu);
     else if (asked(text, 'events', BUTTONS.events)) await startEvents(db, chatId, scope, menu);
     else if (asked(text, 'pin', BUTTONS.pin)) await startPin(db, chatId, scope, menu);

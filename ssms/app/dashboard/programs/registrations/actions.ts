@@ -21,6 +21,7 @@ import { refreshPublicSite } from '@/lib/site/cache';
 import { addDays } from '@/lib/hr/types';
 import { todayIso } from '@/lib/utils/ethiopian-calendar';
 import { createRegistration, isMissingTable, registrationNumbers, sendTicket } from '@/lib/events/registrations';
+import { readScanned } from '@/lib/checkin/live-qr';
 import { MAX_SEATS_OFFICE, REG_MIGRATION, failureText, type RegEvent, type RegSource, type RegStatus, type Registration } from '@/lib/events/types';
 
 type Row = Record<string, unknown>;
@@ -200,7 +201,11 @@ export async function checkInAtDoor(programId: string, code: string): Promise<Do
   try {
     const { me, db } = await authorize('PROGRAM_CREATE', 'PROGRAM_MANAGE');
     const pid = id.parse(programId);
-    const raw = code.trim();
+    // A live QR from the bot / website must be genuine and not expired (lib/checkin/live-qr)
+    const read = readScanned(me.tenant.id, code);
+    if (read.kind === 'FORGED') throw new Error('This is not a valid QR of this Sunday school');
+    if (read.kind === 'EXPIRED') throw new Error('This QR has expired — ask them to open “📲 My QR” again now');
+    const raw = read.code.trim();
     if (raw.length < 3) throw new Error('Type or scan the ticket code');
     const upper = raw.toUpperCase().replace(/\s+/g, '');
     const phone = normalizePhone(raw);
