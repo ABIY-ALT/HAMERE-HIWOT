@@ -13,6 +13,8 @@ import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
 import { nonMemberIds } from '@/lib/members/membership';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
+import { notifyPersonsLater } from '@/lib/push/send';
+import { formatEthiopianDate } from '@/lib/utils/ethiopian-calendar';
 import {
   SINGLE_HOLDER_POSITIONS,
   type GovBodyView,
@@ -167,8 +169,8 @@ export async function appointMember(bodyId: string, input: z.input<typeof Appoin
       throw new Error(`All ${limit} seats of this body are filled. End a member’s term before appointing someone new.`);
     }
 
-    const position = (await db.from('governance_positions').select('code, name_en').eq('id', a.position_id).single().then(check)) as {
-      code: string; name_en: string;
+    const position = (await db.from('governance_positions').select('code, name_en, name_am').eq('id', a.position_id).single().then(check)) as {
+      code: string; name_en: string; name_am: string | null;
     };
     if (SINGLE_HOLDER_POSITIONS.includes(position.code) && active.some((m) => m.position_id === a.position_id)) {
       throw new Error(`This body already has an active ${position.name_en}. End their term first.`);
@@ -187,6 +189,18 @@ export async function appointMember(bodyId: string, input: z.input<typeof Appoin
         remarks: a.remarks || null,
       })
       .then(check);
+    const { data: body } = await db.from('governance_bodies').select('name_en, name_am').eq('id', bodyId).maybeSingle();
+    const b = body as { name_en: string; name_am: string | null } | null;
+    notifyPersonsLater(
+      [a.person_id],
+      {
+        title: '🏛️ ሹመት · Appointment',
+        body: `${position.name_am || position.name_en} · ${position.name_en} — ${b?.name_am || b?.name_en || ''} — ${formatEthiopianDate(a.term_start, 'am')}${a.term_end ? ` – ${formatEthiopianDate(a.term_end, 'am')}` : ''}`,
+        url: '/dashboard/governance',
+        tag: `gov-${bodyId}`,
+      },
+      { link: false }
+    );
     return { ok: true };
   } catch (e) {
     return { ok: false, error: friendly(e) };

@@ -15,6 +15,7 @@ import { isValidPhone, normalizePhone, phoneToAuthEmail } from '@/lib/auth/phone
 import { provisionSystemUser } from '@/lib/admin/provision';
 import { chatsForLogin, loginPowers, logReset, newTemporary, pinOnly, sendTemporary, setTemporaryPassword } from '@/lib/auth/temp-password';
 import { chatsOf, telegramConfigured } from '@/lib/telegram/bot';
+import { notifyLater } from '@/lib/push/send';
 import { studentOnlyIds } from '@/lib/members/membership';
 import { existingLoginForPhone, setLoginBanned } from '@/lib/tenant/accounts';
 import { assertCanEditRole, assertCanGrantRole, assertCanManageUser } from '@/lib/auth/grant';
@@ -365,10 +366,30 @@ export async function changeUserRole(
         assigned_by: me.systemUser.id,
       })
       .then(check);
+    await tellNewRole(db, systemUserId, roleId, unitId, '');
     return { ok: true };
   } catch (e) {
     return { ok: false, error: message(e) };
   }
+}
+
+/** Tells a person the role they were just given (their devices and Telegram); new menus show after a reload. */
+async function tellNewRole(db: SupabaseClient, systemUserId: string, roleId: string, unitId: string, until: string) {
+  const [{ data: role }, { data: unit }] = await Promise.all([
+    db.from('roles').select('name_en, name_am').eq('id', roleId).maybeSingle(),
+    db.from('organization_units').select('name_en, name_am').eq('id', unitId).maybeSingle(),
+  ]);
+  const r = role as { name_en: string; name_am: string | null } | null;
+  const u = unit as { name_en: string; name_am: string | null } | null;
+  notifyLater(
+    { users: [systemUserId] },
+    {
+      title: '🔑 አዲስ ሚና · New role',
+      body: `${r?.name_am || r?.name_en || ''} · ${r?.name_en ?? ''} — ${u?.name_am || u?.name_en || ''}${until ? ` (≤ ${until})` : ''}`,
+      url: '/dashboard',
+      tag: `role-${systemUserId}`,
+    }
+  );
 }
 
 const AssignSchema = z.object({
@@ -403,6 +424,7 @@ export async function addAssignment(input: z.input<typeof AssignSchema>): Promis
         { onConflict: 'system_user_id,organization_unit_id,role_id' }
       )
       .then(check);
+    await tellNewRole(db, a.userId, a.roleId, a.unitId, a.until);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: message(e) };

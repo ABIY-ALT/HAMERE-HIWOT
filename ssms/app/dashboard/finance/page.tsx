@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Wallet, ArrowDownLeft, ArrowUpRight, Gift, CheckSquare } from 'lucide-react';
+import { Wallet, ArrowDownLeft, ArrowUpRight, Gift, CheckSquare, BookOpenCheck } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 
 export default function FinanceHub() {
@@ -48,6 +48,14 @@ export default function FinanceHub() {
       descAm: 'የለጋሾች ስጦታዎችና የሕንፃ ማሰሪያ',
       href: '/dashboard/finance/donations',
       icon: Gift,
+    },
+    {
+      titleEn: 'Accounting & Financial Statements',
+      titleAm: 'የሂሳብ አያያዝና የሂሳብ መግለጫዎች',
+      descEn: 'Chart of accounts, journal entries, general ledger, trial balance, income statement, balance sheet and cash flow',
+      descAm: 'የሂሳብ መደብ፣ የሂሳብ መዝገብ፣ ጠቅላላ መዝገብ፣ የሙከራ ሚዛን፣ የገቢና ወጪ መግለጫ፣ የሀብትና ዕዳ መግለጫ፣ የገንዘብ ፍሰት',
+      href: '/dashboard/finance/accounting/statements',
+      icon: BookOpenCheck,
     },
 
   ];

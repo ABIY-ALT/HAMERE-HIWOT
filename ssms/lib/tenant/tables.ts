@@ -23,6 +23,7 @@ export const TENANT_TABLES = new Set<string>([
   'automation_log', 'site_posts', 'site_albums', 'site_photos',
   'bank_accounts', 'account_transfers', 'bank_statements', 'bank_statement_lines',
   'library_books', 'library_copies', 'library_loans', 'library_requests',
+  'gl_accounts', 'gl_settings', 'gl_mappings', 'journal_entries', 'journal_lines',
   // view (carries tenant_id)
   'attendance_session_totals',
 ]);
@@ -42,6 +43,7 @@ export const TENANT_KEYED_CONFLICTS: Record<string, string[]> = {
   telegram_chats: ['chat_id'],
   automation_log: ['job,ref'],
   push_subscriptions: ['endpoint'],
+  gl_mappings: ['source,key'],
 };
 
 /** Tables a read-only (unpaid / expired) tenant may still write: sign-in plumbing, not records. */
@@ -50,7 +52,7 @@ export const READ_ONLY_WRITABLE = new Set<string>([
 ]);
 
 /** Database functions the scoped client may call (each uses the x-ssms-tenant header). */
-export const TENANT_RPCS = new Set<string>(['next_dues_receipt']);
+export const TENANT_RPCS = new Set<string>(['next_dues_receipt', 'gl_repost']);
 
 /** Storage buckets tenant code uses; objects live under "<tenant id>/…". */
 export const TENANT_BUCKETS = new Set<string>(['member-photos', 'task-files', 'site-media', 'dues-proofs']);

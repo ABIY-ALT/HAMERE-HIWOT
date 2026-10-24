@@ -280,6 +280,10 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
           { labelEn: 'Donations', labelAm: 'ስጦታዎች', href: '/dashboard/finance/donations', permissions: ['FINANCE_VIEW'] },
           { labelEn: 'Bank Accounts', labelAm: 'የባንክ ሂሳቦች', href: '/dashboard/finance/accounts', permissions: ['FINANCE_VIEW'] },
           { labelEn: 'Bank Reconciliation', labelAm: 'የባንክ ማስታረቅ', href: '/dashboard/finance/reconcile', permissions: ['FINANCE_VIEW'] },
+          { labelEn: 'Financial Statements', labelAm: 'የሂሳብ መግለጫዎች', href: '/dashboard/finance/accounting/statements', permissions: ['FINANCE_VIEW'] },
+          { labelEn: 'Journal Entries', labelAm: 'የሂሳብ መዝገብ', href: '/dashboard/finance/accounting/journal', permissions: ['FINANCE_VIEW', 'FINANCE_CREATE', 'FINANCE_APPROVE'] },
+          { labelEn: 'General Ledger', labelAm: 'ጠቅላላ መዝገብ', href: '/dashboard/finance/accounting/ledger', permissions: ['FINANCE_VIEW'] },
+          { labelEn: 'Chart of Accounts', labelAm: 'የሂሳብ መደብ', href: '/dashboard/finance/accounting/chart', permissions: ['FINANCE_VIEW', 'FINANCE_APPROVE'] },
         ],
       },
       {

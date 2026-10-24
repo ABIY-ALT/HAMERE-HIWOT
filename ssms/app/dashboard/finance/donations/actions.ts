@@ -10,7 +10,9 @@ import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
 import { nonMemberIds } from '@/lib/members/membership';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
-import type { Donation, DonationStatus, DonationType, DonorOption } from '@/lib/finance/donations';
+import { notifyPersonsLater } from '@/lib/push/send';
+import { formatETB } from '@/lib/finance/types';
+import { purposeLabel, type Donation, type DonationStatus, type DonationType, type DonorOption } from '@/lib/finance/donations';
 
 type Db = Awaited<ReturnType<typeof authorize>>['db'];
 type Row = Record<string, unknown> & { id: string };
@@ -67,6 +69,22 @@ export async function loadDonations(): Promise<Loaded<{ donations: Donation[]; d
     const msg = errorMessage(e);
     return { mode: 'error', error: msg.includes('donations') ? 'Run database migration 012 (donations) first' : msg };
   }
+}
+
+/** Thanks a donor who is in the records (Telegram / their devices), with the receipt number. */
+function thankDonor(
+  personId: string | null,
+  d: { receipt_no: string; purpose: string; amount: number; type: DonationType; items: string; received: boolean }
+) {
+  const what = d.type === 'IN_KIND' ? d.items : formatETB(Number(d.amount));
+  const body = `${d.receipt_no} — ${purposeLabel(d.purpose, 'am')} · ${d.purpose} — ${what}`;
+  notifyPersonsLater(
+    [personId],
+    d.received
+      ? { title: '🙏 እግዚአብሔር ይስጥልን · Thank you for your gift', body, url: '/dashboard', tag: `donation-${d.receipt_no}` }
+      : { title: '🤝 የስጦታ ቃልዎ ተመዝግቧል · Your pledge is recorded', body, url: '/dashboard', tag: `donation-${d.receipt_no}` },
+    { link: false }
+  );
 }
 
 /** Write the INCOME row for a received cash/bank donation and link it. */
@@ -145,6 +163,7 @@ export async function recordDonation(
         throw e;
       }
     }
+    thankDonor(d.donor_person_id || null, { ...donation, type: d.type, items: d.item_description, received });
     return { ok: true, receipt_no: donation.receipt_no };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
@@ -157,10 +176,13 @@ export async function receivePledge(id: string, receivedOn: string): Promise<Act
     const { me, db } = await authorize('FINANCE_CREATE');
     const date = isoDate.parse(receivedOn);
     const donation = (await db.from('donations')
-      .select('id, receipt_no, donor_name, purpose, amount, donation_type, status')
+      .select('id, receipt_no, donor_name, donor_person_id, purpose, amount, donation_type, item_description, status')
       .eq('id', id)
       .single()
-      .then(check)) as { id: string; receipt_no: string; donor_name: string; purpose: string; amount: number; donation_type: DonationType; status: DonationStatus };
+      .then(check)) as {
+      id: string; receipt_no: string; donor_name: string; donor_person_id: string | null; purpose: string; amount: number;
+      donation_type: DonationType; item_description: string | null; status: DonationStatus;
+    };
     if (donation.status !== 'PLEDGED') throw new Error('Only a pledge can be marked as received');
 
     const updated = (await db.from('donations')
@@ -179,6 +201,7 @@ export async function receivePledge(id: string, receivedOn: string): Promise<Act
         throw e;
       }
     }
+    thankDonor(donation.donor_person_id, { ...donation, type: donation.donation_type, items: donation.item_description ?? '', received: true });
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };

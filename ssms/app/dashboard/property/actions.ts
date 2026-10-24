@@ -12,6 +12,8 @@ import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize';
 import { nonMemberIds } from '@/lib/members/membership';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
+import { notifyPersonsLater } from '@/lib/push/send';
+import { formatEthiopianDate } from '@/lib/utils/ethiopian-calendar';
 import type {
   AcquisitionType,
   Asset,
@@ -289,10 +291,12 @@ export async function transferAsset(assetId: string, input: z.input<typeof Trans
     const { me, db } = await authorize('ASSET_ASSIGN', 'ASSET_TRANSFER');
     const t = TransferSchema.parse(input);
     const asset = (await db.from('assets')
-      .select('organization_unit_id, custodian_person_id, status')
+      .select('tag, name_en, name_am, organization_unit_id, custodian_person_id, status')
       .eq('id', assetId)
       .single()
-      .then(check)) as { organization_unit_id: string | null; custodian_person_id: string | null; status: AssetStatus };
+      .then(check)) as {
+      tag: string; name_en: string; name_am: string | null; organization_unit_id: string | null; custodian_person_id: string | null; status: AssetStatus;
+    };
     if (asset.status === 'DISPOSED' || asset.status === 'LOST') throw new Error('This asset is no longer held');
     if ((t.to_unit_id || null) === asset.organization_unit_id && (t.to_person_id || null) === asset.custodian_person_id) {
       throw new Error('Choose a different department or person');
@@ -317,6 +321,23 @@ export async function transferAsset(assetId: string, input: z.input<typeof Trans
       })
       .eq('id', assetId)
       .then(check);
+    // The new custodian takes responsibility; the previous one is told it was handed over
+    const item = `${asset.tag} — ${asset.name_am || asset.name_en}`;
+    const newPerson = t.to_person_id || null;
+    if (newPerson && newPerson !== asset.custodian_person_id) {
+      notifyPersonsLater(
+        [newPerson],
+        { title: '📦 የንብረት ኃላፊነት · Property in your care', body: `${item} — ${formatEthiopianDate(t.moved_on, 'am')}`, url: '/dashboard/property/custody', tag: `asset-${assetId}` },
+        { link: false }
+      );
+    }
+    if (asset.custodian_person_id && asset.custodian_person_id !== newPerson) {
+      notifyPersonsLater(
+        [asset.custodian_person_id],
+        { title: '📦 ንብረት ተረክቧል · Property handed over', body: `${item} — ${t.reason}`, url: '/dashboard/property/custody', tag: `asset-${assetId}` },
+        { link: false }
+      );
+    }
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };

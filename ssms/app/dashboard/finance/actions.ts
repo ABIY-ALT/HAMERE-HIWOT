@@ -445,6 +445,21 @@ export async function setBudget(input: z.input<typeof BudgetSchema>): Promise<Ac
         { onConflict: 'academic_year_id,organization_unit_id' }
       )
       .then(check);
+    // The department's heads learn what they have to spend
+    const [{ data: year }, { data: unit }] = await Promise.all([
+      db.from('academic_years').select('name').eq('id', b.year_id).maybeSingle(),
+      db.from('organization_units').select('name_en, name_am').eq('id', b.unit_id).maybeSingle(),
+    ]);
+    const u = unit as { name_en: string; name_am: string | null } | null;
+    notifyLater(
+      { units: { ids: [b.unit_id], holding: 'FINANCE_REQUEST' }, except: me.systemUser.id },
+      {
+        title: '💰 የክፍሉ በጀት ተወስኗል · Department budget set',
+        body: `${u?.name_am || u?.name_en || ''} — ${(year as { name: string } | null)?.name ?? ''}: ${formatETB(b.allocated)}`,
+        url: '/dashboard/finance/budget',
+        tag: `budget-${b.unit_id}`,
+      }
+    );
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };

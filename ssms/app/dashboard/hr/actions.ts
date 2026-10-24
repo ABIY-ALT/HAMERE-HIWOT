@@ -11,8 +11,10 @@ import { authorize, check, errorMessage, selectAll } from '@/lib/auth/authorize'
 import { nonMemberIds } from '@/lib/members/membership';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import type { AttendanceStatus } from '@/lib/attendance/store';
-import { todayIso } from '@/lib/utils/ethiopian-calendar';
+import { formatEthiopianDate, todayIso } from '@/lib/utils/ethiopian-calendar';
+import { notifyPersonsLater } from '@/lib/push/send';
 import {
+  ROLE_KINDS,
   addDays,
   type AttendanceMark,
   type CaseKind,
@@ -157,6 +159,27 @@ function assignmentError(error: { code?: string; message: string }): string {
   return error.message;
 }
 
+/** Tells the servant about their assignment (Telegram, and their devices if they have a login). */
+async function tellServant(
+  db: Awaited<ReturnType<typeof authorize>>['db'],
+  personId: string,
+  a: { unit_id: string; role_kind: RoleKind; title: string | null; date: string },
+  kind: 'NEW' | 'MOVED' | 'ENDED'
+) {
+  const { data: unit } = await db.from('organization_units').select('name_en, name_am').eq('id', a.unit_id).maybeSingle();
+  const u = unit as { name_en: string; name_am: string | null } | null;
+  const [roleEn, roleAm] = ROLE_KINDS[a.role_kind];
+  const role = a.title || `${roleAm} · ${roleEn}`;
+  const where = u?.name_am || u?.name_en || '';
+  const when = `${formatEthiopianDate(a.date, 'am')} (${a.date})`;
+  const title = {
+    NEW: '🙌 አዲስ የአገልግሎት ምደባ · New service assignment',
+    MOVED: '🔁 የአገልግሎት ዝውውር · You were moved',
+    ENDED: '🕊️ አገልግሎት ተጠናቋል · Assignment ended',
+  }[kind];
+  notifyPersonsLater([personId], { title, body: `${role} — ${where} — ${when}`, url: '/dashboard/my-service', tag: `hr-${personId}` }, { link: false });
+}
+
 const AssignmentSchema = z.object({
   person_id: z.string(),
   unit_id: z.string().min(1, 'Choose the department or coordination'),
@@ -188,6 +211,7 @@ export async function saveAssignment(id: string | null, input: AssignmentInput):
       if (!a.person_id) throw new Error('Choose the person to assign');
       const { error } = await db.from('service_assignments').insert({ ...fields, person_id: a.person_id, status: 'ACTIVE', created_by: me.systemUser.id });
       if (error) throw new Error(assignmentError(error));
+      await tellServant(db, a.person_id, { unit_id: a.unit_id, role_kind: a.role_kind, title: fields.title, date: a.start_date }, 'NEW');
     }
     return { ok: true };
   } catch (e) {
@@ -207,12 +231,15 @@ export async function endAssignment(id: string, input: EndAssignmentInput): Prom
   try {
     const { db } = await authorize('HR_MANAGE');
     const e = EndSchema.parse(input);
-    const row = (await db.from('service_assignments').select('notes, status').eq('id', id).single().then(check)) as { notes: string | null; status: string };
+    const row = (await db.from('service_assignments').select('notes, status, person_id, unit_id, role_kind, title').eq('id', id).single().then(check)) as {
+      notes: string | null; status: string; person_id: string; unit_id: string; role_kind: RoleKind; title: string | null;
+    };
     if (row.status !== 'ACTIVE') throw new Error('This assignment has already ended');
     const { error } = await db.from('service_assignments')
       .update({ status: 'ENDED', end_date: e.end_date, end_reason: e.end_reason, notes: [row.notes, e.note].filter(Boolean).join('\n') || null })
       .eq('id', id);
     if (error) throw new Error(assignmentError(error));
+    await tellServant(db, row.person_id, { unit_id: row.unit_id, role_kind: row.role_kind, title: row.title, date: e.end_date }, 'ENDED');
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
@@ -251,6 +278,7 @@ export async function transferAssignment(id: string, input: TransferInput): Prom
     });
     if (error) throw new Error(assignmentError(error));
     await db.from('service_assignments').update({ status: 'ENDED', end_date: t.date, end_reason: 'TRANSFERRED' }).eq('id', id).then(check);
+    await tellServant(db, old.person_id, { unit_id: t.unit_id, role_kind: t.role_kind, title: t.title || null, date: t.date }, 'MOVED');
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };

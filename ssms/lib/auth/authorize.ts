@@ -71,6 +71,10 @@ function friendly(message: string): string {
     const label = MODULE_LABELS[missing[1] as ModuleCode]?.[0] ?? missing[1];
     return `${label} is not included in your plan. Upgrade under Administration → Billing.`;
   }
+  const locked = /GL_LOCKED:(\d{4}-\d{2}-\d{2})/.exec(message);
+  if (locked) {
+    return `The books are closed up to ${locked[1]} (Finance → Accounting → Chart of accounts → Settings). Records on or before that date cannot be added, changed or removed.`;
+  }
   if (message === 'READ_ONLY') return readOnlyMessage;
   if (message === 'BLOCKED') return 'This Sunday school’s account is suspended. Please contact support.';
   if (message === 'SHARED_LOGIN') {

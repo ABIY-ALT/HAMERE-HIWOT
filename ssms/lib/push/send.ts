@@ -11,7 +11,7 @@ import type { PermissionCode } from '@/types';
 import { tenantClient } from '@/lib/tenant/db';
 import { currentTenantId, runInTenant } from '@/lib/tenant/scope';
 import { env } from '@/lib/env';
-import { escapeHtml, personsOfUsers, siteUrl, telegramConfigured, telegramToPersons } from '@/lib/telegram/bot';
+import { chatsOf, escapeHtml, personsOfUsers, siteUrl, telegramConfigured, telegramToChats, telegramToPersons } from '@/lib/telegram/bot';
 
 export interface PushMessage {
   title: string;
@@ -139,6 +139,55 @@ export function notifyLater(
         if (bot) {
           const text = `<b>${escapeHtml(message.title)}</b>\n${escapeHtml(message.body)}\n${siteUrl()}${message.url}`;
           await telegramToPersons(db, await personsOfUsers(db, recipients), text);
+        }
+      });
+    } catch (e) {
+      console.error('notify failed', e);
+    }
+  });
+}
+
+/**
+ * Notify people (persons, not accounts) after the response: their linked
+ * Telegram chats, and the devices of their login if they have one. For the
+ * people an action is about — a donor, an appointee, a servant — most of whom
+ * only use the bot. `guardians: true` also tells a student's parents.
+ * `link: false` leaves the website link out of the Telegram message (for
+ * people without a login).
+ */
+export function notifyPersonsLater(
+  personIds: (string | null | undefined)[],
+  message: PushMessage,
+  options: { guardians?: boolean; link?: boolean } = {}
+): void {
+  const ids = [...new Set(personIds.filter((id): id is string => Boolean(id)))];
+  if (ids.length === 0) return;
+  const tenant = currentTenantId();
+  after(async () => {
+    try {
+      const tenantId = await tenant;
+      if (!tenantId) return;
+      await runInTenant(tenantId, async () => {
+        const bot = await telegramConfigured();
+        if (!pushConfigured() && !bot) return;
+        const db = tenantClient(tenantId);
+        if (pushConfigured()) {
+          const { data } = await db.from('system_users').select('id').in('person_id', ids).eq('is_active', true);
+          await pushToUsers(db, ((data ?? []) as { id: string }[]).map((u) => u.id), message);
+        }
+        if (bot) {
+          const chats = await chatsOf(db, ids, 'SELF');
+          if (options.guardians) {
+            const { data: students } = await db.from('students').select('id').in('person_id', ids).eq('status', 'ACTIVE');
+            const studentIds = ((students ?? []) as { id: string }[]).map((s) => s.id);
+            if (studentIds.length) {
+              const { data: guardians } = await db.from('student_guardians').select('guardian_person_id').in('student_id', studentIds);
+              const parentIds = ((guardians ?? []) as { guardian_person_id: string }[]).map((g) => g.guardian_person_id);
+              if (parentIds.length) for (const c of await chatsOf(db, parentIds)) chats.add(c);
+            }
+          }
+          const link = options.link === false ? '' : `\n${siteUrl()}${message.url}`;
+          await telegramToChats(db, chats, `<b>${escapeHtml(message.title)}</b>\n${escapeHtml(message.body)}${link}`);
         }
       });
     } catch (e) {
