@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Download, Printer, Users, GraduationCap, Wallet, Landmark, AlertTriangle } from 'lucide-react';
+import Link from 'next/link';
+import { BookOpenCheck, Download, Printer, Users, GraduationCap, Wallet, Landmark, AlertTriangle } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { AdminModeNotice } from '@/components/admin/AdminModeNotice';
 import { ColumnChart } from '@/components/reports/ColumnChart';
@@ -80,9 +81,14 @@ export default function ReportsPage() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">{t('Reports', 'ሪፖርቶች')}</h1>
           <p className="text-sm text-slate-500 mt-1">{periodText || '…'}</p>
         </div>
-        <button onClick={() => window.print()} disabled={!data} className="no-print btn btn-secondary text-xs inline-flex items-center gap-1.5 self-start disabled:opacity-50">
-          <Printer size={14} /> {t('Print', 'አትም')}
-        </button>
+        <div className="no-print flex gap-2 self-start">
+          <Link href="/dashboard/reports/annual" className="btn btn-primary text-xs inline-flex items-center gap-1.5">
+            <BookOpenCheck size={14} /> {t('Annual report', 'ዓመታዊ ሪፖርት')}
+          </Link>
+          <button onClick={() => window.print()} disabled={!data} className="btn btn-secondary text-xs inline-flex items-center gap-1.5 disabled:opacity-50">
+            <Printer size={14} /> {t('Print', 'አትም')}
+          </button>
+        </div>
       </div>
 
       <AdminModeNotice mode={mode === 'live' ? 'live' : mode} error={error} />

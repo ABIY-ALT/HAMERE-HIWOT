@@ -7,6 +7,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, BookOpen, Check, Home, Search, UserRound } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { Modal } from '@/components/ui/Modal';
+import { QrScanButton } from '@/components/common/QrScanButton';
 import { runLibrary, useLibrary } from '@/lib/library/client';
 import { BORROWER_KINDS, daysLate, label, type BorrowerOption, type LibraryLoan, type LoanKind } from '@/lib/library/types';
 import { formatEthiopianDate, todayIso } from '@/lib/utils/ethiopian-calendar';
@@ -149,9 +150,12 @@ export function LendDialog({
             </div>
           ) : (
             <>
-              <div className="relative">
-                <UserRound className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
-                <input value={personQuery} onChange={(e) => setPersonQuery(e.target.value)} placeholder={t('Name, phone or student number', 'ስም፣ ስልክ ወይም የተማሪ ቁጥር')} className="form-input pl-9 text-sm" />
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <UserRound className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                  <input value={personQuery} onChange={(e) => setPersonQuery(e.target.value)} placeholder={t('Name, phone, member or student number', 'ስም፣ ስልክ፣ የአባል ወይም የተማሪ ቁጥር')} className="form-input pl-9 text-sm" />
+                </div>
+                <QrScanButton onScan={setPersonQuery} />
               </div>
               {personQuery.trim().length >= 2 && (
                 <div className="divide-y divide-slate-100 border border-slate-200 rounded-lg max-h-56 overflow-y-auto">

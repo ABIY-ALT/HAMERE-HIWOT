@@ -65,8 +65,8 @@ export default function AutomationAdminPage() {
   const toggles: { key: Toggle; en: string; am: string; hintEn: string; hintAm: string }[] = [
     {
       key: 'event_reminders', en: 'Event reminders', am: 'የመርሐ ግብር ማስታወሻ',
-      hintEn: 'The day before a program marked “Show on the public website”, everyone connected to the bot gets a reminder.',
-      hintAm: '«በሕዝብ ድረ-ገጽ ላይ አሳይ» ከተባለ መርሐ ግብር አንድ ቀን በፊት ቦቱን ያገናኙ ሁሉ ማስታወሻ ይደርሳቸዋል።',
+      hintEn: 'The day before a program marked “Show on the public website”, everyone connected to the bot gets a reminder. People who signed up for a program get their ticket again instead.',
+      hintAm: '«በሕዝብ ድረ-ገጽ ላይ አሳይ» ከተባለ መርሐ ግብር አንድ ቀን በፊት ቦቱን ያገናኙ ሁሉ ማስታወሻ ይደርሳቸዋል። ለመርሐ ግብሩ የተመዘገቡት ደግሞ ትኬታቸውን ይቀበላሉ።',
     },
     {
       key: 'roster_reminders', en: 'Choir roster reminders', am: 'የመዘምራን ምደባ ማስታወሻ',
@@ -92,6 +92,11 @@ export default function AutomationAdminPage() {
       key: 'dues_reminders', en: 'Monthly dues reminders', am: 'የወርሃዊ መዋጮ ማስታወሻ',
       hintEn: 'Once a month, members connected to the bot who owe dues get a reminder with the unpaid months and the total.',
       hintAm: 'በወር አንድ ጊዜ መዋጮ ያለባቸው፣ ቦቱን ያገናኙ አባላት ያልተከፈሉ ወራትና ድምሩ ያለበት ማስታወሻ ይደርሳቸዋል።',
+    },
+    {
+      key: 'feast_reminders', en: 'Feast and fast reminders', am: 'የበዓልና የጾም ማስታወሻ',
+      hintEn: 'The day before a great feast (Meskel, Genna, Timket, Fasika…) or the start of a fast (Nineveh, Lent, Filseta…), everyone connected to the bot gets a message.',
+      hintAm: 'ከዐቢይ በዓል (መስቀል፣ ገና፣ ጥምቀት፣ ፋሲካ…) ወይም ከጾም መጀመሪያ (ነነዌ፣ ዐቢይ ጾም፣ ፍልሰታ…) አንድ ቀን በፊት ቦቱን ያገናኙ ሁሉ መልእክት ይደርሳቸዋል።',
     },
   ];
 

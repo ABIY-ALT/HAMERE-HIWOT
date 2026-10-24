@@ -5,18 +5,21 @@
 // is kept in automation_log (migration 038), so the same reminder never goes
 // out twice — not on a second run, and not when two runs overlap.
 //   repeating_tasks     the next task of each series (lib/tasks/recurring)
-//   event_reminders     tomorrow's public programs → every chat connected to the bot
+//   event_reminders     tomorrow's public programs → every chat connected to the bot;
+//                       tomorrow's sign-ups (046) → each registrant, with their ticket
 //   roster_reminders    tomorrow's choir service → each member on its published roster
 //   vestment_reminders  vestments past their return day → the holder (again a week later)
 //   library_reminders   library books: the day before the return day, then weekly while late → the borrower
 //   overdue_tasks       tasks whose due date passed → their department's heads
 //   dues_reminders      from the chosen day of each Ethiopian month → members who owe
+//   feast_reminders     the day before a great feast or the start of a fast → every connected chat
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { selectAll } from '@/lib/auth/authorize';
 import { notifyLater } from '@/lib/push/send';
-import { escapeHtml, publicUrl, telegramConfigured, telegramToChats, telegramToPersons } from '@/lib/telegram/bot';
+import { escapeHtml, publicUrl, sendTelegram, telegramConfigured, telegramToChats, telegramToPersons } from '@/lib/telegram/bot';
+import { registrantChats, ticketHtml, type TicketProgram } from '@/lib/events/registrations';
 import { openPeriods } from '@/lib/telegram/dues-flow';
 import { nonMemberIds } from '@/lib/members/membership';
 import { expectedTotal, periodsLabel, toPeriod } from '@/lib/finance/dues';
@@ -26,6 +29,7 @@ import { issueRepeatingTasks } from '@/lib/tasks/recurring';
 import { addDays } from '@/lib/hr/types';
 import { formatEthiopianDate, isoToEthiopian, todayIso } from '@/lib/utils/ethiopian-calendar';
 import { borrowerChats, libraryText } from '@/lib/library/notify';
+import { upcoming } from '@/lib/calendar/orthodox';
 import {
   AUTOMATION_KEY,
   DEFAULT_AUTOMATION,
@@ -75,8 +79,37 @@ const when = (date: string, time: string | null) => `${formatEthiopianDate(date,
 
 // ── The jobs ─────────────────────────────────────────────────────────────────
 
+/** Tomorrow's programs: each person who signed up (046) gets their ticket again. Returns the chats reached. */
+async function ticketReminders(db: SupabaseClient, tomorrow: string): Promise<Set<number>> {
+  const reached = new Set<number>();
+  const { data: programs } = await db.from('programs')
+    .select('id, title_en, title_am, start_date, start_time, location')
+    .in('status', ['PLANNED', 'CONFIRMED'])
+    .eq('start_date', tomorrow);
+  const byId = new Map(((programs ?? []) as (TicketProgram & { id: string })[]).map((p) => [p.id, p]));
+  if (byId.size === 0) return reached;
+  // Before migration 046 there are no registrations: nothing to send
+  const { data: regs, error } = await db.from('event_registrations')
+    .select('id, program_id, ticket_code, full_name, seats, phone, chat_id')
+    .in('program_id', [...byId.keys()])
+    .eq('status', 'REGISTERED');
+  if (error || !regs?.length) return reached;
+  const rows = regs as { id: string; program_id: string; ticket_code: string; full_name: string; seats: number; phone: string | null; chat_id: number | null }[];
+  const fresh = await claim(db, 'event_reminders', rows.map((r) => `reg:${r.id}`));
+  const due = rows.filter((r) => fresh.has(`reg:${r.id}`));
+  const chats = await registrantChats(db, due);
+  for (const [chat, i] of chats) {
+    const r = due[i];
+    const html = ticketHtml(byId.get(r.program_id)!, { ticket: r.ticket_code, name: r.full_name, seats: r.seats }, '🔔 ነገ · Tomorrow');
+    if ((await sendTelegram(chat, html)) === 'ok') reached.add(chat);
+    await new Promise((res) => setTimeout(res, 50));
+  }
+  return reached;
+}
+
 async function eventReminders(db: SupabaseClient, today: string): Promise<number> {
   const tomorrow = addDays(today, 1);
+  const ticketed = await ticketReminders(db, tomorrow);
   const { data, error } = await db.from('programs')
     .select('id, title_en, title_am, start_time, location')
     .eq('is_public', true)
@@ -87,16 +120,41 @@ async function eventReminders(db: SupabaseClient, today: string): Promise<number
   const programs = (data ?? []) as { id: string; title_en: string; title_am: string | null; start_time: string | null; location: string | null }[];
   const fresh = await claim(db, 'event_reminders', programs.map((p) => `${p.id}:${tomorrow}`));
   const due = programs.filter((p) => fresh.has(`${p.id}:${tomorrow}`));
-  if (due.length === 0) return 0;
+  if (due.length === 0) return ticketed.size;
 
   const links = await selectAll<{ chat_id: number }>((a, b) => db.from('telegram_links').select('chat_id').order('chat_id').range(a, b));
-  const chats = new Set(links.map((l) => Number(l.chat_id)));
+  // Those who just got their ticket for tomorrow are not sent a second message
+  const chats = new Set(links.map((l) => Number(l.chat_id)).filter((c) => !ticketed.has(c)));
   const html = [
     `🔔 <b>${e('ነገ · Tomorrow')}</b> — ${e(formatEthiopianDate(tomorrow, 'am'))}`,
     '',
     ...due.map((p) => e(`• ${p.start_time ? `${p.start_time.slice(0, 5)} — ` : ''}${p.title_am || p.title_en}${p.title_am && p.title_am !== p.title_en ? ` · ${p.title_en}` : ''}${p.location ? ` (${p.location})` : ''}`)),
     '',
     await publicUrl('/events'),
+  ].join('\n');
+  return (await telegramToChats(db, chats, html)).delivered;
+}
+
+/** Tomorrow's great feast, or a fast that starts tomorrow → every chat connected to the bot. */
+async function feastReminders(db: SupabaseClient, today: string): Promise<number> {
+  const tomorrow = addDays(today, 1);
+  const due = upcoming(today, 6).filter((d) => d.date === tomorrow);
+  const fresh = await claim(db, 'feast_reminders', due.map((d) => `${d.key}:${d.date}`));
+  const send = due.filter((d) => fresh.has(`${d.key}:${d.date}`));
+  if (send.length === 0) return 0;
+
+  const links = await selectAll<{ chat_id: number }>((a, b) => db.from('telegram_links').select('chat_id').order('chat_id').range(a, b));
+  const chats = new Set(links.map((l) => Number(l.chat_id)));
+  const html = [
+    `🕯️ <b>${e('ነገ · Tomorrow')}</b> — ${e(formatEthiopianDate(tomorrow, 'am'))}`,
+    '',
+    ...send.map((d) =>
+      d.kind === 'FAST'
+        ? e(`• ${d.name[1]} ይጀምራል · ${d.name[0]} begins${d.end ? ` (እስከ ${formatEthiopianDate(d.end, 'am')})` : ''}`)
+        : e(`• ${d.name[1]} · ${d.name[0]}`)
+    ),
+    '',
+    e(send.some((d) => d.kind === 'FEAST') ? 'እንኳን አደረሳችሁ! · Blessed feast!' : 'መልካም የጾም ወቅት! · A blessed fast!'),
   ].join('\n');
   return (await telegramToChats(db, chats, html)).delivered;
 }
@@ -298,9 +356,12 @@ export async function runDaily(db: SupabaseClient, trigger: LastRun['trigger']):
   // Push and/or Telegram — notifyLater sends by whichever is set up
   await run('overdue_tasks', settings.overdue_tasks, () => overdueTasks(db, today), false);
   await run('dues_reminders', settings.dues_reminders, () => duesReminders(db, today, settings));
+  await run('feast_reminders', settings.feast_reminders, () => feastReminders(db, today));
 
   // The log only needs to outlive the reminders it guards
   await db.from('automation_log').delete().lt('done_on', addDays(today, -400));
+  // Inbox notices are kept six months (before migration 045 there is no inbox: the error is ignored)
+  await db.from('notifications').delete().lt('created_at', `${addDays(today, -183)}T00:00:00Z`);
   const last: LastRun = { at: new Date().toISOString(), trigger, results };
   await db.from('system_settings').upsert({ key: LAST_RUN_KEY, value: last, updated_at: last.at }, { onConflict: 'key' });
   return last;

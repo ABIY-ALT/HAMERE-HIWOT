@@ -24,6 +24,7 @@ export const TENANT_TABLES = new Set<string>([
   'bank_accounts', 'account_transfers', 'bank_statements', 'bank_statement_lines',
   'library_books', 'library_copies', 'library_loans', 'library_requests',
   'gl_accounts', 'gl_settings', 'gl_mappings', 'journal_entries', 'journal_lines',
+  'spiritual_courses', 'course_completions', 'certificates', 'notifications', 'event_registrations',
   // view (carries tenant_id)
   'attendance_session_totals',
 ]);

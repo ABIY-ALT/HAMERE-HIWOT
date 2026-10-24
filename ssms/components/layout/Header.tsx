@@ -22,6 +22,7 @@ import { useLang } from '@/contexts/LangContext';
 import type { Locale } from '@/types';
 import { signOut, switchTenant } from '@/app/login/actions';
 import { loadNotifications, type Notice } from '@/app/dashboard/actions';
+import { markInboxRead } from '@/app/dashboard/inbox/actions';
 import { DEMO_NOTICES } from '@/lib/notices';
 import { forgetThisDevice } from '@/components/pwa/NotificationPrompt';
 import { resetEducation } from '@/lib/education/client';
@@ -116,12 +117,18 @@ export default function Header({
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const isUnread = (n: Notice) => seen[n.id] !== n.version;
+  // Inbox notices are read on the server (every device); the others on this device
+  const isUnread = (n: Notice) => (n.read !== undefined ? !n.read : seen[n.id] !== n.version);
   const unreadCount = notices.filter(isUnread).length;
 
   const markSeen = (list: Notice[]) => {
+    const inbox = list.filter((n) => n.read === false).map((n) => n.id.slice('inbox:'.length));
+    if (inbox.length) {
+      setNotices((all) => all.map((n) => (n.read === false && inbox.includes(n.id.slice('inbox:'.length)) ? { ...n, read: true } : n)));
+      void markInboxRead(inbox);
+    }
     const next = { ...seen };
-    for (const n of list) next[n.id] = n.version;
+    for (const n of list) if (n.read === undefined) next[n.id] = n.version;
     // Keep only notices that still exist
     const kept = Object.fromEntries(Object.entries(next).filter(([id]) => notices.some((n) => n.id === id)));
     setSeen(kept);
@@ -306,17 +313,16 @@ export default function Header({
               )}
             </div>
 
-            {can('AUDIT_VIEW_ALL') && (user?.tenant?.access.modules.includes('audit') ?? true) && (
-              <div className="p-2.5 border-t border-slate-100 bg-slate-50/50 text-center">
-                <Link
-                  href="/dashboard/audit"
-                  onClick={() => setNotifOpen(false)}
-                  className="text-xs text-blue-600 hover:text-blue-800 font-semibold"
-                >
-                  {t('View Full System Audit Trail →', 'ሁሉንም የስርዓት ኦዲት ታሪክ እይ →')}
+            <div className="p-2.5 border-t border-slate-100 bg-slate-50/50 flex items-center justify-center gap-4">
+              <Link href="/dashboard/inbox" onClick={() => setNotifOpen(false)} className="text-xs text-blue-600 hover:text-blue-800 font-semibold">
+                {t('All my notifications →', 'ሁሉም ማሳወቂያዎቼ →')}
+              </Link>
+              {can('AUDIT_VIEW_ALL') && (user?.tenant?.access.modules.includes('audit') ?? true) && (
+                <Link href="/dashboard/audit" onClick={() => setNotifOpen(false)} className="text-xs text-slate-500 hover:text-slate-800 font-semibold">
+                  {t('Audit trail →', 'የኦዲት ታሪክ →')}
                 </Link>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
       </div>

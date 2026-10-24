@@ -17,7 +17,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!isSupabaseEnabled()) return new NextResponse('Photos need the database', { status: 404 });
   const me = await getCurrentUser();
   if (!me) return new NextResponse('Sign in again to see this photo', { status: 401 });
-  if (!me.permissions.includes('MEMBER_VIEW') && !me.permissions.includes('AUDIT_VIEW_ALL')) {
+  if (!['MEMBER_VIEW', 'STUDENT_VIEW', 'HR_VIEW', 'AUDIT_VIEW_ALL'].some((p) => me.permissions.includes(p as never))) {
     return new NextResponse('You do not have permission to see members', { status: 403 });
   }
 

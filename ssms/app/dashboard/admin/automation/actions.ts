@@ -53,6 +53,7 @@ const SettingsSchema = z.object({
   library_reminders: z.boolean(),
   overdue_tasks: z.boolean(),
   dues_reminders: z.boolean(),
+  feast_reminders: z.boolean(),
   dues_day: z.coerce.number().int().min(1, 'Choose a day from 1 to 30').max(30, 'Choose a day from 1 to 30'),
 });
 

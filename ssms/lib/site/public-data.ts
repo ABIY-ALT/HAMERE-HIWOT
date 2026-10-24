@@ -236,3 +236,37 @@ export async function publicAlbum(tenant: TenantInfo, id: string): Promise<{ alb
   if (!album) return null;
   return { album, photos: await cachedAlbumPhotos(tenant.id, id).catch(() => []) };
 }
+
+// ── Event sign-up (migration 046) — read fresh on each visit ─────────────────
+
+/** Public events open for sign-up today, with the places left (null = no limit). Empty before 046. */
+export async function publicSignups(tenant: TenantInfo, eventIds: string[]): Promise<Record<string, { left: number | null }>> {
+  if (!isSupabaseEnabled() || eventIds.length === 0) return {};
+  try {
+    const today = todayIso();
+    const db = tenantClient(tenant.id);
+    const { data, error } = await db.from('programs')
+      .select('id, registration_capacity, registration_closes_on')
+      .in('id', eventIds)
+      .eq('is_public', true)
+      .eq('registration_open', true);
+    if (error) return {};
+    const open = ((data ?? []) as { id: string; registration_capacity: number | null; registration_closes_on: string | null }[]).filter(
+      (p) => !p.registration_closes_on || p.registration_closes_on >= today
+    );
+    if (open.length === 0) return {};
+    const { data: regs } = await db.from('event_registrations')
+      .select('program_id, seats')
+      .in('program_id', open.filter((p) => p.registration_capacity !== null).map((p) => p.id))
+      .eq('status', 'REGISTERED')
+      .limit(20000);
+    const taken = new Map<string, number>();
+    for (const r of (regs ?? []) as { program_id: string; seats: number }[]) taken.set(r.program_id, (taken.get(r.program_id) ?? 0) + r.seats);
+    return Object.fromEntries(
+      open.map((p) => [p.id, { left: p.registration_capacity === null ? null : Math.max(p.registration_capacity - (taken.get(p.id) ?? 0), 0) }])
+    );
+  } catch (e) {
+    console.error('public sign-up data failed', e);
+    return {};
+  }
+}

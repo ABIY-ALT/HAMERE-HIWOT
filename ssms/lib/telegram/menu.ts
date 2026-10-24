@@ -158,12 +158,16 @@ const MAX_TEXT = 3900;
 const cut = (s: string) => (s.length > MAX_TEXT ? `${s.slice(0, MAX_TEXT)}\n…` : s);
 const e = escapeHtml;
 
-export const WELCOME =
-  'ሰላም! ይህ የሐመረ ሕይወት ሰንበት ትምህርት ቤት ቦት ነው።\n' +
+/** The Sunday school's names for the bot's messages: [English, Amharic] */
+export type SchoolNames = [en: string, am: string];
+
+/** First message to someone not connected yet, in the name of their Sunday school. */
+export const welcomeText = ([en, am]: SchoolNames) =>
+  `ሰላም! ይህ የ${am} ቦት ነው።\n` +
   'አባላት፣ ወላጆችና ተማሪዎች — ከታች ያለውን «📱 ስልኬን አጋራ» ይጫኑ፦\n' +
   '• አባል ከሆኑ፦ ስልኩ በአባልነት መዝገብዎ ላይ ያለው ከሆነ አባልነትዎንና መዋጮዎን ያያሉ፤ የከፈሉትንም ያሳውቃሉ።\n' +
   '• ወላጅ ከሆኑ፦ ስልኩ በልጅዎ መዝገብ ላይ ያለው ከሆነ የልጅዎን ውጤት፣ ክትትልና ፈተና ያያሉ።\n\n' +
-  'Hello! This is the Hamere Hiwot Sunday School bot.\n' +
+  `Hello! This is the ${en} bot.\n` +
   'Members, parents and students — tap “📱 Share my phone number” below:\n' +
   '• Members: if it is the phone on your member record, you see your membership and dues, and can report payments.\n' +
   '• Parents: if it is the phone on your child’s record, you see your child’s results, attendance and exams.\n' +
@@ -221,8 +225,8 @@ export function helpFor(scope: ChatScope): string {
     am.push('✅ ተገኝቻለሁ — በመርሐ ግብር ወይም በመዝሙር ጥናት ላይ መገኘትዎን በመሪው ስክሪን ባለው ኮድ ያስመዝግቡ');
     en.push('✅ I’m here — check in at a program or choir rehearsal with the code on the leader’s screen');
   }
-  am.push('📅 መርሐ ግብር — የሚመጡ የትምህርት ቤቱ መርሐ ግብሮች', 'ℹ️ ስለ እኛ — ስለ ሰንበት ትምህርት ቤቱ ማወቅ የሚፈልጉት', '✉️ ጥያቄ — ለአንድ ክፍል ጥያቄ ይላኩ፤ መልሱ እዚህ ይደርስዎታል');
-  en.push('📅 Events — the school’s coming programs', 'ℹ️ About us — what you want to know about the Sunday school', '✉️ Ask a department — send a question; the answer comes here');
+  am.push('📅 መርሐ ግብር — የሚመጡ መርሐ ግብሮች፣ ትኬቶችዎ፤ ምዝገባ ለተከፈተላቸው ይመዝገቡ', 'ℹ️ ስለ እኛ — ስለ ሰንበት ትምህርት ቤቱ ማወቅ የሚፈልጉት', '✉️ ጥያቄ — ለአንድ ክፍል ጥያቄ ይላኩ፤ መልሱ እዚህ ይደርስዎታል');
+  en.push('📅 Events — coming programs and your tickets; register for those open for sign-up', 'ℹ️ About us — what you want to know about the Sunday school', '✉️ Ask a department — send a question; the answer comes here');
   if (scope.hymns) am.push('🎶 መዝሙራት — የመዝሙራት ማውጫ፦ በዓይነት ወይም በቃል ፈልገው ግጥሙን ያግኙ');
   if (scope.library && scope.ownPersonIds.length) am.push('📚 መጻሕፍት — ያለዎት መጽሐፍና የሚመለስበት ቀን፤ መጽሐፍ ፈልገው መኖሩን ይዩ፣ ይጠይቁ');
   am.push('🔑 ሚስጥር ቁጥሬን ረሳሁ — ለድረ-ገጹ አዲስ ጊዜያዊ ሚስጥር ቁጥር (የእርስዎ ወይም የልጅዎ)፤ መግቢያ ከሌለዎት «መግቢያ ፍጠርልኝ»');

@@ -30,11 +30,11 @@ export const isAboutMessage = (text: string) =>
   text === ABOUT_BUTTON || text === BACK_BUTTON || text.startsWith('📖 ') || /^\/about(@\w+)?$/i.test(text);
 
 /** The list of topics, as buttons. */
-export function aboutMenu(topics: AboutTopic[]): { text: string; keyboard: Record<string, unknown> } {
+export function aboutMenu(topics: AboutTopic[], [nameEn, nameAm]: [string, string]): { text: string; keyboard: Record<string, unknown> } {
   const rows = topics.map((t) => [{ text: topicButton(t) }]);
   rows.push([{ text: BACK_BUTTON }]);
   const text = topics.length
-    ? `ℹ️ <b>የሐመረ ሕይወት ሰንበት ትምህርት ቤት · Hamere Hiwot Sunday School</b>\n${escapeHtml('ስለምን ማወቅ ይፈልጋሉ? · What would you like to know?')}`
+    ? `ℹ️ <b>${escapeHtml(`${nameAm} · ${nameEn}`)}</b>\n${escapeHtml('ስለምን ማወቅ ይፈልጋሉ? · What would you like to know?')}`
     : escapeHtml(`ጽ/ቤቱ ገና መረጃ አላስገባም። · The office has not added this information yet.\n${siteUrl()}`);
   return { text, keyboard: { reply_markup: { keyboard: rows, resize_keyboard: true } } };
 }

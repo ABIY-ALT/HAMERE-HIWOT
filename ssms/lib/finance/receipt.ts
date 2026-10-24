@@ -16,7 +16,16 @@ const TYPE_LABEL: Record<Donation['type'], string> = {
 const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
 
-export function buildReceiptHtml(d: Donation, receivedBy: string, autoPrint = true): string {
+/** The Sunday school the receipt is from; "Church · School" names print on two lines. */
+export interface ReceiptSchool {
+  en: string;
+  am: string;
+  /** Absolute URL (the receipt opens in its own window) */
+  logoUrl: string | null;
+}
+
+export function buildReceiptHtml(d: Donation, receivedBy: string, school: ReceiptSchool, autoPrint = true): string {
+  const lines = (s: string) => s.split(' · ').map(esc).join('<br>');
   const date = d.received_on ?? d.pledged_on ?? d.created_at.slice(0, 10);
   const row = (label: string, value: string, cls = '') =>
     `<tr><th>${esc(label)}</th><td${cls ? ` class="${cls}"` : ''}>${esc(value)}</td></tr>`;
@@ -26,6 +35,7 @@ export function buildReceiptHtml(d: Donation, receivedBy: string, autoPrint = tr
   .box{border:2px solid #1e2770;border-radius:12px;padding:28px 32px;max-width:560px;margin:auto}
   .top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
   h1{font-size:17px;margin:0;color:#1e2770;line-height:1.35} h2{font-size:12.5px;margin:4px 0 0;font-weight:500;color:#475569}
+  .school{display:flex;gap:12px;align-items:flex-start} .logo{width:52px;height:52px;object-fit:contain}
   .no{font-family:Consolas,monospace;font-size:14px;font-weight:700;white-space:nowrap;border:1px solid #cbd5e1;border-radius:6px;padding:4px 8px}
   .kind{margin-top:14px;display:inline-block;font-size:12px;font-weight:600;color:#1e2770;background:#eef2ff;border-radius:999px;padding:3px 10px}
   table{width:100%;border-collapse:collapse;margin-top:18px;font-size:14px}
@@ -38,9 +48,12 @@ export function buildReceiptHtml(d: Donation, receivedBy: string, autoPrint = tr
   @media print{body{margin:0}.box{border-color:#000}}
 </style></head><body><div class="box">
   <div class="top">
-    <div>
-      <h1>ሳሎ ደብረ ፀሐይ ቅ/ጊዮርጊስ ቤተክርስቲያን<br>ሐመረ ሕይወት ሰንበት ትምህርት ቤት</h1>
-      <h2>Sallo Debre Tsehay St. George Church · Hamere Hiwot Sunday School</h2>
+    <div class="school">
+      ${school.logoUrl ? `<img src="${esc(school.logoUrl)}" alt="" class="logo">` : ''}
+      <div>
+        <h1>${lines(school.am)}</h1>
+        <h2>${esc(school.en)}</h2>
+      </div>
     </div>
     <span class="no">${esc(d.receipt_no)}</span>
   </div>

@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, AlertTriangle, CalendarPlus, CheckCircle2, Clock, Download, MapPin, Pencil, Search, UserRound, Users, XCircle } from 'lucide-react';
+import Link from 'next/link';
+import { AlertCircle, AlertTriangle, CalendarPlus, CheckCircle2, Clock, Download, MapPin, Pencil, Search, Ticket, UserRound, Users, XCircle } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Modal } from '@/components/ui/Modal';
@@ -329,6 +330,11 @@ export function ProgramsPage({
               <Line label={t('Participants', 'ተሳታፊዎች')} value={`${t('expected', 'የሚጠበቁ')} ${selected.expected ?? '—'}${selected.actual !== null ? ` · ${t('attended', 'የተገኙ')} ${selected.actual}` : ''}`} />
             </dl>
             {selected.description && <p className="text-xs text-slate-700 whitespace-pre-wrap">{selected.description}</p>}
+            {!selected.id.startsWith('prg-') && (
+              <Link href={`/dashboard/programs/registrations?program=${selected.id}`} className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:underline">
+                <Ticket size={13} /> {t('Sign-up & tickets: open sign-up, see who registered, check in at the door', 'ምዝገባና ትኬት፦ ምዝገባ ይክፈቱ፣ የተመዘገቡትን ይዩ፣ በመግቢያው ያስገቡ')}
+              </Link>
+            )}
             {selected.outcome && (
               <div className="text-xs bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-emerald-900">
                 <div className="font-bold mb-0.5">{t('Report', 'ሪፖርት')}</div>

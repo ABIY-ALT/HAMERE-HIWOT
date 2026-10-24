@@ -14,6 +14,9 @@ import type { SessionUser } from '@/lib/auth/session';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import type { Program, ProgramOptions, ProgramStatus, ProgramType } from '@/lib/programs/types';
 import { refreshPublicSite } from '@/lib/site/cache';
+import { escapeHtml, telegramLater, telegramToChats } from '@/lib/telegram/bot';
+import { registrantChats } from '@/lib/events/registrations';
+import { formatEthiopianDate } from '@/lib/utils/ethiopian-calendar';
 
 type Row = Record<string, unknown> & { id: string };
 type Db = Awaited<ReturnType<typeof authorize>>['db'];
@@ -165,6 +168,7 @@ export async function setProgramStatus(
       await db.from('programs').update({ status, actual_participants: o.actual, outcome_notes: o.outcome || null }).eq('id', id).then(check);
     } else if (status === 'CONFIRMED' || status === 'CANCELLED') {
       await db.from('programs').update({ status }).eq('id', id).then(check);
+      if (status === 'CANCELLED') telegramLater((tdb) => tellRegistrants(tdb, id));
     } else {
       throw new Error('Invalid status');
     }
@@ -173,4 +177,21 @@ export async function setProgramStatus(
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
   }
+}
+
+/** A cancelled program: everyone who signed up for it (046) and has Telegram is told. */
+async function tellRegistrants(db: Db, programId: string) {
+  const { data: regs, error } = await db.from('event_registrations').select('chat_id, phone').eq('program_id', programId).eq('status', 'REGISTERED');
+  if (error || !regs?.length) return;
+  const { data: p } = await db.from('programs').select('title_en, title_am, start_date').eq('id', programId).single();
+  if (!p) return;
+  const program = p as { title_en: string; title_am: string | null; start_date: string };
+  const chats = await registrantChats(db, regs as { chat_id: number | null; phone: string | null }[]);
+  const html = [
+    `❌ <b>${escapeHtml('መርሐ ግብሩ ተሰርዟል · Event cancelled')}</b>`,
+    '',
+    escapeHtml(`${program.title_am || program.title_en} — ${formatEthiopianDate(program.start_date, 'am')}`),
+    escapeHtml('የተመዘገቡበት መርሐ ግብር ተሰርዟል። ስለ ችግሩ ይቅርታ እንጠይቃለን። · The event you registered for has been cancelled. We are sorry for the trouble.'),
+  ].join('\n');
+  await telegramToChats(db, new Set(chats.keys()), html);
 }

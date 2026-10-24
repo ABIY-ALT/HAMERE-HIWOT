@@ -24,6 +24,7 @@ import { ReadOnlyError } from '@/lib/tenant/db';
 import { notifyLater } from '@/lib/push/send';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, formatETB } from '@/lib/finance/types';
 import { todayIso } from '@/lib/utils/ethiopian-calendar';
+import { DEFAULT_GL_SETTINGS, loadAccounts, postedLines, readGlSettings } from '@/lib/finance/gl-data';
 import {
   SUB_TYPES,
   addYears,
@@ -42,13 +43,11 @@ import {
   type GlAccount,
   type GlMapping,
   type GlSettings,
-  type GlType,
   type GlUnit,
   type JournalData,
   type JournalEntryView,
   type LedgerData,
   type LedgerRow,
-  type PostedLine,
   type ReportKind,
   type StatementsData,
 } from '@/lib/finance/gl';
@@ -69,49 +68,18 @@ const friendly = (e: unknown) => {
     : msg;
 };
 
-const DEFAULT_SETTINGS: GlSettings = { fiscal_year_start: '07-08', lock_date: null, require_approval: false };
-
 // ── Shared reads ─────────────────────────────────────────────────────────────
-
-const ACCOUNT_COLUMNS = 'id, code, name_en, name_am, account_type, sub_type, normal_balance, parent_id, is_header, bank_account_id, description, is_active';
-
-function toAccount(r: Row): GlAccount {
-  return {
-    id: r.id,
-    code: r.code as string,
-    name_en: r.name_en as string,
-    name_am: (r.name_am as string) ?? '',
-    type: r.account_type as GlType,
-    sub_type: r.sub_type as string,
-    normal_balance: r.normal_balance as GlAccount['normal_balance'],
-    parent_id: (r.parent_id as string) ?? null,
-    is_header: Boolean(r.is_header),
-    bank_account_id: (r.bank_account_id as string) ?? null,
-    description: (r.description as string) ?? '',
-    is_active: Boolean(r.is_active),
-  };
-}
-
-async function loadAccounts(db: SupabaseClient): Promise<GlAccount[]> {
-  const rows = await selectAll<Row>((a, b) => db.from('gl_accounts').select(ACCOUNT_COLUMNS).order('code').order('id').range(a, b));
-  return rows.map(toAccount);
-}
 
 /**
  * The Sunday school's settings. A school that has not used the ledger yet has
  * no chart: re-posting from nothing gives it the standard one (gl_ensure_chart).
  */
 async function loadSettings(db: SupabaseClient, me: SessionUser): Promise<GlSettings> {
-  let { data, error } = await db.from('gl_settings').select('fiscal_year_start, lock_date, require_approval').maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data && me.tenant.access.mode === 'full') {
-    await db.rpc('gl_repost', { p_from: null }).then(check);
-    ({ data, error } = await db.from('gl_settings').select('fiscal_year_start, lock_date, require_approval').maybeSingle());
-    if (error) throw new Error(error.message);
-  }
-  if (!data) return DEFAULT_SETTINGS;
-  const s = data as { fiscal_year_start: string; lock_date: string | null; require_approval: boolean };
-  return { fiscal_year_start: s.fiscal_year_start, lock_date: s.lock_date, require_approval: s.require_approval };
+  const settings = await readGlSettings(db);
+  if (settings) return settings;
+  if (me.tenant.access.mode !== 'full') return DEFAULT_GL_SETTINGS;
+  await db.rpc('gl_repost', { p_from: null }).then(check);
+  return (await readGlSettings(db)) ?? DEFAULT_GL_SETTINGS;
 }
 
 async function loadUnits(db: SupabaseClient): Promise<GlUnit[]> {
@@ -119,31 +87,6 @@ async function loadUnits(db: SupabaseClient): Promise<GlUnit[]> {
     id: string; name_en: string; name_am: string | null;
   }[];
   return rows.map((u) => ({ id: u.id, name_en: u.name_en, name_am: u.name_am || u.name_en }));
-}
-
-/** Posted lines dated up to `to` (and from `from`) */
-async function postedLines(db: SupabaseClient, to: string, from?: string): Promise<PostedLine[]> {
-  const rows = await selectAll<Row>((a, b) => {
-    let q = db
-      .from('journal_lines')
-      .select('id, entry_id, account_id, debit, credit, organization_unit_id, entry:journal_entries!inner(entry_date, status, source)')
-      .eq('entry.status', 'POSTED')
-      .lte('entry.entry_date', to);
-    if (from) q = q.gte('entry.entry_date', from);
-    return q.order('id').range(a, b);
-  });
-  return rows.map((r) => {
-    const e = r.entry as { entry_date: string; source: EntrySource };
-    return {
-      entry_id: r.entry_id as string,
-      date: e.entry_date,
-      account_id: r.account_id as string,
-      debit: Number(r.debit),
-      credit: Number(r.credit),
-      unit_id: (r.organization_unit_id as string) ?? null,
-      source: e.source,
-    };
-  });
 }
 
 function writable(me: SessionUser) {

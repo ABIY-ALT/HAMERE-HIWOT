@@ -25,6 +25,7 @@
 //   💰 Budget request    department heads only: ask Finance for money, see their requests (lib/telegram/budget-flow)
 //   🎶 Hymns             the hymn library: by type, by words, the next rehearsal; lyrics (lib/telegram/hymn-flow)
 //   📚 Library           own books and due dates; find a book, see if it is on the shelf, ask for it (lib/telegram/library-flow)
+//   📅 Events            coming programs, own tickets, register for one open for sign-up (lib/telegram/events-flow)
 //   /stop                stop all messages to this chat (and forget its number)
 // Always answers 200, so Telegram does not resend.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -33,7 +34,7 @@ import { NextResponse } from 'next/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { timingSafeEqual } from 'node:crypto';
 import { tenantClient } from '@/lib/tenant/db';
-import { loadTenantAccess } from '@/lib/tenant/context';
+import { loadTenant, loadTenantAccess } from '@/lib/tenant/context';
 import { runInTenant } from '@/lib/tenant/scope';
 import { botTokenOf, escapeHtml, publicUrl, sendTelegram, webhookSecretFor } from '@/lib/telegram/bot';
 import {
@@ -41,12 +42,12 @@ import {
   NOT_FOUND,
   PHONE_KEYBOARD,
   REMOVE_KEYBOARD,
-  WELCOME,
+  welcomeText,
+  type SchoolNames,
   attendanceText,
   chatScope,
   connectedText,
   duesText,
-  eventsText,
   examsText,
   helpFor,
   membershipText,
@@ -63,6 +64,7 @@ import { continuePin, startPin, type PinData } from '@/lib/telegram/pin-flow';
 import { continueBudget, startBudget, type BudgetData } from '@/lib/telegram/budget-flow';
 import { continueHymns, startHymns, type HymnData } from '@/lib/telegram/hymn-flow';
 import { continueLibrary, startLibrary, type LibraryChatData } from '@/lib/telegram/library-flow';
+import { continueEvents, startEvents, type EventsChatData } from '@/lib/telegram/events-flow';
 import { BACK_BUTTON, aboutMenu, isAboutMessage, loadAbout, topicButton, topicText } from '@/lib/telegram/about';
 
 
@@ -107,6 +109,13 @@ function sameSecret(given: string | null, expected: string): boolean {
 }
 
 /** Checks the request came from this tenant's bot, then answers it as that tenant. */
+/** The Sunday school's names for the bot's messages (Hamere Hiwot keeps its usual wording) */
+async function schoolNames(tenantId: string): Promise<SchoolNames> {
+  const t = await loadTenant(tenantId);
+  if (!t || t.is_default) return ['Hamere Hiwot Sunday School', 'ሐመረ ሕይወት ሰንበት ትምህርት ቤት'];
+  return [t.name_en, t.name_am || t.name_en];
+}
+
 export async function handleTelegramWebhook(request: Request, tenantId: string): Promise<NextResponse> {
   if (!isSupabaseEnabled()) return new NextResponse('Not set up', { status: 404 });
   const token = await botTokenOf(tenantId);
@@ -205,12 +214,12 @@ async function answer(
     if (isAboutMessage(text)) {
       if (text === BACK_BUTTON) {
         const scope = await chatScope(db, chatId, features);
-        await sendTelegram(chatId, escapeHtml(scope.linked ? helpFor(scope) : WELCOME), scope.linked ? menuFor(scope) : PHONE_KEYBOARD);
+        await sendTelegram(chatId, escapeHtml(scope.linked ? helpFor(scope) : welcomeText(await schoolNames(tenantId))), scope.linked ? menuFor(scope) : PHONE_KEYBOARD);
         return NextResponse.json({ ok: true });
       }
       const topics = await loadAbout(db);
       const topic = topics.find((t) => topicButton(t) === text);
-      const list = aboutMenu(topics);
+      const list = aboutMenu(topics, await schoolNames(tenantId));
       await sendTelegram(chatId, topic ? topicText(topic) : list.text, list.keyboard);
       return NextResponse.json({ ok: true });
     }
@@ -225,7 +234,7 @@ async function answer(
     if (!scope.linked) {
       // Shared a number that is on no record yet: it connects by itself once the office adds it
       const waiting = await savedChat(db, chatId);
-      await sendTelegram(chatId, escapeHtml(waiting ? `${NOT_FOUND}${WAITING}` : WELCOME), PHONE_KEYBOARD);
+      await sendTelegram(chatId, escapeHtml(waiting ? `${NOT_FOUND}${WAITING}` : welcomeText(await schoolNames(tenantId))), PHONE_KEYBOARD);
       return NextResponse.json({ ok: true });
     }
     const menu = menuFor(scope);
@@ -246,6 +255,8 @@ async function answer(
         await continueHymns(db, chatId, session as unknown as { step: string; data: HymnData }, text, scope, menu);
       } else if (session.step.startsWith('LIB_')) {
         await continueLibrary(db, chatId, session as unknown as { step: string; data: LibraryChatData }, text, scope, menu, readOnly);
+      } else if (session.step.startsWith('EVT_')) {
+        await continueEvents(db, chatId, session as unknown as { step: string; data: EventsChatData }, text, scope, menu);
       } else if (session.step.startsWith('BUDGET_')) {
         await continueBudget(db, chatId, session as unknown as { step: string; data: BudgetData }, text, scope, menu);
       } else if (session.step.startsWith('ASK_')) {
@@ -267,7 +278,7 @@ async function answer(
     else if (asked(text, 'tasks', BUTTONS.mytasks)) await startTasks(db, chatId, scope, menu);
     else if (asked(text, 'here', BUTTONS.here)) await startCheckin(db, chatId, scope, menu);
     else if (asked(text, 'service', BUTTONS.service)) await startService(db, chatId, scope, menu);
-    else if (asked(text, 'events', BUTTONS.events)) await sendTelegram(chatId, await eventsText(db, scope), menu);
+    else if (asked(text, 'events', BUTTONS.events)) await startEvents(db, chatId, scope, menu);
     else if (asked(text, 'pin', BUTTONS.pin)) await startPin(db, chatId, scope, menu);
     else if (asked(text, 'budget', BUTTONS.budget)) await startBudget(db, chatId, scope, menu, features.budget);
     else if (asked(text, 'hymns', BUTTONS.hymns)) await startHymns(db, chatId, scope, menu, features.hymns);

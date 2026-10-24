@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { UserPlus, Search, Phone, MapPin, Church, Calendar, User, Mail, Pencil, AlertCircle, Camera, Briefcase, Users, ClipboardCheck, Check, ChevronLeft, ChevronRight, GraduationCap } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSchoolName } from '@/components/branding/TenantLogo';
 import { MOCK_ORG_UNITS, MOCK_PERSONS } from '@/lib/mock/data';
 import { Modal } from '@/components/ui/Modal';
 import { EthiopianDateInput } from '@/components/ui/EthiopianDateInput';
@@ -13,8 +14,7 @@ import type { LoadMode } from '@/lib/admin/types';
 import type { MemberStatus, Person } from '@/types';
 import { formatEthiopianDate, todayIso } from '@/lib/utils/ethiopian-calendar';
 import {
-  DECLARATION_AM,
-  DECLARATION_EN,
+  declaration,
   MARITAL_STATUSES,
   MAX_PHOTO_BYTES,
   MEMBERSHIP_TYPES,
@@ -76,6 +76,9 @@ const EMPTY_FORM: MemberForm = {
   woreda: '',
   house_no: '',
   father_of_confession: '',
+  confession_father_phone: '',
+  baptism_date: '',
+  baptism_church: '',
   served_elsewhere: null,
   previous_school: '',
   previous_role: '',
@@ -117,6 +120,9 @@ function toForm(p: Person): MemberForm {
     woreda: p.woreda ?? '',
     house_no: p.house_no ?? '',
     father_of_confession: p.father_of_confession ?? '',
+    confession_father_phone: p.confession_father_phone ?? '',
+    baptism_date: p.baptism_date ?? '',
+    baptism_church: p.baptism_church ?? '',
     served_elsewhere: p.served_elsewhere ?? null,
     previous_school: p.previous_school ?? '',
     previous_role: p.previous_role ?? '',
@@ -139,7 +145,9 @@ const DEMO_UNITS: MemberUnit[] = MOCK_ORG_UNITS.map((u) => ({ id: u.id, name_en:
 
 export default function MembersPage() {
   const { t, locale } = useLang();
-  const { can } = useAuth();
+  const { can, user } = useAuth();
+  const [schoolEn, schoolAm] = useSchoolName('Hamere Hiwot Sunday School · Salo Debre Tsehay St. George Church', 'የሐመረ ሕይወት ሰንበት ትምህርት ቤት · ሳሎ ደብረ ጸሐይ ቅዱስ ጊዮርጊስ ቤተ ክርስቲያን');
+  const isDefaultSchool = !user?.tenant || user.tenant.is_default;
   const [mode, setMode] = useState<LoadMode>('loading');
   const [loadError, setLoadError] = useState('');
   const [members, setMembers] = useState<Person[]>([]);
@@ -553,7 +561,7 @@ export default function MembersPage() {
         isOpen={formOpen}
         onClose={closeForm}
         title={editingId ? t('Edit Member', 'አባል አርትዕ') : t('Member Registration Form', 'የአባላት መመዝገቢያ ቅጽ')}
-        subtitle={t('Hamere Hiwot Sunday School · Salo Debre Tsehay St. George Church', 'የሐመረ ሕይወት ሰንበት ትምህርት ቤት · ሳሎ ደብረ ጸሐይ ቅዱስ ጊዮርጊስ ቤተ ክርስቲያን')}
+        subtitle={t(schoolEn, schoolAm)}
         maxWidth="2xl"
       >
         <form ref={formRef} onSubmit={handleSubmit} className="space-y-5">
@@ -731,6 +739,15 @@ export default function MembersPage() {
               <Field label={t('Father of confession', 'የንስሐ አባት ስም')}>
                 <input type="text" value={form.father_of_confession ?? ''} onChange={set('father_of_confession')} placeholder="መምህር / ቄስ..." className="form-input text-sm" />
               </Field>
+              <Field label={t("Confession father's phone", 'የንስሐ አባት ስልክ')}>
+                <input type="tel" value={form.confession_father_phone ?? ''} onChange={set('confession_father_phone')} placeholder="09…" className="form-input text-sm" />
+              </Field>
+              <Field label={t('Baptism date', 'የተጠመቁበት ቀን')}>
+                <input type="date" value={form.baptism_date ?? ''} onChange={set('baptism_date')} className="form-input text-sm" />
+              </Field>
+              <Field label={t('Church of baptism', 'የተጠመቁበት ቤተ ክርስቲያን')}>
+                <input type="text" value={form.baptism_church ?? ''} onChange={set('baptism_church')} className="form-input text-sm" />
+              </Field>
               <Field label={t('Served in another Sunday school before?', 'ቀደም ሲል በሌላ ሰ/ት/ቤት አገልግለው ያውቃሉ?')}>
                 <div className="flex gap-5 py-2">
                   <Radio name="served_elsewhere" checked={form.served_elsewhere === true} onChange={() => setValue('served_elsewhere', true)}>{t('Yes', 'አዎ')}</Radio>
@@ -748,7 +765,7 @@ export default function MembersPage() {
                 </>
               )}
               <div className="sm:col-span-2">
-                <Field label={t('Department they want to serve in at Hamere Hiwot (choice)', 'በሐመረ ሕይወት ሰ/ት/ቤት ማገልገል የሚፈልጉበት ክፍል (ምርጫ)')}>
+                <Field label={t('Department they want to serve in (choice)', 'ማገልገል የሚፈልጉበት ክፍል (ምርጫ)')}>
                   <div className="flex flex-wrap gap-x-4 gap-y-2 py-1">
                     {SERVICE_DEPARTMENTS.map(([code, en, am]) => (
                       <label key={code} className="inline-flex items-center gap-1.5 text-sm text-slate-700">
@@ -785,7 +802,7 @@ export default function MembersPage() {
               <Section title={t("4. Member's Declaration & Signature", '፬. የአባሉ/ዋ ቃል ኪዳንና ፊርማ')}>
                 <div className="sm:col-span-2 space-y-2">
                   <p className="text-xs italic text-slate-600 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
-                    {locale === 'am' ? DECLARATION_AM : DECLARATION_EN}
+                    {declaration(locale, isDefaultSchool ? null : [schoolEn, schoolAm])}
                   </p>
                   <label className="flex items-center gap-2 text-sm text-slate-700">
                     <input type="checkbox" checked={form.declaration_signed} onChange={(e) => setValue('declaration_signed', e.target.checked)} />
@@ -915,7 +932,16 @@ export default function MembersPage() {
             </ProfileGroup>
 
             <ProfileGroup title={t('Spiritual life & service', 'መንፈሳዊ ሕይወት እና አገልግሎት')}>
-              <ProfileRow icon={<User size={15} />} label={t('Father of Confession', 'የንስሐ አባት')} value={selectedMember.father_of_confession} />
+              <ProfileRow
+                icon={<User size={15} />}
+                label={t('Father of Confession', 'የንስሐ አባት')}
+                value={[selectedMember.father_of_confession, selectedMember.confession_father_phone].filter(Boolean).join(' · ')}
+              />
+              <ProfileRow
+                icon={<Church size={15} />}
+                label={t('Baptism', 'ጥምቀት')}
+                value={[selectedMember.baptism_date && formatEthiopianDate(selectedMember.baptism_date, locale), selectedMember.baptism_church].filter(Boolean).join(' · ')}
+              />
               <ProfileRow
                 icon={<Church size={15} />}
                 label={t('Served elsewhere', 'በሌላ ሰ/ት/ቤት')}

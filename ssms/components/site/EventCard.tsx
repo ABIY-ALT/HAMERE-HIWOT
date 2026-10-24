@@ -5,8 +5,9 @@ import { PROGRAM_TYPES } from '@/lib/programs/types';
 import type { PublicEvent } from '@/lib/site/public-data';
 import { ethiopianMonthName, formatEthiopianDate, isoToEthiopian } from '@/lib/utils/ethiopian-calendar';
 import type { SiteLang } from './SiteShell';
+import { EventSignup } from './EventSignup';
 
-export function EventCard({ event, lang, full = false }: { event: PublicEvent; lang: SiteLang; full?: boolean }) {
+export function EventCard({ event, lang, full = false, signup }: { event: PublicEvent; lang: SiteLang; full?: boolean; /** Open for sign-up (Events page only): places left, and the Sunday school slug */ signup?: { left: number | null; site: string } }) {
   const d = isoToEthiopian(event.start_date);
   const title = lang === 'am' ? event.title_am : event.title_en;
   const [typeEn, typeAm] = PROGRAM_TYPES[event.type] ?? ['', ''];
@@ -18,7 +19,7 @@ export function EventCard({ event, lang, full = false }: { event: PublicEvent; l
         <div className="text-[11px] mt-1 text-amber-300 font-semibold">{d ? ethiopianMonthName(d.month, lang) : ''}</div>
         <div className="text-[10px] text-white/70">{d?.year}</div>
       </div>
-      <div className="min-w-0 space-y-1">
+      <div className="min-w-0 flex-1 space-y-1">
         <div className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">{lang === 'am' ? typeAm : typeEn}</div>
         <h3 className="font-bold text-slate-900 leading-snug">{title}</h3>
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
@@ -32,6 +33,7 @@ export function EventCard({ event, lang, full = false }: { event: PublicEvent; l
           )}
         </div>
         {full && event.description && <p className="pt-1 text-sm text-slate-700 whitespace-pre-line">{event.description}</p>}
+        {signup && <EventSignup eventId={event.id} left={signup.left} lang={lang} site={signup.site} />}
       </div>
     </article>
   );

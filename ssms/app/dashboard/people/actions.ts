@@ -22,6 +22,11 @@ import { syncChatsForPhones } from '@/lib/telegram/links';
 const MEMBER_COLUMNS =
   'id, membership_code, full_name_en, full_name_am, baptismal_name, gender, date_of_birth, phone_primary, phone_secondary, email, address, emergency_contact_name, emergency_contact_phone, father_of_confession, profile_photo_url, status, notes, created_at, updated_at, registration_term, registered_on, membership_type, father_name, mother_name, marital_status, education_level, profession, workplace, woreda, house_no, served_elsewhere, previous_school, previous_role, preferred_departments, preferred_department_other, emergency_contact_relation, declaration_signed, assigned_unit_id, registered_by_name, approved_by_name, approved_on';
 
+/** Baptism and confession father's phone (migration 045) — read only when the columns exist */
+const SPIRITUAL_COLUMNS = ', baptism_date, baptism_church, confession_father_phone';
+const spiritualMissing = (m: string) => /baptism_date|baptism_church|confession_father_phone/.test(m);
+const SPIRITUAL_MIGRATION = 'Run database migration 045 (spiritual life, certificates, inbox) first to save baptism details';
+
 const PHOTO_BUCKET = 'member-photos';
 
 export type MemberUnit = { id: string; name_en: string; name_am: string };
@@ -41,6 +46,7 @@ export type MembersData = {
 };
 
 function missingMigration(message: string) {
+  if (spiritualMissing(message)) return SPIRITUAL_MIGRATION;
   return /registration_term|membership_type|father_name|assigned_unit_id|[Bb]ucket not found/.test(message)
     ? 'Run database migration 021 (member registration form) first'
     : message;
@@ -51,8 +57,16 @@ export async function loadMembers(): Promise<Loaded<MembersData>> {
   try {
     const { me, db } = await authorize('MEMBER_VIEW', 'AUDIT_VIEW_ALL');
     const [persons, students, units, notMembers, year] = await Promise.all([
-      selectAll<Person>((a, b) =>
-        db.from('persons').select(MEMBER_COLUMNS).order('created_at', { ascending: false }).order('id').range(a, b)
+      selectAll<Person>(
+        (a, b) =>
+          db.from('persons').select(`${MEMBER_COLUMNS}${SPIRITUAL_COLUMNS}`).order('created_at', { ascending: false }).order('id').range(a, b) as unknown as PromiseLike<{
+            data: Person[] | null;
+            error: { message: string } | null;
+          }>
+      ).catch((err: Error) =>
+        spiritualMissing(err.message)
+          ? selectAll<Person>((a, b) => db.from('persons').select(MEMBER_COLUMNS).order('created_at', { ascending: false }).order('id').range(a, b))
+          : Promise.reject(err)
       ),
       selectAll<{ id: string; person_id: string; reg_no: string; status: string }>((a, b) =>
         db.from('students').select('id, person_id, reg_no, status').order('id').range(a, b)
@@ -141,6 +155,9 @@ const MemberSchema = z.object({
   house_no: optional,
   // ፪ Spiritual & service
   father_of_confession: optional,
+  confession_father_phone: optional,
+  baptism_date: optionalDate('Use a valid baptism date'),
+  baptism_church: optional,
   served_elsewhere: z.boolean().nullable(),
   previous_school: optional,
   previous_role: optional,
@@ -171,9 +188,13 @@ export type MemberInput = z.input<typeof MemberSchema>;
  * Validated form → persons row. The paper form only has the Amharic full name;
  * the English name falls back to it because that column is required.
  */
-function toRow(input: MemberInput) {
-  const m = MemberSchema.parse(input);
+function toRow(input: MemberInput, allFields = false) {
+  const parsed = MemberSchema.parse(input);
+  // Baptism details only when given, so a new record saves before migration 045 too
+  const { baptism_date, baptism_church, confession_father_phone, ...m } = parsed;
+  const spiritual = allFields || baptism_date || baptism_church || confession_father_phone ? { baptism_date, baptism_church, confession_father_phone } : {};
   return {
+    ...spiritual,
     ...m,
     full_name_en: (m.full_name_en ?? m.full_name_am) as string,
     previous_school: m.served_elsewhere ? m.previous_school : null,
@@ -288,10 +309,16 @@ export async function updateMember(
 ): Promise<ActionResult> {
   try {
     const { db } = await authorize('MEMBER_UPDATE');
-    const row = toRow(input);
+    const row = toRow(input, true);
     const status = StatusSchema.parse(input.status);
     const { data: before } = await db.from('persons').select('phone_primary').eq('id', personId).maybeSingle();
-    const { error } = await db.from('persons').update({ ...row, status, updated_at: new Date().toISOString() }).eq('id', personId);
+    let { error } = await db.from('persons').update({ ...row, status, updated_at: new Date().toISOString() }).eq('id', personId);
+    if (error && spiritualMissing(error.message)) {
+      // Before migration 045: fine as long as no baptism details were given
+      if (row.baptism_date || row.baptism_church || row.confession_father_phone) throw new Error(SPIRITUAL_MIGRATION);
+      const older = Object.fromEntries(Object.entries(row).filter(([k]) => !['baptism_date', 'baptism_church', 'confession_father_phone'].includes(k)));
+      ({ error } = await db.from('persons').update({ ...older, status, updated_at: new Date().toISOString() }).eq('id', personId));
+    }
     if (error) throw new Error(missingMigration(error.message));
     // The bot's links follow the member's phone (old and new number) and status
     after(() => syncChatsForPhones(db, [(before as { phone_primary: string | null } | null)?.phone_primary, row.phone_primary]));

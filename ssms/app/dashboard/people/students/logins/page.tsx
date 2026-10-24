@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, ArrowLeft, KeyRound, Printer, Send, UserCheck } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
+import { useSchoolName } from '@/components/branding/TenantLogo';
 import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
 import type { LoadMode } from '@/lib/admin/types';
 import { formatEthiopianDate } from '@/lib/utils/ethiopian-calendar';
@@ -12,6 +13,7 @@ import { createStudentLogins, loadStudentLogins, resetStudentPin, sendStudentPin
 /** Staff: give students their registration number + PIN login, print the slips, reset forgotten PINs. */
 export default function StudentLoginsPage() {
   const { t, locale } = useLang();
+  const [schoolEn, schoolAm] = useSchoolName('Hamere Hiwot Sunday School', 'የሐመረ ሕይወት ሰንበት ት/ቤት');
   const [mode, setMode] = useState<LoadMode>('loading');
   const [error, setError] = useState('');
   const [data, setData] = useState<StudentLoginsData | null>(null);
@@ -139,7 +141,7 @@ export default function StudentLoginsPage() {
           <div className="print-sheet grid grid-cols-1 sm:grid-cols-2 gap-0">
             {slips.map((s) => (
               <div key={s.reg_no} className="border border-dashed border-slate-400 p-4 space-y-1.5 break-inside-avoid bg-white">
-                <div className="text-[11px] text-slate-500">{t('Hamere Hiwot Sunday School · Student login', 'የሐመረ ሕይወት ሰንበት ት/ቤት · የተማሪ መግቢያ')}</div>
+                <div className="text-[11px] text-slate-500">{t(`${schoolEn} · Student login`, `${schoolAm} · የተማሪ መግቢያ`)}</div>
                 <div className="font-bold text-slate-900">{locale === 'am' ? s.name_am : s.name_en}</div>
                 <div className="text-xs text-slate-600">{locale === 'am' ? s.class_name_am : s.class_name}</div>
                 <div className="grid grid-cols-2 gap-2 pt-1">

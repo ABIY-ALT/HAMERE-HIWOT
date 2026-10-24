@@ -339,6 +339,8 @@ export interface Notice {
   href: string;
   /** ISO date or timestamp shown under the text. */
   at: string | null;
+  /** Inbox notices (id "inbox:<uuid>"): read on the server, the same on every device */
+  read?: boolean;
 }
 
 type Source = () => Promise<Notice[]>;
@@ -565,6 +567,22 @@ export async function loadNotifications(): Promise<Loaded<Notice[]>> {
         }));
       });
     }
+
+    // What was sent to this user (inbox, migration 045): the unread ones, and the last few read ones of the past week
+    sources.push(async () => {
+      const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
+      const { data, error } = await db.from('notifications')
+        .select('id, title, body, url, read_at, created_at')
+        .eq('system_user_id', me.systemUser.id)
+        .or(`read_at.is.null,created_at.gte.${weekAgo}`)
+        .order('created_at', { ascending: false })
+        .limit(15);
+      if (error) return [];
+      return ((data ?? []) as { id: string; title: string; body: string; url: string; read_at: string | null; created_at: string }[]).map((n) => {
+        const text = n.body ? `${n.title} — ${n.body}` : n.title;
+        return { id: `inbox:${n.id}`, version: '1', kind: 'success' as const, href: n.url, at: n.created_at, en: text, am: text, read: Boolean(n.read_at) };
+      });
+    });
 
     const lists = await Promise.all(sources.map((s) => s().catch(() => [] as Notice[])));
     const order = { alert: 0, info: 1, success: 2 };

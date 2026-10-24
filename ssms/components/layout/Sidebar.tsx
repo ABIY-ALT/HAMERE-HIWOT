@@ -33,6 +33,8 @@ import {
   QrCode,
   Globe,
   LibraryBig,
+  BookOpenCheck,
+  CalendarDays,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -77,6 +79,13 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
         labelAm: 'ዳሽቦርድ',
         href: '/dashboard',
         icon: LayoutDashboard,
+        permissions: [],
+      },
+      {
+        labelEn: 'Church calendar',
+        labelAm: 'የቤተ ክርስቲያን ቀን መቁጠሪያ',
+        href: '/dashboard/calendar',
+        icon: CalendarDays,
         permissions: [],
       },
     ],
@@ -190,6 +199,8 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
           { labelEn: 'Parent Logins', labelAm: 'የወላጅ መግቢያዎች', href: '/dashboard/people/students/parents', permissions: ['STUDENT_CREATE', 'USER_MANAGE'] },
           { labelEn: 'Teachers', labelAm: 'አስተማሪዎች', href: '/dashboard/people/teachers', permissions: ['HR_VIEW'] },
           { labelEn: 'Choir Members', labelAm: 'ዘማሪዎች', href: '/dashboard/people/choir', permissions: ['MEMBER_VIEW', 'CHOIR_MANAGE'] },
+          { labelEn: 'ID Cards', labelAm: 'መታወቂያ ካርዶች', href: '/dashboard/people/cards', permissions: ['MEMBER_VIEW', 'STUDENT_VIEW'] },
+          { labelEn: 'Certificates & Courses', labelAm: 'የምስክር ወረቀትና ኮርሶች', href: '/dashboard/certificates', permissions: ['MEMBER_VIEW', 'STUDENT_VIEW', 'MEMBER_UPDATE', 'STUDENT_UPDATE'] },
         ],
       },
     ],
@@ -223,6 +234,7 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
           { labelEn: 'Programs', labelAm: 'ፕሮግራሞች', href: '/dashboard/programs', permissions: ['PROGRAM_VIEW'] },
           { labelEn: 'Assemblies', labelAm: 'ስብሰባዎች', href: '/dashboard/programs/assemblies', permissions: ['PROGRAM_VIEW'] },
           { labelEn: 'Events', labelAm: 'ዝግጅቶች', href: '/dashboard/programs/events', permissions: ['PROGRAM_VIEW'] },
+          { labelEn: 'Sign-up & tickets', labelAm: 'ምዝገባና ትኬት', href: '/dashboard/programs/registrations', permissions: ['PROGRAM_VIEW', 'PROGRAM_CREATE', 'PROGRAM_MANAGE'] },
         ],
       },
       {
@@ -322,6 +334,13 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
         labelAm: 'ሪፖርቶች',
         href: '/dashboard/reports',
         icon: BarChart3,
+        permissions: ['REPORT_VIEW'],
+      },
+      {
+        labelEn: 'Annual Report',
+        labelAm: 'ዓመታዊ ሪፖርት',
+        href: '/dashboard/reports/annual',
+        icon: BookOpenCheck,
         permissions: ['REPORT_VIEW'],
       },
       {

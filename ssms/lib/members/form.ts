@@ -31,6 +31,14 @@ export const DECLARATION_AM =
 export const DECLARATION_EN =
   'I, the member named above, promise to serve faithfully according to the by-laws of Hamere Hiwot Sunday School of Salo Debre Tsehay St. George Church and the order of the Orthodox Tewahedo faith, to attend the programmes diligently and to fulfil my duties as a member.';
 
+/** The member's declaration; `school` [en, am] for Sunday schools other than Hamere Hiwot. */
+export function declaration(locale: string, school: [string, string] | null): string {
+  if (!school) return locale === 'am' ? DECLARATION_AM : DECLARATION_EN;
+  return locale === 'am'
+    ? `እኔ ስሜ ከላይ የተገለጸው አባል፤ በ${school[1]} መተዳደሪያ ደንብ እና የኦርቶዶክስ ተዋሕዶ እምነት ስርዓት መሰረት በታማኝነት ለማገልገል፣ በመርሐ ግብራት ላይ በትጋት ለመገኘትና የአባልነት ግዴታዬን ለመወጣት ቃል እገባለሁ።`
+    : `I, the member named above, promise to serve faithfully according to the by-laws of ${school[0]} and the order of the Orthodox Tewahedo faith, to attend the programmes diligently and to fulfil my duties as a member.`;
+}
+
 /** Photos for the "ፎቶግራፍ" box */
 export const PHOTO_TYPES: Record<string, string> = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' };
 export const MAX_PHOTO_BYTES = 2 * 1024 * 1024;

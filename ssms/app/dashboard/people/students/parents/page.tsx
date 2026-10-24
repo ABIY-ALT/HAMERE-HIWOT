@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, ArrowLeft, CheckCircle2, KeyRound, Link2, Printer, Search, Send, UserPlus } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
+import { useSchoolName } from '@/components/branding/TenantLogo';
 import { Modal } from '@/components/ui/Modal';
 import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
 import type { LoadMode } from '@/lib/admin/types';
@@ -24,6 +25,7 @@ type Relationship = 'Mother' | 'Father' | 'Guardian';
 /** Staff: parent logins (phone + PIN), made from the guardian phone on the students' records. */
 export default function ParentLoginsPage() {
   const { t, locale } = useLang();
+  const [schoolEn, schoolAm] = useSchoolName('Hamere Hiwot Sunday School', 'የሐመረ ሕይወት ሰንበት ት/ቤት');
   const [mode, setMode] = useState<LoadMode>('loading');
   const [error, setError] = useState('');
   const [families, setFamilies] = useState<FamilyRow[]>([]);
@@ -131,7 +133,7 @@ export default function ParentLoginsPage() {
             </div>
           </div>
           <div className="print-sheet max-w-sm border border-dashed border-slate-400 p-4 space-y-1.5 bg-white">
-            <div className="text-[11px] text-slate-500">{t('Hamere Hiwot Sunday School · Parent login', 'የሐመረ ሕይወት ሰንበት ት/ቤት · የወላጅ መግቢያ')}</div>
+            <div className="text-[11px] text-slate-500">{t(`${schoolEn} · Parent login`, `${schoolAm} · የወላጅ መግቢያ`)}</div>
             <div className="font-bold text-slate-900">{slip.name}</div>
             <div className="text-xs text-slate-600">{t('Children', 'ልጆች')}: {slip.children.join(', ')}</div>
             <div className="grid grid-cols-2 gap-2 pt-1">

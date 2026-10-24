@@ -192,6 +192,10 @@ export interface Person {
   registered_by_name?: string | null;
   approved_by_name?: string | null;
   approved_on?: string | null;
+  // Spiritual life (migration 045)
+  baptism_date?: string | null;
+  baptism_church?: string | null;
+  confession_father_phone?: string | null;
 }
 
 // ── System User ───────────────────────────────────────────────────────────────

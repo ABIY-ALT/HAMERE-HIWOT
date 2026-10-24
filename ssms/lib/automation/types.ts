@@ -24,6 +24,8 @@ export interface AutomationSettings {
   dues_reminders: boolean;
   /** Day of the Ethiopian month (1–30) from which the month's dues reminder goes out */
   dues_day: number;
+  /** The day before a great feast or the start of a fast: a message to everyone connected to the bot */
+  feast_reminders: boolean;
 }
 
 export const DEFAULT_AUTOMATION: AutomationSettings = {
@@ -35,10 +37,12 @@ export const DEFAULT_AUTOMATION: AutomationSettings = {
   // Off until the office decides to send them
   dues_reminders: false,
   dues_day: 10,
+  // Off until the office decides to send them
+  feast_reminders: false,
 };
 
 /** Repeating tasks always run: there is nothing to turn off. */
-export type JobName = 'repeating_tasks' | 'event_reminders' | 'roster_reminders' | 'vestment_reminders' | 'library_reminders' | 'overdue_tasks' | 'dues_reminders';
+export type JobName = 'repeating_tasks' | 'event_reminders' | 'roster_reminders' | 'vestment_reminders' | 'library_reminders' | 'overdue_tasks' | 'dues_reminders' | 'feast_reminders';
 
 export const JOB_LABELS: Record<JobName, [string, string]> = {
   repeating_tasks: ['Repeating tasks given', 'ተደጋጋሚ ተግባራት ተሰጥተዋል'],
@@ -48,6 +52,7 @@ export const JOB_LABELS: Record<JobName, [string, string]> = {
   library_reminders: ['Library book reminders', 'የመጻሕፍት መመለሻ ማስታወሻ'],
   overdue_tasks: ['Overdue task alerts', 'ጊዜው ያለፈ ተግባር ማሳወቂያ'],
   dues_reminders: ['Dues reminders', 'የመዋጮ ማስታወሻ'],
+  feast_reminders: ['Feast and fast reminders', 'የበዓልና የጾም ማስታወሻ'],
 };
 
 export interface JobResult {

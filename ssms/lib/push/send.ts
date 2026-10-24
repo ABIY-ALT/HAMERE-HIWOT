@@ -84,8 +84,29 @@ async function activeOnly(db: SupabaseClient, userIds: string[]): Promise<string
   return ((data ?? []) as { id: string }[]).map((r) => r.id);
 }
 
-/** Sends to all devices of the given users; forgets devices the push service has dropped. */
-export async function pushToUsers(db: SupabaseClient, userIds: string[], message: PushMessage): Promise<void> {
+/**
+ * Keeps the notice in each user's inbox (the bell; migration 045), so it can be
+ * found again later and is there even without push or Telegram. Before the
+ * migration there is no inbox: nothing is kept.
+ */
+export async function saveToInbox(db: SupabaseClient, userIds: string[], message: PushMessage): Promise<void> {
+  const ids = [...new Set(userIds)];
+  if (ids.length === 0) return;
+  const { error } = await db.from('notifications').insert(
+    ids.map((system_user_id) => ({
+      system_user_id,
+      title: message.title.slice(0, 300),
+      body: message.body.slice(0, 1000),
+      url: message.url.startsWith('/') ? message.url : '/dashboard',
+      tag: message.tag ?? null,
+    }))
+  );
+  if (error && !/notifications/.test(error.message)) console.error('inbox not saved', error.message);
+}
+
+/** Sends to all devices of the given users (and keeps it in their inbox); forgets devices the push service has dropped. */
+export async function pushToUsers(db: SupabaseClient, userIds: string[], message: PushMessage, inbox = true): Promise<void> {
+  if (inbox) await saveToInbox(db, userIds, message);
   if (!pushConfigured() || userIds.length === 0) return;
   configure();
   const { data: subs } = await db.from('push_subscriptions').select('id, endpoint, p256dh, auth').in('system_user_id', [...new Set(userIds)]);
@@ -128,18 +149,17 @@ export function notifyLater(
       if (!tenantId) return;
       await runInTenant(tenantId, async () => {
         const bot = await telegramConfigured();
-        if (!pushConfigured() && !bot) return;
         const db = tenantClient(tenantId);
         const ids = new Set((to.users ?? []).filter((id): id is string => Boolean(id)));
         if (to.permissions?.length) for (const id of await usersWithPermission(db, ...to.permissions)) ids.add(id);
         if (to.units) for (const id of await usersInUnits(db, to.units.ids, to.units.holding)) ids.add(id);
         if (to.except) ids.delete(to.except);
         const recipients = await activeOnly(db, [...ids]);
+        // Kept in the inbox even when there is no push and no bot
         await pushToUsers(db, recipients, message);
-        if (bot) {
-          const text = `<b>${escapeHtml(message.title)}</b>\n${escapeHtml(message.body)}\n${siteUrl()}${message.url}`;
-          await telegramToPersons(db, await personsOfUsers(db, recipients), text);
-        }
+        if (!bot) return;
+        const text = `<b>${escapeHtml(message.title)}</b>\n${escapeHtml(message.body)}\n${siteUrl()}${message.url}`;
+        await telegramToPersons(db, await personsOfUsers(db, recipients), text);
       });
     } catch (e) {
       console.error('notify failed', e);
@@ -169,12 +189,10 @@ export function notifyPersonsLater(
       if (!tenantId) return;
       await runInTenant(tenantId, async () => {
         const bot = await telegramConfigured();
-        if (!pushConfigured() && !bot) return;
         const db = tenantClient(tenantId);
-        if (pushConfigured()) {
-          const { data } = await db.from('system_users').select('id').in('person_id', ids).eq('is_active', true);
-          await pushToUsers(db, ((data ?? []) as { id: string }[]).map((u) => u.id), message);
-        }
+        // Their login (if any): devices and inbox
+        const { data } = await db.from('system_users').select('id').in('person_id', ids).eq('is_active', true);
+        await pushToUsers(db, ((data ?? []) as { id: string }[]).map((u) => u.id), message);
         if (bot) {
           const chats = await chatsOf(db, ids, 'SELF');
           if (options.guardians) {

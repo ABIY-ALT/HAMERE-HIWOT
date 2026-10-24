@@ -215,7 +215,7 @@ export async function findBorrowers(query: string): Promise<{ ok: true; people: 
       db.from('persons')
         .select('id, full_name_en, full_name_am, phone_primary')
         .eq('status', 'ACTIVE')
-        .or(`full_name_en.ilike.${like},full_name_am.ilike.${like},phone_primary.ilike.${like}`)
+        .or(`full_name_en.ilike.${like},full_name_am.ilike.${like},phone_primary.ilike.${like},membership_code.ilike.${like}`)
         .order('full_name_en')
         .limit(20),
       db.from('students').select('person_id, reg_no').ilike('reg_no', like).limit(10),

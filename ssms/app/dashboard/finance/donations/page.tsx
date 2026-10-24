@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { AlertCircle, Download, Gift, HandCoins, Printer, Search } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSchoolName } from '@/components/branding/TenantLogo';
 import { Modal } from '@/components/ui/Modal';
 import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
 import { MOCK_DONATIONS } from '@/lib/mock/modules';
@@ -47,6 +48,10 @@ const EMPTY_FORM: DonationInput = {
 export default function DonationsPage() {
   const { t, locale } = useLang();
   const { user, can } = useAuth();
+  const [schoolEn, schoolAm] = useSchoolName(
+    'Sallo Debre Tsehay St. George Church · Hamere Hiwot Sunday School',
+    'ሳሎ ደብረ ፀሐይ ቅ/ጊዮርጊስ ቤተክርስቲያን · ሐመረ ሕይወት ሰንበት ትምህርት ቤት'
+  );
   const canRecord = can('FINANCE_CREATE');
 
   const [mode, setMode] = useState<LoadMode>('loading');
@@ -187,7 +192,14 @@ export default function DonationsPage() {
   const printReceipt = (d: Donation) => {
     const w = window.open('', '_blank', 'width=720,height=900');
     if (!w) return showToast('error', t('Allow pop-ups to print the receipt.', 'ደረሰኙን ለማተም ብቅ-ባይ መስኮቶችን ይፍቀዱ።'));
-    w.document.write(buildReceiptHtml(d, d.recorded_by || user?.person.full_name_en || ''));
+    const logo = user?.tenant?.brand?.logoUrl;
+    w.document.write(
+      buildReceiptHtml(d, d.recorded_by || user?.person.full_name_en || '', {
+        en: schoolEn,
+        am: schoolAm,
+        logoUrl: logo ? new URL(logo, window.location.origin).href : null,
+      })
+    );
     w.document.close();
   };
 

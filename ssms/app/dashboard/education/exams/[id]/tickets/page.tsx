@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { ArrowLeft, Printer, Scissors } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
+import { useSchoolName } from '@/components/branding/TenantLogo';
 import { AdminModeNotice } from '@/components/admin/AdminModeNotice';
 import type { LoadMode } from '@/lib/admin/types';
 import { formatTicket } from '@/lib/exams/types';
@@ -15,6 +16,7 @@ import { loadExam, type ExamDetail } from '../../actions';
 export default function ExamTicketsPage() {
   const { id } = useParams<{ id: string }>();
   const { t, locale } = useLang();
+  const [schoolEn, schoolAm] = useSchoolName('Hamere Hiwot Sunday School', 'የሐመረ ሕይወት ሰንበት ት/ቤት');
   const [mode, setMode] = useState<LoadMode>('loading');
   const [error, setError] = useState('');
   const [detail, setDetail] = useState<ExamDetail | null>(null);
@@ -52,7 +54,7 @@ export default function ExamTicketsPage() {
         <div className="print-sheet grid grid-cols-2 gap-0">
           {detail.attempts.map((a) => (
             <div key={a.id} className="border border-dashed border-slate-400 p-4 space-y-2 break-inside-avoid">
-              <div className="text-[11px] text-slate-500">{t('Hamere Hiwot Sunday School · Online exam', 'የሐመረ ሕይወት ሰንበት ት/ቤት · የኦንላይን ፈተና')}</div>
+              <div className="text-[11px] text-slate-500">{t(`${schoolEn} · Online exam`, `${schoolAm} · የኦንላይን ፈተና`)}</div>
               <div className="font-bold text-slate-900">{locale === 'am' ? a.student_am : a.student}</div>
               <div className="text-xs text-slate-600">
                 {exam.title} · {locale === 'am' ? exam.subject_name_am : exam.subject_name} · {locale === 'am' ? exam.class_name_am : exam.class_name}

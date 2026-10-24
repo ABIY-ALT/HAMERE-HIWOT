@@ -1,13 +1,16 @@
 // The public Events page: programs the office added under Public Website →
 // Events (dashboard/website/events), coming or still running, soonest first.
+// Those open for sign-up (migration 046) get a Register form.
 
-import { publicSite } from '@/lib/site/public-data';
+import { publicSignups, publicSite } from '@/lib/site/public-data';
 import type { TenantInfo } from '@/lib/tenant/context';
 import { PageTitle, SiteShell, pick, type SiteLang } from '@/components/site/SiteShell';
 import { EventCard } from '@/components/site/EventCard';
 
 export async function EventsPage({ tenant, lang }: { tenant: TenantInfo; lang: SiteLang }) {
   const site = await publicSite(tenant);
+  const signups = await publicSignups(tenant, site.events.map((ev) => ev.id));
+  const slug = tenant.is_default ? '' : tenant.slug;
   const t = (am: string, en: string) => pick(lang, am, en);
 
   return (
@@ -20,7 +23,9 @@ export async function EventsPage({ tenant, lang }: { tenant: TenantInfo; lang: S
         {site.events.length === 0 ? (
           <p className="text-sm text-slate-500">{t('ለጊዜው የተያዘ የሕዝብ መርሐ ግብር የለም።', 'No public programs are planned right now.')}</p>
         ) : (
-          site.events.map((ev) => <EventCard key={ev.id} event={ev} lang={lang} full />)
+          site.events.map((ev) => (
+            <EventCard key={ev.id} event={ev} lang={lang} full signup={signups[ev.id] ? { left: signups[ev.id].left, site: slug } : undefined} />
+          ))
         )}
         {site.bot && (
           <p className="pt-4 text-sm text-slate-600">

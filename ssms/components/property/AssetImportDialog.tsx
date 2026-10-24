@@ -63,8 +63,8 @@ export function AssetImportDialog({
   const [dragging, setDragging] = useState(false);
 
   const notTemplate = t(
-    'This file is not the Hamere Hiwot asset template. Please download the template and try again.',
-    'ይህ ፋይል የሐመረ ሕይወት የንብረት መመዝገቢያ ቅጽ አይደለም። እባክዎ ቅጹን አውርደው እንደገና ይሞክሩ።'
+    'This file is not the asset template. Please download the template and try again.',
+    'ይህ ፋይል የንብረት መመዝገቢያ ቅጹ አይደለም። እባክዎ ቅጹን አውርደው እንደገና ይሞክሩ።'
   );
 
   const download = async (dept?: TemplateDepartment) => {
