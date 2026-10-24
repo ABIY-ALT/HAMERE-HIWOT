@@ -24,7 +24,7 @@ export async function EventsPage({ tenant, lang }: { tenant: TenantInfo; lang: S
           <p className="text-sm text-slate-500">{t('ለጊዜው የተያዘ የሕዝብ መርሐ ግብር የለም።', 'No public programs are planned right now.')}</p>
         ) : (
           site.events.map((ev) => (
-            <EventCard key={ev.id} event={ev} lang={lang} full signup={signups[ev.id] ? { left: signups[ev.id].left, site: slug } : undefined} />
+            <EventCard key={ev.id} event={ev} lang={lang} full base={site.base} signup={signups[ev.id] ? { left: signups[ev.id].left, site: slug } : undefined} />
           ))
         )}
         {site.bot && (

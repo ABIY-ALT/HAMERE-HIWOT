@@ -17,7 +17,7 @@
 
 export type GlType = 'ASSET' | 'LIABILITY' | 'EQUITY' | 'INCOME' | 'EXPENSE';
 export type NormalBalance = 'DEBIT' | 'CREDIT';
-export type EntrySource = 'MANUAL' | 'TRANSACTION' | 'TRANSFER' | 'OPENING' | 'REVERSAL';
+export type EntrySource = 'MANUAL' | 'TRANSACTION' | 'TRANSFER' | 'OPENING' | 'REVERSAL' | 'PLEDGE' | 'ASSET' | 'DEPRECIATION' | 'DISPOSAL';
 export type EntryStatus = 'DRAFT' | 'PENDING' | 'POSTED';
 export type Bilingual = [en: string, am: string];
 
@@ -54,6 +54,10 @@ export const SOURCE_LABEL: Record<EntrySource, Bilingual> = {
   TRANSFER: ['Transfer', 'ዝውውር'],
   OPENING: ['Opening balance', 'መነሻ ቀሪ'],
   REVERSAL: ['Reversal', 'መሰረዣ'],
+  PLEDGE: ['Pledge', 'የስጦታ ቃል'],
+  ASSET: ['Fixed asset', 'ቋሚ ንብረት'],
+  DEPRECIATION: ['Depreciation', 'የእርጅና ቅናሽ'],
+  DISPOSAL: ['Asset disposal', 'ንብረት ማስወገድ'],
 };
 
 export const STATUS_LABEL: Record<EntryStatus, Bilingual> = {
@@ -68,6 +72,11 @@ export const DEFAULT_KEYS: { key: string; label: Bilingual; hint: Bilingual }[] 
   { key: 'INCOME', label: ['Income without a rule', 'ደንብ የሌለው ገቢ'], hint: ['Income categories without their own rule', 'የራሳቸው ደንብ የሌላቸው የገቢ ዓይነቶች'] },
   { key: 'EXPENSE', label: ['Expense without a rule', 'ደንብ የሌለው ወጪ'], hint: ['Expense categories without their own rule', 'የራሳቸው ደንብ የሌላቸው የወጪ ዓይነቶች'] },
   { key: 'OPENING_BALANCE', label: ['Opening balances', 'የመነሻ ቀሪ ሂሳብ'], hint: ['The other side of each bank account’s opening balance', 'የእያንዳንዱ የባንክ ሂሳብ መነሻ ቀሪ ተቃራኒ ጎን'] },
+  { key: 'PLEDGES_RECEIVABLE', label: ['Pledges receivable', 'ቃል የተገባ ስጦታ (ተሰብሳቢ)'], hint: ['What donors promised and have not paid yet (047)', 'ለጋሾች ቃል የገቡትና ገና ያልከፈሉት (047)'] },
+  { key: 'FIXED_ASSETS', label: ['Fixed assets', 'ቋሚ ንብረቶች'], hint: ['The cost of assets whose category has no rule of its own', 'የራሱ ደንብ የሌለው ዓይነት ንብረት ዋጋ'] },
+  { key: 'DEPRECIATION', label: ['Depreciation expense', 'የእርጅና ቅናሽ ወጪ'], hint: ['The monthly depreciation of fixed assets', 'የቋሚ ንብረቶች ወርሃዊ የእርጅና ቅናሽ'] },
+  { key: 'ACCUMULATED_DEPRECIATION', label: ['Accumulated depreciation', 'የተጠራቀመ የእርጅና ቅናሽ'], hint: ['The contra account that lowers the fixed assets', 'የቋሚ ንብረቶችን ዋጋ የሚቀንሰው ተቃራኒ ሂሳብ'] },
+  { key: 'DISPOSAL_LOSS', label: ['Loss on disposal', 'ንብረት በማስወገድ የደረሰ ኪሳራ'], hint: ['What was not yet depreciated when an asset is disposed of or lost', 'ንብረት ሲወገድ ወይም ሲጠፋ ገና ያልተቀነሰው ዋጋ'] },
 ];
 
 export const FISCAL_PRESETS: { value: string; label: Bilingual }[] = [
@@ -95,10 +104,12 @@ export interface GlSettings {
   fiscal_year_start: string;
   lock_date: string | null;
   require_approval: boolean;
+  /** Pledges are posted as money owed when made (047) */
+  accrue_pledges: boolean;
 }
 
 export interface GlMapping {
-  source: 'DEFAULT' | 'INCOME_CATEGORY' | 'EXPENSE_CATEGORY';
+  source: 'DEFAULT' | 'INCOME_CATEGORY' | 'EXPENSE_CATEGORY' | 'ASSET_CATEGORY';
   key: string;
   account_id: string;
 }
@@ -569,7 +580,7 @@ export interface ChartData {
   mappings: GlMapping[];
   settings: GlSettings;
   /** Categories in the fixed lists and in the records */
-  categories: { income: string[]; expense: string[] };
+  categories: { income: string[]; expense: string[]; asset: string[] };
   /** Balance in the account's normal direction (income / expense: this fiscal year) */
   balances: Record<string, number>;
   /** Accounts that have journal lines */

@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { authorize, check, errorMessage } from '@/lib/auth/authorize';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
+import { cleanPrefs, type NotificationPrefs } from '@/lib/notifications/prefs';
 
 export interface InboxItem {
   id: string;
@@ -65,5 +66,40 @@ export async function markInboxRead(ids: string[] | 'all'): Promise<ActionResult
     return { ok: true };
   } catch (e) {
     return { ok: false, error: missing(errorMessage(e)) };
+  }
+}
+
+// ── Notification settings (migration 047) ────────────────────────────────────
+
+const PREFS_MIGRATION = 'Run database migration 047 (notification settings) first';
+
+/** What the signed-in user chose, and whether push / Telegram are set up for them at all. */
+export async function loadMyNotificationPrefs(): Promise<Loaded<{ prefs: NotificationPrefs; devices: number; telegram: boolean }>> {
+  if (!isSupabaseEnabled()) return { mode: 'demo' };
+  try {
+    const { me, db } = await authorize();
+    const { data, error } = await db.from('system_users').select('notification_prefs, person_id').eq('id', me.systemUser.id).single();
+    if (error) throw new Error(/notification_prefs/.test(error.message) ? PREFS_MIGRATION : error.message);
+    const row = data as { notification_prefs: NotificationPrefs | null; person_id: string | null };
+    const [{ count: devices }, { count: chats }] = await Promise.all([
+      db.from('push_subscriptions').select('id', { count: 'exact', head: true }).eq('system_user_id', me.systemUser.id),
+      row.person_id
+        ? db.from('telegram_links').select('chat_id', { count: 'exact', head: true }).eq('person_id', row.person_id)
+        : Promise.resolve({ count: 0 }),
+    ]);
+    return { mode: 'live', data: { prefs: cleanPrefs(row.notification_prefs), devices: devices ?? 0, telegram: (chats ?? 0) > 0 } };
+  } catch (e) {
+    return { mode: 'error', error: errorMessage(e) };
+  }
+}
+
+export async function saveMyNotificationPrefs(prefs: NotificationPrefs): Promise<ActionResult> {
+  try {
+    const { me, db } = await authorize();
+    const res = await db.from('system_users').update({ notification_prefs: cleanPrefs(prefs) }).eq('id', me.systemUser.id);
+    if (res.error) throw new Error(/notification_prefs/.test(res.error.message) ? PREFS_MIGRATION : res.error.message);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) };
   }
 }

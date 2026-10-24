@@ -13,7 +13,7 @@ import { saveHymn, type HymnInput } from '@/app/dashboard/sacred-arts/actions';
 import { cell, downloadXlsx, headerCell } from '@/lib/export/xlsx';
 import { formatEthiopianDate, todayIso } from '@/lib/utils/ethiopian-calendar';
 
-const EMPTY: HymnInput = { title_am: '', title_en: '', category: 'MEZMUR', feast: '', lyrics: '', notes: '', is_active: true };
+const EMPTY: HymnInput = { title_am: '', title_en: '', category: 'MEZMUR', feast: '', lyrics: '', notes: '', is_active: true, on_website: false };
 
 /** Feasts of the church year, offered as suggestions; any text is allowed. */
 const FEASTS = ['መስቀል', 'ልደት', 'ጥምቀት', 'ቃና ዘገሊላ', 'ደብረ ዘይት', 'ሆሣዕና', 'ስቅለት', 'ትንሣኤ', 'ዕርገት', 'ጰራቅሊጦስ', 'ደብረ ታቦር', 'ፍልሰታ', 'ቅዱስ ዮሐንስ', 'ኪዳነ ምሕረት'];
@@ -55,7 +55,7 @@ export default function HymnLibraryPage() {
     setError('');
     setViewing(null);
     setEditing(h);
-    setForm(h === 'new' ? EMPTY : { title_am: h.title_am, title_en: h.title_en, category: h.category, feast: h.feast, lyrics: h.lyrics, notes: h.notes, is_active: h.is_active });
+    setForm(h === 'new' ? EMPTY : { title_am: h.title_am, title_en: h.title_en, category: h.category, feast: h.feast, lyrics: h.lyrics, notes: h.notes, is_active: h.is_active, on_website: h.on_website });
   };
 
   const save = async (e: React.FormEvent) => {
@@ -234,6 +234,10 @@ export default function HymnLibraryPage() {
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <input type="checkbox" checked={form.is_active} onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))} />
               {t('In use (untick to retire it from new sessions)', 'በአገልግሎት ላይ (ለአዲስ መርሐ ግብር እንዳይመረጥ ምልክቱን ያንሱ)')}
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={Boolean(form.on_website)} onChange={(e) => setForm((f) => ({ ...f, on_website: e.target.checked }))} />
+              {t('Show on the public website (Hymns page, with the lyrics)', 'በሕዝብ ድረ-ገጹ ላይ አሳይ (በመዝሙራት ገጽ፣ ከግጥሙ ጋር)')}
             </label>
             <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
               <button type="button" onClick={() => setEditing(null)} className="btn btn-secondary text-xs">{t('Cancel', 'ሰርዝ')}</button>

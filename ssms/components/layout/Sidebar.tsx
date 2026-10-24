@@ -366,6 +366,7 @@ const NAV_SECTIONS: { sectionEn: string; sectionAm: string; items: NavItem[] }[]
           { labelEn: 'Events', labelAm: 'መርሐ ግብሮች', href: '/dashboard/website/events', permissions: ['WEBSITE_MANAGE'] },
           { labelEn: 'News & Announcements', labelAm: 'ዜናና ማስታወቂያ', href: '/dashboard/website/news', permissions: ['WEBSITE_MANAGE'] },
           { labelEn: 'Photo Gallery', labelAm: 'የፎቶ ማዕከል', href: '/dashboard/website/gallery', permissions: ['WEBSITE_MANAGE'] },
+          { labelEn: 'Prayer requests', labelAm: 'የጸሎት ጥያቄዎች', href: '/dashboard/website/prayers', permissions: ['WEBSITE_MANAGE'] },
         ],
       },
       {

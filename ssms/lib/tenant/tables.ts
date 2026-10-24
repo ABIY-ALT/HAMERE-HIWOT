@@ -24,7 +24,7 @@ export const TENANT_TABLES = new Set<string>([
   'bank_accounts', 'account_transfers', 'bank_statements', 'bank_statement_lines',
   'library_books', 'library_copies', 'library_loans', 'library_requests',
   'gl_accounts', 'gl_settings', 'gl_mappings', 'journal_entries', 'journal_lines',
-  'spiritual_courses', 'course_completions', 'certificates', 'notifications', 'event_registrations',
+  'spiritual_courses', 'course_completions', 'certificates', 'notifications', 'event_registrations', 'prayer_requests',
   // view (carries tenant_id)
   'attendance_session_totals',
 ]);
@@ -53,7 +53,7 @@ export const READ_ONLY_WRITABLE = new Set<string>([
 ]);
 
 /** Database functions the scoped client may call (each uses the x-ssms-tenant header). */
-export const TENANT_RPCS = new Set<string>(['next_dues_receipt', 'gl_repost']);
+export const TENANT_RPCS = new Set<string>(['next_dues_receipt', 'gl_repost', 'gl_depreciation_preview', 'gl_post_depreciation', 'gl_undo_depreciation']);
 
 /** Storage buckets tenant code uses; objects live under "<tenant id>/…". */
 export const TENANT_BUCKETS = new Set<string>(['member-photos', 'task-files', 'site-media', 'dues-proofs']);

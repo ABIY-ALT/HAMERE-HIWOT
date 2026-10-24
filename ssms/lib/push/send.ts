@@ -2,6 +2,9 @@
 // Push notifications — server only. Sends to every device a user has
 // registered. Needs VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_SUBJECT
 // (run `npm run setup-push`); without them nothing is sent.
+// Each person's notification settings (lib/notifications/prefs, migration 047)
+// decide which kinds reach their devices and their Telegram; the inbox always
+// keeps a copy.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import webpush from 'web-push';
@@ -12,6 +15,7 @@ import { tenantClient } from '@/lib/tenant/db';
 import { currentTenantId, runInTenant } from '@/lib/tenant/scope';
 import { env } from '@/lib/env';
 import { chatsOf, escapeHtml, personsOfUsers, siteUrl, telegramConfigured, telegramToChats, telegramToPersons } from '@/lib/telegram/bot';
+import { kindOf, wants, type NoticeChannel, type NoticeKind, type NotificationPrefs } from '@/lib/notifications/prefs';
 
 export interface PushMessage {
   title: string;
@@ -20,6 +24,8 @@ export interface PushMessage {
   url: string;
   /** Same tag replaces an earlier notification instead of stacking. */
   tag?: string;
+  /** Which kind of notice it is for people's settings (default: by the page it opens) */
+  kind?: NoticeKind;
 }
 
 export function pushConfigured(): boolean {
@@ -104,12 +110,31 @@ export async function saveToInbox(db: SupabaseClient, userIds: string[], message
   if (error && !/notifications/.test(error.message)) console.error('inbox not saved', error.message);
 }
 
-/** Sends to all devices of the given users (and keeps it in their inbox); forgets devices the push service has dropped. */
+/** The users' notification settings (none before migration 047: everything on). */
+async function prefsOf(db: SupabaseClient, userIds: string[]): Promise<Map<string, NotificationPrefs>> {
+  const out = new Map<string, NotificationPrefs>();
+  if (userIds.length === 0) return out;
+  const { data, error } = await db.from('system_users').select('id, notification_prefs').in('id', [...new Set(userIds)]);
+  if (error) return out;
+  for (const u of (data ?? []) as { id: string; notification_prefs: NotificationPrefs | null }[]) out.set(u.id, u.notification_prefs ?? {});
+  return out;
+}
+
+/** The users who want this kind of notice on this channel. */
+async function wanting(db: SupabaseClient, userIds: string[], message: PushMessage, channel: NoticeChannel): Promise<string[]> {
+  const prefs = await prefsOf(db, userIds);
+  const kind = kindOf(message);
+  return userIds.filter((id) => wants(prefs.get(id), kind, channel));
+}
+
+/** Sends to all devices of the given users who want it (and keeps it in every one's inbox); forgets devices the push service has dropped. */
 export async function pushToUsers(db: SupabaseClient, userIds: string[], message: PushMessage, inbox = true): Promise<void> {
   if (inbox) await saveToInbox(db, userIds, message);
   if (!pushConfigured() || userIds.length === 0) return;
+  const devices = await wanting(db, [...new Set(userIds)], message, 'push');
+  if (devices.length === 0) return;
   configure();
-  const { data: subs } = await db.from('push_subscriptions').select('id, endpoint, p256dh, auth').in('system_user_id', [...new Set(userIds)]);
+  const { data: subs } = await db.from('push_subscriptions').select('id, endpoint, p256dh, auth').in('system_user_id', devices);
   const payload = JSON.stringify(message);
   const gone: string[] = [];
   await Promise.all(
@@ -159,7 +184,7 @@ export function notifyLater(
         await pushToUsers(db, recipients, message);
         if (!bot) return;
         const text = `<b>${escapeHtml(message.title)}</b>\n${escapeHtml(message.body)}\n${siteUrl()}${message.url}`;
-        await telegramToPersons(db, await personsOfUsers(db, recipients), text);
+        await telegramToPersons(db, await personsOfUsers(db, await wanting(db, recipients, message, 'telegram')), text);
       });
     } catch (e) {
       console.error('notify failed', e);
@@ -191,10 +216,14 @@ export function notifyPersonsLater(
         const bot = await telegramConfigured();
         const db = tenantClient(tenantId);
         // Their login (if any): devices and inbox
-        const { data } = await db.from('system_users').select('id').in('person_id', ids).eq('is_active', true);
-        await pushToUsers(db, ((data ?? []) as { id: string }[]).map((u) => u.id), message);
+        const { data } = await db.from('system_users').select('id, person_id').in('person_id', ids).eq('is_active', true);
+        const logins = (data ?? []) as { id: string; person_id: string }[];
+        await pushToUsers(db, logins.map((u) => u.id), message);
         if (bot) {
-          const chats = await chatsOf(db, ids, 'SELF');
+          // People whose login turned Telegram off for this kind of notice are left out
+          const keep = new Set(await wanting(db, logins.map((u) => u.id), message, 'telegram'));
+          const muted = new Set(logins.filter((u) => !keep.has(u.id)).map((u) => u.person_id));
+          const chats = await chatsOf(db, ids.filter((id) => !muted.has(id)), 'SELF');
           if (options.guardians) {
             const { data: students } = await db.from('students').select('id').in('person_id', ids).eq('status', 'ACTIVE');
             const studentIds = ((students ?? []) as { id: string }[]).map((s) => s.id);

@@ -116,6 +116,28 @@ export async function sendTelegram(chatId: number, html: string, extra: Record<s
   return 'failed';
 }
 
+/** A picture made here (e.g. a QR code) to one chat, with an HTML caption. */
+export async function sendTelegramPhoto(chatId: number, png: Uint8Array, captionHtml: string, extra: Record<string, unknown> = {}): Promise<'ok' | 'blocked' | 'failed'> {
+  const token = await currentToken();
+  if (!token) return 'failed';
+  const form = new FormData();
+  form.append('chat_id', String(chatId));
+  form.append('photo', new Blob([new Uint8Array(png)], { type: 'image/png' }), 'qr.png');
+  form.append('caption', captionHtml.slice(0, 1000));
+  form.append('parse_mode', 'HTML');
+  for (const [key, value] of Object.entries(extra)) form.append(key, typeof value === 'string' ? value : JSON.stringify(value));
+  try {
+    const res = (await (await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, { method: 'POST', body: form, cache: 'no-store' })).json()) as ApiResult<unknown>;
+    if (res.ok) return 'ok';
+    if (res.error_code === 403) return 'blocked';
+    console.error('telegram photo failed', res.error_code, res.description);
+    return 'failed';
+  } catch (e) {
+    console.error('telegram photo failed', e);
+    return 'failed';
+  }
+}
+
 /**
  * The chats linked to these people. `relation` narrows it: SELF = the person's
  * own chats, GUARDIAN = parents who linked to a student by their phone (027).

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { AlertCircle, Briefcase, Church, Edit3, Key, Landmark, Lock, Music, Save, Shield, User } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { TelegramConnect } from '@/components/telegram/TelegramConnect';
+import { NotificationSettings } from '@/components/notifications/NotificationSettings';
 import { useLang } from '@/contexts/LangContext';
 import { getInitials } from '@/lib/utils';
 import { Modal } from '@/components/ui/Modal';
@@ -21,7 +22,7 @@ const STATUS: Record<MemberStatus, { cls: string; label: [string, string] }> = {
   DECEASED: { cls: 'badge bg-slate-200 text-slate-700', label: ['Deceased', 'ያረፈ'] },
 };
 
-type Tab = 'details' | 'service' | 'permissions' | 'password';
+type Tab = 'details' | 'service' | 'permissions' | 'notifications' | 'password';
 type Mode = 'loading' | 'demo' | 'live' | 'error';
 
 const contactOf = (p: Person): ContactInput => ({
@@ -74,7 +75,11 @@ export default function ProfilePage() {
   );
 
   useEffect(() => {
-    loadMyProfile().then(apply);
+    loadMyProfile().then((res) => {
+      apply(res);
+      // Opened from the inbox: /dashboard/profile#notifications
+      if (window.location.hash === '#notifications') setTab('notifications');
+    });
   }, [apply]);
 
   const notify = (kind: 'success' | 'error', text: string) => {
@@ -113,6 +118,7 @@ export default function ProfilePage() {
     ['details', t('My details', 'የእኔ መረጃ')],
     ['service', t('Where I serve', 'የማገለግልበት')],
     ['permissions', `${t('Permissions', 'ፈቃዶች')} (${profile?.permissions.length ?? 0})`],
+    ['notifications', t('Notifications', 'ማሳወቂያዎች')],
     ['password', t('Password', 'የይለፍ ቃል')],
   ];
 
@@ -287,6 +293,8 @@ export default function ProfilePage() {
           {profile.permissions.length === 0 && <p className="text-sm text-slate-400">{t('No permissions yet.', 'እስካሁን ፈቃድ የለም።')}</p>}
         </div>
       )}
+
+      {tab === 'notifications' && <NotificationSettings />}
 
       {tab === 'password' && (
         <div className="card p-6 max-w-xl space-y-4">

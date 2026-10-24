@@ -6,6 +6,7 @@ import { AlertCircle, AlertTriangle, CalendarPlus, CheckCircle2, Clock, Download
 import { useLang } from '@/contexts/LangContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Modal } from '@/components/ui/Modal';
+import { ProgramHymns } from '@/components/programs/ProgramHymns';
 import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
 import { MOCK_EVENTS, MOCK_PROGRAMS } from '@/lib/mock/modules';
 import { PROGRAM_TYPES, type Program, type ProgramOptions, type ProgramStatus, type ProgramType } from '@/lib/programs/types';
@@ -330,6 +331,7 @@ export function ProgramsPage({
               <Line label={t('Participants', 'ተሳታፊዎች')} value={`${t('expected', 'የሚጠበቁ')} ${selected.expected ?? '—'}${selected.actual !== null ? ` · ${t('attended', 'የተገኙ')} ${selected.actual}` : ''}`} />
             </dl>
             {selected.description && <p className="text-xs text-slate-700 whitespace-pre-wrap">{selected.description}</p>}
+            {!selected.id.startsWith('prg-') && <ProgramHymns key={selected.id} programId={selected.id} />}
             {!selected.id.startsWith('prg-') && (
               <Link href={`/dashboard/programs/registrations?program=${selected.id}`} className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:underline">
                 <Ticket size={13} /> {t('Sign-up & tickets: open sign-up, see who registered, check in at the door', 'ምዝገባና ትኬት፦ ምዝገባ ይክፈቱ፣ የተመዘገቡትን ይዩ፣ በመግቢያው ያስገቡ')}

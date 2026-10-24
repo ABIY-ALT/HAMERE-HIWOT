@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Expand, Lock, MapPin, Plus, QrCode, Search, UserPlus, X } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { QrScanButton } from '@/components/common/QrScanButton';
+import { ScanAttendance } from '@/components/checkin/ScanAttendance';
 import { Modal } from '@/components/ui/Modal';
 import { EthiopianDateInput } from '@/components/ui/EthiopianDateInput';
 import { AdminModeNotice, AdminToast } from '@/components/admin/AdminModeNotice';
@@ -324,6 +325,7 @@ function EventDialog({ eventId, onClose, notify }: { eventId: string; onClose: (
   const [detail, setDetail] = useState<CheckinDetail | null>(null);
   const [code, setCode] = useState<{ code: string; seconds: number; open: boolean } | null>(null);
   const [search, setSearch] = useState('');
+  const [scanning, setScanning] = useState(false);
   const [found, setFound] = useState<{ id: string; name: string; code: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const codeBox = useRef<HTMLDivElement>(null);
@@ -479,6 +481,28 @@ function EventDialog({ eventId, onClose, notify }: { eventId: string; onClose: (
                 ))}
               </ul>
             </div>
+          )}
+
+          {running && (
+            <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 flex flex-wrap items-center gap-3">
+              <div className="flex-1 min-w-[12rem] text-xs text-slate-700">
+                <div className="font-bold text-slate-900 text-sm">{t('Scan people’s QR', 'የሰዎችን QR ይቃኙ')}</div>
+                {t('Each person shows their card or “📲 My QR” from the Telegram bot; you scan it and they are marked present at once.', 'እያንዳንዱ ሰው ካርዱን ወይም ከቴሌግራም ቦቱ «📲 የእኔ QR» ያሳያል፤ እርስዎ ሲቃኙት ወዲያው ተገኝቷል ይባላል።')}
+              </div>
+              <button onClick={() => setScanning(true)} className="btn btn-primary text-xs inline-flex items-center gap-1.5">
+                <QrCode size={14} /> {t('Scan attendance', 'ክትትል በQR')}
+              </button>
+            </div>
+          )}
+          {scanning && ev && (
+            <ScanAttendance
+              eventId={eventId}
+              title={ev.title}
+              onClose={() => {
+                setScanning(false);
+                load();
+              }}
+            />
           )}
 
           {running && (

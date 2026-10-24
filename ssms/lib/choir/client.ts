@@ -41,7 +41,7 @@ function demoChoir(): ChoirData {
     })),
     hymns: MOCK_HYMN_ASSIGNMENTS.map((h) => ({
       id: h.id, title_am: h.title_am, title_en: h.title_en, category: h.type === 'Kidasie' ? 'KIDASE' : 'MEZMUR',
-      feast: '', lyrics: '', notes: '', is_active: true, times_sung: 0, last_sung: null,
+      feast: '', lyrics: '', notes: '', is_active: true, on_website: false, times_sung: 0, last_sung: null,
     })),
     sessions: MOCK_HYMN_ASSIGNMENTS.map((h) => ({
       id: `s-${h.id}`, date: h.date, start_time: '', kind: 'SERVICE', title: h.title_en, location: '', program_id: null, program: '',

@@ -1,11 +1,13 @@
 // The public Contact page: a question to a department (they call back), the
-// Telegram bot, and the "Address & contact" About topic if the office wrote one.
+// Telegram bot, the "Address & contact" About topic if the office wrote one,
+// and "Pray for me" (a private prayer request, migration 048).
 
 import { Send } from 'lucide-react';
 import { publicSite } from '@/lib/site/public-data';
 import type { TenantInfo } from '@/lib/tenant/context';
 import { PageTitle, SiteShell, pick, type SiteLang } from '@/components/site/SiteShell';
 import { ContactForm } from '@/components/site/ContactForm';
+import { PrayerForm } from '@/components/site/PrayerForm';
 
 /** The About topic about address and phone, by its usual titles */
 const CONTACT_TOPIC = /አድራሻ|ስልክ|contact|address/i;
@@ -26,7 +28,11 @@ export async function ContactPage({ tenant, lang }: { tenant: TenantInfo; lang: 
             <ContactForm lang={lang} departments={site.departments} site={tenant.is_default ? '' : tenant.slug} />
           )}
         </div>
-        <aside className="space-y-4">
+        <div id="prayer" className="relative rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm lg:col-start-1 scroll-mt-28">
+          <h2 className="text-lg font-bold text-slate-900 mb-3">{t('ጸሎት ይደረግልኝ', 'Pray for me')}</h2>
+          <PrayerForm lang={lang} site={tenant.is_default ? '' : tenant.slug} />
+        </div>
+        <aside className="space-y-4 lg:col-start-2 lg:row-start-1 lg:row-span-2">
           {where && (
             <div className="rounded-2xl bg-slate-50 border border-slate-200 p-5">
               <h2 className="font-bold text-slate-900">{(lang === 'am' ? where.title_am : where.title_en) || where.title_am || where.title_en}</h2>

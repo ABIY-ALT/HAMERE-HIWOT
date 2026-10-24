@@ -23,6 +23,7 @@ import type { ActionResult, Loaded } from '@/lib/admin/types';
 import { ReadOnlyError } from '@/lib/tenant/db';
 import { notifyLater } from '@/lib/push/send';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, formatETB } from '@/lib/finance/types';
+import { ASSET_CATEGORIES } from '@/lib/property/types';
 import { todayIso } from '@/lib/utils/ethiopian-calendar';
 import { DEFAULT_GL_SETTINGS, loadAccounts, postedLines, readGlSettings } from '@/lib/finance/gl-data';
 import {
@@ -100,11 +101,12 @@ export async function loadChart(): Promise<Loaded<ChartData>> {
   try {
     const { me, db } = await authorize('FINANCE_VIEW', 'FINANCE_APPROVE');
     const settings = await loadSettings(db, me);
-    const [accounts, mappingRows, banks, txnCats] = await Promise.all([
+    const [accounts, mappingRows, banks, txnCats, assetCats] = await Promise.all([
       loadAccounts(db),
       db.from('gl_mappings').select('source, key, account_id').then(check) as Promise<GlMapping[]>,
       db.from('bank_accounts').select('id, name').then(check) as Promise<{ id: string; name: string }[]>,
       selectAll<{ txn_type: string; category: string }>((a, b) => db.from('finance_transactions').select('txn_type, category').order('id').range(a, b)),
+      selectAll<{ category: string }>((a, b) => db.from('assets').select('category').order('id').range(a, b)),
     ]);
     const today = todayIso();
     const fyStart = fiscalYearStart(today, settings.fiscal_year_start);
@@ -141,7 +143,11 @@ export async function loadChart(): Promise<Loaded<ChartData>> {
         bankNames: Object.fromEntries(banks.map((b) => [b.id, b.name])),
         mappings: mappingRows,
         settings,
-        categories: { income: cats('INCOME', INCOME_CATEGORIES), expense: cats('EXPENSE', EXPENSE_CATEGORIES) },
+        categories: {
+          income: cats('INCOME', INCOME_CATEGORIES),
+          expense: cats('EXPENSE', EXPENSE_CATEGORIES),
+          asset: [...new Set([...ASSET_CATEGORIES.map(([en]) => en), ...assetCats.map((a) => a.category)])],
+        },
         balances,
         used: [...used],
         fyStart,
@@ -216,7 +222,7 @@ export async function deleteGlAccount(id: string): Promise<ActionResult> {
 }
 
 const MappingSchema = z.object({
-  source: z.enum(['DEFAULT', 'INCOME_CATEGORY', 'EXPENSE_CATEGORY']),
+  source: z.enum(['DEFAULT', 'INCOME_CATEGORY', 'EXPENSE_CATEGORY', 'ASSET_CATEGORY']),
   key: z.string().trim().min(1),
   /** '' removes a category's own rule (it then uses the default) */
   account_id: z.string(),
@@ -245,6 +251,7 @@ const SettingsSchema = z.object({
   fiscal_year_start: z.string().regex(/^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/, 'Choose the first day of the fiscal year'),
   lock_date: z.string().refine((v) => v === '' || /^\d{4}-\d{2}-\d{2}$/.test(v), 'Use a valid date'),
   require_approval: z.boolean(),
+  accrue_pledges: z.boolean(),
 });
 
 export async function saveGlSettings(input: z.input<typeof SettingsSchema>): Promise<ActionResult> {
@@ -252,11 +259,22 @@ export async function saveGlSettings(input: z.input<typeof SettingsSchema>): Pro
     const { me, db } = await authorize('FINANCE_APPROVE');
     const s = SettingsSchema.parse(input);
     if (s.lock_date && s.lock_date >= todayIso()) throw new Error('The books can only be closed up to a day in the past');
+    const before = await readGlSettings(db);
+    const accrualChanged = before !== null && before.accrue_pledges !== s.accrue_pledges;
     await db
       .from('gl_settings')
-      .update({ fiscal_year_start: s.fiscal_year_start, lock_date: s.lock_date || null, require_approval: s.require_approval, updated_by: me.systemUser.id })
+      .update({
+        fiscal_year_start: s.fiscal_year_start,
+        lock_date: s.lock_date || null,
+        require_approval: s.require_approval,
+        // Before migration 047 there is no such column
+        ...(accrualChanged ? { accrue_pledges: s.accrue_pledges } : {}),
+        updated_by: me.systemUser.id,
+      })
       .eq('tenant_id', me.tenant.id)
       .then(check);
+    // Pledges and the money received for them are posted again the new way (closed books stay as they are)
+    if (accrualChanged) await db.rpc('gl_repost', { p_from: null }).then(check);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: friendly(e) };
@@ -338,7 +356,7 @@ export async function loadJournal(range: { from?: string; to?: string; source?: 
       loadUnits(db),
       selectAll<Row>((a, b) => {
         let q = db.from('journal_entries').select(ENTRY_COLUMNS).eq('status', 'POSTED').gte('entry_date', from).lte('entry_date', to);
-        if (range.source && ['MANUAL', 'TRANSACTION', 'TRANSFER', 'OPENING', 'REVERSAL'].includes(range.source)) q = q.eq('source', range.source);
+        if (range.source && ['MANUAL', 'TRANSACTION', 'TRANSFER', 'OPENING', 'REVERSAL', 'PLEDGE', 'ASSET', 'DEPRECIATION', 'DISPOSAL'].includes(range.source)) q = q.eq('source', range.source);
         return q.order('entry_date', { ascending: false }).order('entry_no', { ascending: false }).range(a, b) as unknown as PromiseLike<{ data: Row[] | null; error: { message: string } | null }>;
       }),
       db.from('journal_entries').select(ENTRY_COLUMNS).neq('status', 'POSTED').order('entry_date', { ascending: false }).limit(200).then(check) as Promise<Row[]>,

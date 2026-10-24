@@ -18,7 +18,7 @@ import { formatEthiopianDate, todayIso } from '@/lib/utils/ethiopian-calendar';
 import { GL_TYPES, SOURCE_LABEL, accountName, chartOrder, fmtAmount, type LedgerData, type LedgerSection } from '@/lib/finance/gl';
 import { loadLedger } from '../actions';
 
-const EMPTY: LedgerData = { accounts: [], settings: { fiscal_year_start: '07-08', lock_date: null, require_approval: false }, sections: [], from: todayIso(), to: todayIso() };
+const EMPTY: LedgerData = { accounts: [], settings: { fiscal_year_start: '07-08', lock_date: null, require_approval: false, accrue_pledges: true }, sections: [], from: todayIso(), to: todayIso() };
 
 export default function GeneralLedgerPage() {
   const { t, locale } = useLang();

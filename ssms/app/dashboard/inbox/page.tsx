@@ -48,7 +48,10 @@ export default function InboxPage() {
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">{t('Inbox', 'የመልእክት ሳጥን')}</h1>
-          <p className="text-sm text-slate-500 mt-1">{t('Every notification you were sent, kept here', 'የተላኩልዎ ማሳወቂያዎች ሁሉ እዚህ ይቀመጣሉ')}</p>
+          <p className="text-sm text-slate-500 mt-1">
+            {t('Every notification you were sent, kept here', 'የተላኩልዎ ማሳወቂያዎች ሁሉ እዚህ ይቀመጣሉ')} ·{' '}
+            <Link href="/dashboard/profile#notifications" className="font-semibold text-blue-600 hover:underline">{t('Notification settings', 'የማሳወቂያ ቅንብሮች')}</Link>
+          </p>
         </div>
         <div className="flex gap-2 self-start">
           <label className="text-xs text-slate-600 inline-flex items-center gap-1.5">

@@ -16,6 +16,7 @@ import type { Program, ProgramOptions, ProgramStatus, ProgramType } from '@/lib/
 import { refreshPublicSite } from '@/lib/site/cache';
 import { escapeHtml, telegramLater, telegramToChats } from '@/lib/telegram/bot';
 import { registrantChats } from '@/lib/events/registrations';
+import { hymnsOfSessions, type SessionHymns } from '@/lib/choir/session-hymns';
 import { formatEthiopianDate } from '@/lib/utils/ethiopian-calendar';
 
 type Row = Record<string, unknown> & { id: string };
@@ -194,4 +195,14 @@ async function tellRegistrants(db: Db, programId: string) {
     escapeHtml('የተመዘገቡበት መርሐ ግብር ተሰርዟል። ስለ ችግሩ ይቅርታ እንጠይቃለን። · The event you registered for has been cancelled. We are sorry for the trouble.'),
   ].join('\n');
   await telegramToChats(db, new Set(chats.keys()), html);
+}
+
+/** The choir sessions planned for a program (Sacred Arts), each with the hymns to be sung in order. */
+export async function loadProgramHymns(programId: string): Promise<{ ok: true; sessions: SessionHymns[] } | { ok: false; error: string }> {
+  try {
+    const { db } = await authorize('PROGRAM_VIEW', 'AUDIT_VIEW_ALL');
+    return { ok: true, sessions: await hymnsOfSessions(db, { programIds: [z.string().regex(/^[0-9a-f-]{36}$/i).parse(programId)] }) };
+  } catch (e) {
+    return { ok: false, error: errorMessage(e) };
+  }
 }

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Award, CalendarCheck, ClipboardList, ChevronRight } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { PortalNotice, StartExamButton, attendanceCounts, useMyPortal } from '@/components/student/portal';
+import { QrCode } from '@/components/common/QrCode';
 
 /** A student's home: open exams, results and attendance at a glance. */
 export default function MyHomePage() {
@@ -26,6 +27,20 @@ export default function MyHomePage() {
           {[locale === 'am' ? s.class_name_am : s.class_name, s.year, s.reg_no].filter(Boolean).join(' · ')}
         </p>
       </div>
+
+      {s.reg_no && (
+        <details className="card p-4 group">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-800 list-none flex items-center justify-between">
+            {t('📲 My QR — show it to the teacher or leader', '📲 የእኔ QR — ለመምህሩ ወይም ለመሪው ያሳዩ')}
+            <ChevronRight size={16} className="text-slate-400 group-open:rotate-90 transition-transform" />
+          </summary>
+          <div className="pt-4 text-center space-y-1">
+            <div className="inline-block rounded-2xl bg-white p-3 border border-slate-200"><QrCode value={s.reg_no} size={200} /></div>
+            <div className="font-mono text-sm text-slate-500">{s.reg_no}</div>
+            <p className="text-xs text-slate-500">{t('At programs and choir rehearsals the leader scans it and you are counted.', 'በመርሐ ግብሮችና በመዝሙር ጥናት መሪው ሲቃኘው ይቆጠራሉ።')}</p>
+          </div>
+        </details>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Tile

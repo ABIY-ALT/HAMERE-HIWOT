@@ -32,7 +32,7 @@ import {
 import { approveEntry, deleteEntry, loadJournal, returnEntry, reverseEntry, saveEntry } from '../actions';
 
 const EMPTY: JournalData = {
-  entries: [], open: [], accounts: [], units: [], settings: { fiscal_year_start: '07-08', lock_date: null, require_approval: false }, from: todayIso(), to: todayIso(),
+  entries: [], open: [], accounts: [], units: [], settings: { fiscal_year_start: '07-08', lock_date: null, require_approval: false, accrue_pledges: true }, from: todayIso(), to: todayIso(),
 };
 
 type FormLine = { account_id: string; description: string; unit_id: string; debit: string; credit: string };
@@ -45,6 +45,10 @@ const SOURCE_TONE: Record<EntrySource, string> = {
   TRANSFER: 'bg-sky-50 text-sky-700',
   OPENING: 'bg-amber-50 text-amber-700',
   REVERSAL: 'bg-rose-50 text-rose-700',
+  PLEDGE: 'bg-emerald-50 text-emerald-700',
+  ASSET: 'bg-teal-50 text-teal-700',
+  DEPRECIATION: 'bg-orange-50 text-orange-700',
+  DISPOSAL: 'bg-stone-100 text-stone-700',
 };
 
 const toCents = (s: string) => Math.round((Number(s) || 0) * 100);

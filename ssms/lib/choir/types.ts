@@ -36,6 +36,8 @@ export interface Hymn {
   lyrics: string;
   notes: string;
   is_active: boolean;
+  /** Shown with its lyrics on the public website's Hymns page (048) */
+  on_website: boolean;
   times_sung: number;
   last_sung: string | null;
 }

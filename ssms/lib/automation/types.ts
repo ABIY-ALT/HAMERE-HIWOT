@@ -26,6 +26,8 @@ export interface AutomationSettings {
   dues_day: number;
   /** The day before a great feast or the start of a fast: a message to everyone connected to the bot */
   feast_reminders: boolean;
+  /** On the first days of a month: last month's depreciation of fixed assets is posted (047) */
+  depreciation: boolean;
 }
 
 export const DEFAULT_AUTOMATION: AutomationSettings = {
@@ -39,10 +41,12 @@ export const DEFAULT_AUTOMATION: AutomationSettings = {
   dues_day: 10,
   // Off until the office decides to send them
   feast_reminders: false,
+  // Off until Finance has set up its fixed assets
+  depreciation: false,
 };
 
 /** Repeating tasks always run: there is nothing to turn off. */
-export type JobName = 'repeating_tasks' | 'event_reminders' | 'roster_reminders' | 'vestment_reminders' | 'library_reminders' | 'overdue_tasks' | 'dues_reminders' | 'feast_reminders';
+export type JobName = 'repeating_tasks' | 'event_reminders' | 'roster_reminders' | 'vestment_reminders' | 'library_reminders' | 'overdue_tasks' | 'dues_reminders' | 'feast_reminders' | 'depreciation';
 
 export const JOB_LABELS: Record<JobName, [string, string]> = {
   repeating_tasks: ['Repeating tasks given', 'ተደጋጋሚ ተግባራት ተሰጥተዋል'],
@@ -53,6 +57,7 @@ export const JOB_LABELS: Record<JobName, [string, string]> = {
   overdue_tasks: ['Overdue task alerts', 'ጊዜው ያለፈ ተግባር ማሳወቂያ'],
   dues_reminders: ['Dues reminders', 'የመዋጮ ማስታወሻ'],
   feast_reminders: ['Feast and fast reminders', 'የበዓልና የጾም ማስታወሻ'],
+  depreciation: ['Monthly depreciation', 'ወርሃዊ የእርጅና ቅናሽ'],
 };
 
 export interface JobResult {

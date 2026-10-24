@@ -26,6 +26,7 @@
 //   🎶 Hymns             the hymn library: by type, by words, the next rehearsal; lyrics (lib/telegram/hymn-flow)
 //   📚 Library           own books and due dates; find a book, see if it is on the shelf, ask for it (lib/telegram/library-flow)
 //   📅 Events            coming programs, own tickets, register for one open for sign-up (lib/telegram/events-flow)
+//   📲 My QR             a QR picture per own person / child, for the leader to scan (lib/telegram/myqr)
 //   /stop                stop all messages to this chat (and forget its number)
 // Always answers 200, so Telegram does not resend.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -65,6 +66,7 @@ import { continueBudget, startBudget, type BudgetData } from '@/lib/telegram/bud
 import { continueHymns, startHymns, type HymnData } from '@/lib/telegram/hymn-flow';
 import { continueLibrary, startLibrary, type LibraryChatData } from '@/lib/telegram/library-flow';
 import { continueEvents, startEvents, type EventsChatData } from '@/lib/telegram/events-flow';
+import { sendMyQr } from '@/lib/telegram/myqr';
 import { BACK_BUTTON, aboutMenu, isAboutMessage, loadAbout, topicButton, topicText } from '@/lib/telegram/about';
 
 
@@ -277,6 +279,7 @@ async function answer(
     else if (asked(text, 'ask', BUTTONS.ask)) await startAsk(db, chatId, scope);
     else if (asked(text, 'tasks', BUTTONS.mytasks)) await startTasks(db, chatId, scope, menu);
     else if (asked(text, 'here', BUTTONS.here)) await startCheckin(db, chatId, scope, menu);
+    else if (asked(text, 'qr', BUTTONS.myqr)) await sendMyQr(db, chatId, scope, menu);
     else if (asked(text, 'service', BUTTONS.service)) await startService(db, chatId, scope, menu);
     else if (asked(text, 'events', BUTTONS.events)) await startEvents(db, chatId, scope, menu);
     else if (asked(text, 'pin', BUTTONS.pin)) await startPin(db, chatId, scope, menu);

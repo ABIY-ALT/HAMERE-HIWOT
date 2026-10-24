@@ -721,7 +721,7 @@ CROSS JOIN (VALUES
 ) AS v(source, key, code)
 JOIN gl_accounts a ON a.tenant_id = s.tenant_id AND a.code = v.code AND NOT a.is_header AND a.is_active
   AND (v.key <> 'ACCUMULATED_DEPRECIATION' OR a.sub_type = 'FIXED_ASSET')
-  AND (v.source <> 'ASSET_CATEGORY' AND v.key <> 'FIXED_ASSETS' OR a.sub_type = 'FIXED_ASSET')
+  AND ((v.source <> 'ASSET_CATEGORY' AND v.key <> 'FIXED_ASSETS') OR a.sub_type = 'FIXED_ASSET')
 ON CONFLICT DO NOTHING;
 
 -- A new Sunday school gets them with its chart
@@ -742,7 +742,9 @@ BEGIN
     ('ASSET_CATEGORY', 'Musical instruments', '1520'),
     ('ASSET_CATEGORY', 'Books & library', '1530')
   ) AS v(source, key, code)
-  JOIN gl_accounts a ON a.tenant_id = NEW.tenant_id AND a.code = v.code AND NOT a.is_header
+  JOIN gl_accounts a ON a.tenant_id = NEW.tenant_id AND a.code = v.code AND NOT a.is_header AND a.is_active
+    AND (v.key <> 'ACCUMULATED_DEPRECIATION' OR a.sub_type = 'FIXED_ASSET')
+    AND ((v.source <> 'ASSET_CATEGORY' AND v.key <> 'FIXED_ASSETS') OR a.sub_type = 'FIXED_ASSET')
   ON CONFLICT DO NOTHING;
   RETURN NEW;
 END;

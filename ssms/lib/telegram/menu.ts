@@ -33,6 +33,7 @@ export const BUTTONS = {
   ask: '✉️ ጥያቄ · Ask a department',
   mytasks: '🗂️ ተግባሮቼ · My tasks',
   here: '✅ ተገኝቻለሁ · I’m here',
+  myqr: '📲 የእኔ QR · My QR',
   service: '🎵 ምደባዬ · My roster',
   budget: '💰 የበጀት ጥያቄ · Budget request',
   hymns: '🎶 መዝሙራት · Hymns',
@@ -122,12 +123,15 @@ export async function chatScope(
  * The buttons under the message box, by what this chat is:
  *   member   🪪 membership · 🧾 dues · 💳 I paid · 📋 attendance (service, choir)
  *   student / parent   📋 attendance · 📊 results · 🖊️ exams
+ *   member / student / parent   📲 my QR (for the leader to scan)
  *   everyone linked    📅 events · ℹ️ about us · 🔑 forgot my PIN · ❓ help
  */
 export function menuFor(scope: ChatScope) {
   const rows: string[][] = [];
   // Checking in at a program or rehearsal: anyone linked as themselves
-  if (scope.memberPersonIds.length || scope.selfStudentIds.length) rows.push(scope.inChoir ? [BUTTONS.here, BUTTONS.service] : [BUTTONS.here]);
+  // or showing their QR for the leader to scan (parents: their children's)
+  if (scope.memberPersonIds.length || scope.selfStudentIds.length) rows.push(scope.inChoir ? [BUTTONS.here, BUTTONS.myqr, BUTTONS.service] : [BUTTONS.here, BUTTONS.myqr]);
+  else if (scope.childStudentIds.length) rows.push([BUTTONS.myqr]);
   if (scope.memberPersonIds.length) rows.push([BUTTONS.membership, BUTTONS.dues]);
   const middle: string[] = [];
   if (scope.duesPersonIds.length) middle.push(BUTTONS.paid);
@@ -224,6 +228,10 @@ export function helpFor(scope: ChatScope): string {
   if (scope.memberPersonIds.length || scope.selfStudentIds.length) {
     am.push('✅ ተገኝቻለሁ — በመርሐ ግብር ወይም በመዝሙር ጥናት ላይ መገኘትዎን በመሪው ስክሪን ባለው ኮድ ያስመዝግቡ');
     en.push('✅ I’m here — check in at a program or choir rehearsal with the code on the leader’s screen');
+  }
+  if (scope.memberPersonIds.length || scope.studentIds.length) {
+    am.push('📲 የእኔ QR — በመርሐ ግብርና በመዝሙር ጥናት ለመሪው የሚያሳዩት QR' + (scope.childStudentIds.length ? ' (የልጆችዎም)' : ''));
+    en.push('📲 My QR — the QR you show the leader at programs and choir rehearsals' + (scope.childStudentIds.length ? ' (your children’s too)' : ''));
   }
   am.push('📅 መርሐ ግብር — የሚመጡ መርሐ ግብሮች፣ ትኬቶችዎ፤ ምዝገባ ለተከፈተላቸው ይመዝገቡ', 'ℹ️ ስለ እኛ — ስለ ሰንበት ትምህርት ቤቱ ማወቅ የሚፈልጉት', '✉️ ጥያቄ — ለአንድ ክፍል ጥያቄ ይላኩ፤ መልሱ እዚህ ይደርስዎታል');
   en.push('📅 Events — coming programs and your tickets; register for those open for sign-up', 'ℹ️ About us — what you want to know about the Sunday school', '✉️ Ask a department — send a question; the answer comes here');

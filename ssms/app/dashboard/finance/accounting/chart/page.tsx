@@ -16,6 +16,7 @@ import { ErrorBox, Field, GlNav } from '@/components/finance/GlShared';
 import { exportTable } from '@/lib/export/table';
 import type { LoadMode } from '@/lib/admin/types';
 import { categoryLabel } from '@/lib/finance/types';
+import { assetCategoryLabel } from '@/lib/property/types';
 import { formatEthiopianDate, todayIso } from '@/lib/utils/ethiopian-calendar';
 import {
   DEFAULT_KEYS,
@@ -30,13 +31,14 @@ import {
   typeLabel,
   type ChartData,
   type GlAccount,
+  type GlMapping,
   type GlType,
 } from '@/lib/finance/gl';
 import { deleteGlAccount, loadChart, repostEntries, saveGlAccount, saveGlSettings, saveMapping } from '../actions';
 
 const EMPTY: ChartData = {
-  accounts: [], bankNames: {}, mappings: [], settings: { fiscal_year_start: '07-08', lock_date: null, require_approval: false },
-  categories: { income: [], expense: [] }, balances: {}, used: [], fyStart: todayIso(),
+  accounts: [], bankNames: {}, mappings: [], settings: { fiscal_year_start: '07-08', lock_date: null, require_approval: false, accrue_pledges: true },
+  categories: { income: [], expense: [], asset: [] }, balances: {}, used: [], fyStart: todayIso(),
 };
 
 type Tab = 'accounts' | 'rules' | 'settings';
@@ -441,7 +443,7 @@ function RulesTab({
   const usable = chartOrder(data.accounts).filter((a) => !a.is_header && a.is_active);
   const ruleOf = (source: string, key: string) => data.mappings.find((m) => m.source === source && m.key === key)?.account_id ?? '';
 
-  const save = async (source: 'DEFAULT' | 'INCOME_CATEGORY' | 'EXPENSE_CATEGORY', key: string, account_id: string) => {
+  const save = async (source: GlMapping['source'], key: string, account_id: string) => {
     const res = await saveMapping({ source, key, account_id });
     if (!res.ok) return say('error', res.error);
     say('success', t('Rule saved — it applies to new records', 'ደንቡ ተቀምጧል — ለአዲስ መዝገቦች ይሠራል'));
@@ -476,7 +478,13 @@ function RulesTab({
     INCOME: (a) => a.type === 'INCOME',
     EXPENSE: (a) => a.type === 'EXPENSE',
     OPENING_BALANCE: (a) => a.type === 'EQUITY',
+    PLEDGES_RECEIVABLE: (a) => a.type === 'ASSET' && a.sub_type !== 'CASH_BANK',
+    FIXED_ASSETS: (a) => a.type === 'ASSET' && a.sub_type === 'FIXED_ASSET',
+    DEPRECIATION: (a) => a.type === 'EXPENSE',
+    ACCUMULATED_DEPRECIATION: (a) => a.type === 'ASSET' && a.sub_type === 'FIXED_ASSET',
+    DISPOSAL_LOSS: (a) => a.type === 'EXPENSE',
   };
+  const fixedAsset = (a: GlAccount) => a.type === 'ASSET' && a.sub_type === 'FIXED_ASSET';
 
   return (
     <div className="space-y-5">
@@ -496,7 +504,7 @@ function RulesTab({
                 <div className="text-sm font-semibold text-slate-800">{locale === 'am' ? d.label[1] : d.label[0]}</div>
                 <div className="text-[11px] text-slate-500">{locale === 'am' ? d.hint[1] : d.hint[0]}</div>
               </div>
-              {select(ruleOf('DEFAULT', d.key), (v) => v && save('DEFAULT', d.key, v), defaultFilter[d.key], false)}
+              {select(ruleOf('DEFAULT', d.key), (v) => v && save('DEFAULT', d.key, v), defaultFilter[d.key], !ruleOf('DEFAULT', d.key))}
             </div>
           ))}
         </div>
@@ -520,6 +528,21 @@ function RulesTab({
           </div>
         </div>
       ))}
+
+      <div className="card overflow-hidden">
+        <div className="p-4 border-b border-slate-100">
+          <div className="font-bold text-slate-800 text-sm">{t('Asset categories', 'የንብረት ዓይነቶች')}</div>
+          <div className="text-[11px] text-slate-500">{t('The fixed-asset account each category of property is kept in (Fixed assets register). Empty: the default fixed assets account.', 'እያንዳንዱ የንብረት ዓይነት የሚያዝበት የቋሚ ንብረት ሂሳብ (የቋሚ ንብረቶች መዝገብ)። ባዶ ከሆነ፦ መደበኛው የቋሚ ንብረቶች ሂሳብ።')}</div>
+        </div>
+        <div className="divide-y divide-slate-100">
+          {data.categories.asset.map((c) => (
+            <div key={c} className="p-3 px-4 grid grid-cols-1 md:grid-cols-2 gap-2 items-center">
+              <div className="text-sm text-slate-800">{assetCategoryLabel(c, locale)}</div>
+              {select(ruleOf('ASSET_CATEGORY', c), (v) => save('ASSET_CATEGORY', c, v), fixedAsset, true)}
+            </div>
+          ))}
+        </div>
+      </div>
 
       {canManage && (
         <div className="card p-4 space-y-3">
@@ -561,6 +584,7 @@ function SettingsTab({
   const [fy, setFy] = useState(data.settings.fiscal_year_start);
   const [lock, setLock] = useState(data.settings.lock_date ?? '');
   const [approval, setApproval] = useState(data.settings.require_approval);
+  const [accrue, setAccrue] = useState(data.settings.accrue_pledges);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const preset = FISCAL_PRESETS.some((p) => p.value === fy);
@@ -573,7 +597,7 @@ function SettingsTab({
     ))) return;
     setBusy(true);
     setErr('');
-    const res = await saveGlSettings({ fiscal_year_start: fy, lock_date: lock, require_approval: approval });
+    const res = await saveGlSettings({ fiscal_year_start: fy, lock_date: lock, require_approval: approval, accrue_pledges: accrue });
     setBusy(false);
     if (!res.ok) return setErr(res.error);
     say('success', t('Settings saved', 'ቅንብሮቹ ተቀምጠዋል'));
@@ -626,6 +650,19 @@ function SettingsTab({
             {t(
               'When on, the person who writes an entry cannot post it — another approver must. When off, approvers post their own entries directly.',
               'ሲበራ፣ ምዝገባውን የጻፈው ሰው ሊመዘግበው አይችልም — ሌላ አጽዳቂ ያስፈልጋል። ሲጠፋ፣ አጽዳቂዎች የራሳቸውን ምዝገባ በቀጥታ ይመዘግባሉ።'
+            )}
+          </span>
+        </span>
+      </label>
+
+      <label className="flex items-start gap-2 text-sm text-slate-700">
+        <input type="checkbox" className="mt-1" checked={accrue} disabled={!canManage} onChange={(e) => setAccrue(e.target.checked)} />
+        <span>
+          {t('Record pledges as money owed to the school', 'የስጦታ ቃሎችን ለትምህርት ቤቱ እንደሚከፈል ገንዘብ መዝግብ')}
+          <span className="block text-[11px] text-slate-500">
+            {t(
+              'When on, a pledge is income on the day it is made and shows as Pledges receivable until the money comes; the payment then clears it. When off, a pledge is only income once it is paid. Changing this posts the pledges again (closed books stay as they are).',
+              'ሲበራ፣ የስጦታ ቃል በተገባበት ቀን ገቢ ይሆናል፤ ገንዘቡ እስኪመጣ እንደ ተሰብሳቢ ይታያል፤ ክፍያው ሲመጣ ይዘጋል። ሲጠፋ፣ ቃሉ ገቢ የሚሆነው ሲከፈል ብቻ ነው። ይህን መቀየር የስጦታ ቃሎችን እንደገና ይመዘግባል (የተዘጉ ጊዜያት አይነኩም)።'
             )}
           </span>
         </span>

@@ -7,12 +7,13 @@
 //   repeating_tasks     the next task of each series (lib/tasks/recurring)
 //   event_reminders     tomorrow's public programs → every chat connected to the bot;
 //                       tomorrow's sign-ups (046) → each registrant, with their ticket
-//   roster_reminders    tomorrow's choir service → each member on its published roster
+//   roster_reminders    tomorrow's choir service → each member on its published roster, with the hymns to sing
 //   vestment_reminders  vestments past their return day → the holder (again a week later)
 //   library_reminders   library books: the day before the return day, then weekly while late → the borrower
 //   overdue_tasks       tasks whose due date passed → their department's heads
 //   dues_reminders      from the chosen day of each Ethiopian month → members who owe
 //   feast_reminders     the day before a great feast or the start of a fast → every connected chat
+//   depreciation        last month's depreciation of fixed assets, once it has ended (047) → the books; finance approvers told
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -30,6 +31,10 @@ import { addDays } from '@/lib/hr/types';
 import { formatEthiopianDate, isoToEthiopian, todayIso } from '@/lib/utils/ethiopian-calendar';
 import { borrowerChats, libraryText } from '@/lib/library/notify';
 import { upcoming } from '@/lib/calendar/orthodox';
+import { hymnLines, hymnsOfSessions } from '@/lib/choir/session-hymns';
+import { readGlSettings } from '@/lib/finance/gl-data';
+import { lastEndedMonth, monthLabel } from '@/lib/finance/assets';
+import { fmtAmount } from '@/lib/finance/gl';
 import {
   AUTOMATION_KEY,
   DEFAULT_AUTOMATION,
@@ -174,6 +179,7 @@ async function rosterReminders(db: SupabaseClient, today: string): Promise<numbe
     .neq('response', 'DECLINED');
   const entries = ((rows ?? []) as unknown as { id: string; session_id: string; role: string | null; response: string; member: { person_id: string } | null }[]).filter((r) => r.member);
   const fresh = await claim(db, 'roster_reminders', entries.map((r) => r.id));
+  const planned = new Map((await hymnsOfSessions(db, { sessionIds: [...byId.keys()] })).map((x) => [x.session_id, x.hymns]));
   let delivered = 0;
   for (const r of entries.filter((x) => fresh.has(x.id))) {
     const s = byId.get(r.session_id)!;
@@ -182,6 +188,8 @@ async function rosterReminders(db: SupabaseClient, today: string): Promise<numbe
       e(`${sessionTitle(s)} — ${when(s.session_date, s.start_time)}${s.location ? ` (${s.location})` : ''}`),
     ];
     if (r.role) lines.push(e(`ድርሻ · Role: ${r.role}`));
+    const hymns = planned.get(r.session_id) ?? [];
+    if (hymns.length) lines.push('', `🎶 <b>${e('የሚዘመሩ መዝሙራት · Hymns')}</b>`, ...hymnLines(hymns).map(e));
     if (r.response === 'PENDING') lines.push('', e('እባክዎ በ«🎵 ምደባዬ» ያረጋግጡ። · Please confirm in “🎵 My roster”.'));
     delivered += (await telegramToPersons(db, [r.member!.person_id], lines.join('\n'), 'SELF')).delivered;
   }
@@ -329,6 +337,31 @@ async function duesReminders(db: SupabaseClient, today: string, settings: Automa
   return { job: 'dues_reminders', count: delivered };
 }
 
+/** Last month's depreciation, once (a month already posted, or a later one, is left alone). */
+async function monthlyDepreciation(db: SupabaseClient, today: string): Promise<JobResult> {
+  const month = lastEndedMonth(today);
+  // A Sunday school that does not keep the books has nothing to post
+  if (!(await readGlSettings(db).catch(() => null))) return { job: 'depreciation', count: 0, note: 'The books are not set up' };
+  const { data: posted, error } = await db.from('journal_entries').select('id').eq('source', 'DEPRECIATION').gte('depreciation_month', month).limit(1);
+  if (error) throw new Error(/depreciation_month/.test(error.message) ? 'Run database migration 047 (fixed assets and depreciation) first' : error.message);
+  if (posted?.length) return { job: 'depreciation', count: 0, note: `${monthLabel(month)} is already posted` };
+  const { data: total, error: postError } = await db.rpc('gl_post_depreciation', { p_month: month });
+  if (postError) throw new Error(postError.message);
+  const amount = Number(total ?? 0);
+  if (amount > 0) {
+    notifyLater(
+      { permissions: ['FINANCE_APPROVE'] },
+      {
+        title: 'የእርጅና ቅናሽ ተመዝግቧል · Depreciation posted',
+        body: `${monthLabel(month)}: ${fmtAmount(amount)} ብር`,
+        url: '/dashboard/finance/accounting/assets',
+        tag: 'depreciation',
+      }
+    );
+  }
+  return { job: 'depreciation', count: amount > 0 ? 1 : 0, note: amount > 0 ? `${monthLabel(month)}: ${fmtAmount(amount)}` : `Nothing to depreciate for ${monthLabel(month)}` };
+}
+
 // ── One run ──────────────────────────────────────────────────────────────────
 
 /** Runs every job that is turned on, and keeps what each did for the Automation page. */
@@ -357,6 +390,7 @@ export async function runDaily(db: SupabaseClient, trigger: LastRun['trigger']):
   await run('overdue_tasks', settings.overdue_tasks, () => overdueTasks(db, today), false);
   await run('dues_reminders', settings.dues_reminders, () => duesReminders(db, today, settings));
   await run('feast_reminders', settings.feast_reminders, () => feastReminders(db, today));
+  await run('depreciation', settings.depreciation, () => monthlyDepreciation(db, today), false);
 
   // The log only needs to outlive the reminders it guards
   await db.from('automation_log').delete().lt('done_on', addDays(today, -400));

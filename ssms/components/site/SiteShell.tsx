@@ -28,6 +28,8 @@ const PAGES: { path: string; am: string; en: string }[] = [
   { path: '/about', am: 'ስለ እኛ', en: 'About us' },
   { path: '/news', am: 'ዜና', en: 'News' },
   { path: '/events', am: 'መርሐ ግብሮች', en: 'Events' },
+  { path: '/calendar', am: 'ቀን መቁጠሪያ', en: 'Calendar' },
+  { path: '/hymns', am: 'መዝሙራት', en: 'Hymns' },
   { path: '/gallery', am: 'ፎቶዎች', en: 'Gallery' },
   { path: '/contact', am: 'ያግኙን', en: 'Contact' },
 ];

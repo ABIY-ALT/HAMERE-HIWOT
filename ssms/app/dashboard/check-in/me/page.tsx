@@ -4,11 +4,16 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, MapPin, QrCode } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { AdminModeNotice } from '@/components/admin/AdminModeNotice';
+import { QrCode as QrImage } from '@/components/common/QrCode';
 import type { LoadMode } from '@/lib/admin/types';
 import { KIND_LABEL, addisTime } from '@/lib/checkin/types';
 import { checkInMe, loadMyCheckin, type MyCheckin } from '../actions';
 
-/** "✅ I'm here" on the website: the code on the leader's screen, and the phone's location. */
+/**
+ * Two ways to be counted at a program or rehearsal: show "My QR" for the
+ * leader to scan, or ("✅ I'm here") type the code on the leader's screen,
+ * with the phone's location.
+ */
 export default function CheckMeInPage() {
   const { t } = useLang();
   const [mode, setMode] = useState<LoadMode>('loading');
@@ -29,9 +34,22 @@ export default function CheckMeInPage() {
       <div className="text-center">
         <QrCode size={36} className="mx-auto text-rose-800" />
         <h1 className="text-2xl font-bold tracking-tight text-slate-900 mt-2">{t('I’m here', 'ተገኝቻለሁ')}</h1>
-        <p className="text-sm text-slate-500 mt-1">{t('Type the code on the leader’s screen.', 'በመሪው ስክሪን ላይ ያለውን ኮድ ይጻፉ።')}</p>
+        <p className="text-sm text-slate-500 mt-1">{t('Show your QR to the leader, or type the code on the leader’s screen.', 'QRዎን ለመሪው ያሳዩ፣ ወይም በመሪው ስክሪን ላይ ያለውን ኮድ ይጻፉ።')}</p>
       </div>
       <AdminModeNotice mode={mode} error={error} />
+      {data?.qr && (
+        <div className="card p-5 text-center space-y-2">
+          <div className="text-xs font-bold uppercase tracking-wider text-slate-500">{t('My QR', 'የእኔ QR')}</div>
+          <div className="inline-block rounded-2xl bg-white p-3 border border-slate-200">
+            <QrImage value={data.qr.code} size={220} />
+          </div>
+          <div className="font-bold text-slate-900">{data.qr.name}</div>
+          <div className="font-mono text-sm text-slate-500">{data.qr.code}</div>
+          <p className="text-xs text-slate-500">
+            {t('At programs and choir rehearsals the leader scans it and you are counted. It is also in the Telegram bot (📲 My QR) and on your member card.', 'በመርሐ ግብሮችና በመዝሙር ጥናት መሪው ሲቃኘው ይቆጠራሉ። በቴሌግራም ቦቱ (📲 የእኔ QR) እና በአባልነት ካርድዎ ላይም አለ።')}
+          </p>
+        </div>
+      )}
       {data && data.events.length === 0 && (
         <p className="card p-8 text-center text-sm text-slate-500">{t('No program or rehearsal is open for check-in right now.', 'አሁን መገኘት የሚመዘገብበት መርሐ ግብር ወይም ጥናት የለም።')}</p>
       )}

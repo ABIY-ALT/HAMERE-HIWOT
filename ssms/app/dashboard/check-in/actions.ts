@@ -249,6 +249,65 @@ export async function markPresent(eventId: string, personId: string): Promise<Ac
   }
 }
 
+export type ScanResult =
+  | {
+      ok: true;
+      person: { id: string; name: string; code: string; photo: boolean };
+      /** Was already present */
+      already: boolean;
+      /** A choir rehearsal, and this person is not an active choir member */
+      not_in_choir: boolean;
+    }
+  | { ok: false; error: string };
+
+/**
+ * The leader scans someone's QR (member card, or "My QR" from the bot or the
+ * website — both hold the member code) or types the code / registration
+ * number: they are marked present at once.
+ */
+export async function scanPresent(eventId: string, scanned: string): Promise<ScanResult> {
+  try {
+    const { me, db } = await authorizeIn('check_in', ...RUNNERS);
+    const e = await ownEvent(db, me, eventId);
+    if (e.status !== 'OPEN') throw new Error('This event is closed');
+    const code = z.string().trim().min(3, 'Scan or type a code').max(60).parse(scanned);
+
+    type P = { id: string; full_name_en: string; full_name_am: string | null; membership_code: string; profile_photo_url: string | null; status: string };
+    const COLS = 'id, full_name_en, full_name_am, membership_code, profile_photo_url, status';
+    let { data: person } = (await db.from('persons').select(COLS).ilike('membership_code', code.replace(/[%_\\]/g, '')).maybeSingle()) as { data: P | null };
+    if (!person) {
+      const { data: student } = await db.from('students').select(`person:persons!students_person_id_fkey(${COLS})`).ilike('reg_no', code.replace(/[%_\\]/g, '')).maybeSingle();
+      person = ((student as unknown as { person: P | null } | null)?.person) ?? null;
+    }
+    if (!person) throw new Error(`No member or student has the code ${code}`);
+    if (person.status !== 'ACTIVE') throw new Error(`${person.full_name_am || person.full_name_en} is not an active member`);
+
+    const [{ data: before }, choir] = await Promise.all([
+      db.from('checkins').select('status').eq('event_id', e.id).eq('person_id', person.id).maybeSingle(),
+      e.kind === 'CHOIR'
+        ? db.from('choir_members').select('id').eq('person_id', person.id).eq('status', 'ACTIVE').maybeSingle()
+        : Promise.resolve({ data: { id: '' } }),
+    ]);
+    const already = (before as { status: string } | null)?.status === 'PRESENT';
+    if (!already) {
+      await db.from('checkins')
+        .upsert(
+          { event_id: e.id, person_id: person.id, method: 'LEADER', status: 'PRESENT', flag: null, reviewed_by: me.systemUser.id, reviewed_at: new Date().toISOString() },
+          { onConflict: 'event_id,person_id' }
+        )
+        .then(check);
+    }
+    return {
+      ok: true,
+      person: { id: person.id, name: person.full_name_am || person.full_name_en, code: person.membership_code, photo: Boolean(person.profile_photo_url) },
+      already,
+      not_in_choir: !choir.data,
+    };
+  } catch (e) {
+    return { ok: false, error: missing(errorMessage(e)) };
+  }
+}
+
 /** Confirm a flagged check-in (PRESENT) or remove one (REMOVED: they cannot check in again for this event). */
 export async function reviewCheckin(checkinId: string, decision: 'PRESENT' | 'REMOVED'): Promise<ActionResult> {
   try {
@@ -304,13 +363,19 @@ export async function closeCheckinEvent(eventId: string): Promise<{ ok: true; pr
 
 export interface MyCheckin {
   events: { id: string; title: string; kind: EventKind; starts_at: string; ends_at: string; has_place: boolean; mine: CheckinStatus | null }[];
+  /** The QR the leader scans (it holds the member code) */
+  qr: { name: string; code: string } | null;
 }
 
 export async function loadMyCheckin(): Promise<Loaded<MyCheckin>> {
   if (!isSupabaseEnabled()) return { mode: 'demo' };
   try {
     const { me, db } = await authorizeIn('check_in');
-    const events = await openEventsNow(db);
+    const [events, { data: self }] = await Promise.all([
+      openEventsNow(db),
+      db.from('persons').select('full_name_en, full_name_am, membership_code').eq('id', me.person.id).maybeSingle(),
+    ]);
+    const person = self as { full_name_en: string; full_name_am: string | null; membership_code: string } | null;
     const { data } = events.length
       ? await db.from('checkins').select('event_id, status').eq('person_id', me.person.id).in('event_id', events.map((e) => e.id))
       : { data: [] };
@@ -319,6 +384,7 @@ export async function loadMyCheckin(): Promise<Loaded<MyCheckin>> {
       mode: 'live',
       data: {
         events: events.map((e) => ({ id: e.id, title: e.title, kind: e.kind as EventKind, starts_at: e.starts_at, ends_at: e.ends_at, has_place: e.lat !== null && e.lng !== null, mine: mine.get(e.id) ?? null })),
+        qr: person ? { name: person.full_name_am || person.full_name_en, code: person.membership_code } : null,
       },
     };
   } catch (e) {

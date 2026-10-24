@@ -10,7 +10,7 @@ import type { EntrySource, GlAccount, GlSettings, GlType, PostedLine } from '@/l
 
 type Row = Record<string, unknown> & { id: string };
 
-export const DEFAULT_GL_SETTINGS: GlSettings = { fiscal_year_start: '07-08', lock_date: null, require_approval: false };
+export const DEFAULT_GL_SETTINGS: GlSettings = { fiscal_year_start: '07-08', lock_date: null, require_approval: false, accrue_pledges: true };
 
 const ACCOUNT_COLUMNS = 'id, code, name_en, name_am, account_type, sub_type, normal_balance, parent_id, is_header, bank_account_id, description, is_active';
 
@@ -38,11 +38,13 @@ export async function loadAccounts(db: SupabaseClient): Promise<GlAccount[]> {
 
 /** The settings row, or null when the Sunday school has no ledger yet. */
 export async function readGlSettings(db: SupabaseClient): Promise<GlSettings | null> {
-  const { data, error } = await db.from('gl_settings').select('fiscal_year_start, lock_date, require_approval').maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data) return null;
-  const s = data as { fiscal_year_start: string; lock_date: string | null; require_approval: boolean };
-  return { fiscal_year_start: s.fiscal_year_start, lock_date: s.lock_date, require_approval: s.require_approval };
+  // accrue_pledges comes with migration 047
+  let res = await db.from('gl_settings').select('fiscal_year_start, lock_date, require_approval, accrue_pledges').maybeSingle();
+  if (res.error && /accrue_pledges/.test(res.error.message)) res = (await db.from('gl_settings').select('fiscal_year_start, lock_date, require_approval').maybeSingle()) as typeof res;
+  if (res.error) throw new Error(res.error.message);
+  if (!res.data) return null;
+  const s = res.data as { fiscal_year_start: string; lock_date: string | null; require_approval: boolean; accrue_pledges?: boolean };
+  return { fiscal_year_start: s.fiscal_year_start, lock_date: s.lock_date, require_approval: s.require_approval, accrue_pledges: s.accrue_pledges !== false };
 }
 
 /** Posted lines dated up to `to` (and from `from`) */

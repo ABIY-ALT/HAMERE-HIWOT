@@ -6,7 +6,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { AlertCircle, BookOpen, FileSpreadsheet, ListTree, NotebookPen, Printer } from 'lucide-react';
+import { AlertCircle, BookOpen, Boxes, FileSpreadsheet, ListTree, NotebookPen, Printer } from 'lucide-react';
 import { useLang } from '@/contexts/LangContext';
 import { formatEthiopianDate, todayIso } from '@/lib/utils/ethiopian-calendar';
 import { periodPresets, type Bilingual } from '@/lib/finance/gl';
@@ -16,6 +16,7 @@ const TABS = [
   { href: '/dashboard/finance/accounting/journal', icon: NotebookPen, label: ['Journal entries', 'የሂሳብ መዝገብ'] },
   { href: '/dashboard/finance/accounting/ledger', icon: BookOpen, label: ['General ledger', 'ጠቅላላ መዝገብ'] },
   { href: '/dashboard/finance/accounting/statements', icon: FileSpreadsheet, label: ['Financial statements', 'የሂሳብ መግለጫዎች'] },
+  { href: '/dashboard/finance/accounting/assets', icon: Boxes, label: ['Fixed assets', 'ቋሚ ንብረቶች'] },
 ] as const;
 
 export function GlNav() {

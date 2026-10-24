@@ -98,6 +98,11 @@ export default function AutomationAdminPage() {
       hintEn: 'The day before a great feast (Meskel, Genna, Timket, Fasika…) or the start of a fast (Nineveh, Lent, Filseta…), everyone connected to the bot gets a message.',
       hintAm: 'ከዐቢይ በዓል (መስቀል፣ ገና፣ ጥምቀት፣ ፋሲካ…) ወይም ከጾም መጀመሪያ (ነነዌ፣ ዐቢይ ጾም፣ ፍልሰታ…) አንድ ቀን በፊት ቦቱን ያገናኙ ሁሉ መልእክት ይደርሳቸዋል።',
     },
+    {
+      key: 'depreciation', en: 'Monthly depreciation', am: 'ወርሃዊ የእርጅና ቅናሽ',
+      hintEn: 'When a month has ended, its depreciation of fixed assets is posted to the books (Finance → Accounting → Fixed assets), and the finance approvers are told. Nothing is posted if a later month is already in the books.',
+      hintAm: 'አንድ ወር ሲያልቅ የቋሚ ንብረቶች የእርጅና ቅናሽ በመዝገቡ ይመዘገባል (ፋይናንስ → የሂሳብ አያያዝ → ቋሚ ንብረቶች)፤ የፋይናንስ አጽዳቂዎችም ይነገራቸዋል። የኋለኛው ወር ቀድሞ ከተመዘገበ ምንም አይመዘገብም።',
+    },
   ];
 
   const last = page?.last_run;

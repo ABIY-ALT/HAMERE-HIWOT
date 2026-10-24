@@ -12,6 +12,7 @@ import { nonMemberIds } from '@/lib/members/membership';
 import { telegramLater, telegramToPersons } from '@/lib/telegram/bot';
 import { cancelledText, sessionTitle } from '@/lib/choir/service-core';
 import { titleKey } from '@/lib/import/hymns';
+import { refreshPublicSite } from '@/lib/site/cache';
 import type { ActionResult, Loaded } from '@/lib/admin/types';
 import type { AttendanceStatus } from '@/lib/attendance/store';
 import {
@@ -121,6 +122,7 @@ export async function loadChoir(): Promise<Loaded<ChoirData>> {
         lyrics: (h.lyrics as string) ?? '',
         notes: (h.notes as string) ?? '',
         is_active: Boolean(h.is_active),
+        on_website: Boolean(h.on_website),
         times_sung: sung.length,
         last_sung: sung.at(-1) ?? null,
       };
@@ -193,6 +195,7 @@ const HymnSchema = z.object({
   lyrics: z.string().trim(),
   notes: z.string().trim(),
   is_active: z.boolean(),
+  on_website: z.boolean().optional(),
 });
 
 export type HymnInput = z.input<typeof HymnSchema>;
@@ -209,9 +212,19 @@ export async function saveHymn(id: string | null, input: HymnInput): Promise<Act
       lyrics: h.lyrics || null,
       notes: h.notes || null,
       is_active: h.is_active,
+      on_website: Boolean(h.on_website),
     };
-    if (id) await db.from('hymns').update(fields).eq('id', id).then(check);
-    else await db.from('hymns').insert(fields).then(check);
+    const write = (row: Record<string, unknown>) => (id ? db.from('hymns').update(row).eq('id', id) : db.from('hymns').insert(row));
+    let res = await write(fields);
+    // Before migration 048 there is no website switch
+    if (res.error && /on_website/.test(res.error.message)) {
+      if (h.on_website) throw new Error('Run database migration 048 (hymns on the website) first');
+      const { on_website: _skip, ...rest } = fields;
+      void _skip;
+      res = await write(rest);
+    }
+    if (res.error) throw new Error(res.error.message);
+    refreshPublicSite();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
@@ -292,6 +305,8 @@ export async function saveChoirSession(id: string | null, input: ChoirSessionInp
         .insert(unique.map((hymn_id, i) => ({ session_id: sessionId, hymn_id, position: i + 1 })))
         .then(check);
     }
+    // A program's hymns show on the public Events page (also when the session is moved off a program)
+    refreshPublicSite();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };
@@ -331,6 +346,7 @@ export async function cancelChoirSession(sessionId: string): Promise<ActionResul
       const html = cancelledText({ title: sessionTitle(s), date: s.session_date, time: (s.start_time ?? '').slice(0, 5) });
       if (people.length) telegramLater((bg) => telegramToPersons(bg, people, html, 'SELF'));
     }
+    refreshPublicSite();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: errorMessage(e) };

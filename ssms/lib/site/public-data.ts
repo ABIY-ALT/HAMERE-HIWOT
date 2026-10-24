@@ -4,8 +4,9 @@
 // only what the office chose to publish — the parish profile, the About
 // topics written for the bot, programs added under Public Website → Events,
 // the department names for the contact form, published news posts and photo
-// albums (039), and how many active members and students there are (counts
-// only). Never people, students, finance or anything else.
+// albums (039), the titles of the hymns planned for a public program
+// (choir sessions linked to it), and how many active members and students
+// there are (counts only). Never people, students, finance or anything else.
 // The default Sunday school is served at /, others at /s/<slug> (publicPath).
 // Cached for 5 minutes per Sunday school; saving any of these refreshes it
 // (lib/site/cache).
@@ -23,6 +24,7 @@ import { runInTenant } from '@/lib/tenant/scope';
 import { publicPath, type TenantInfo } from '@/lib/tenant/context';
 import { loadBranding } from '@/lib/tenant/branding';
 import { DEFAULT_BRAND_COLOR, EMPTY_BRANDING, brandOf, type Branding } from '@/lib/branding';
+import { hymnsOfSessions } from '@/lib/choir/session-hymns';
 import { SITE_TAG } from './cache';
 import { POST_COLUMNS, albumList, albumPhotos, toPost } from './content';
 import type { SiteAlbum, SitePhoto, SitePost } from './media';
@@ -38,6 +40,8 @@ export interface PublicEvent {
   end_date: string | null;
   location: string;
   description: string;
+  /** Hymns the choir will sing (its sessions for this program), in order; on_website: has its own page */
+  hymns: { id: string; title_am: string; title_en: string; on_website: boolean }[];
 }
 
 /** Names and pictures in the header, hero and footer */
@@ -124,6 +128,16 @@ async function load(tenantId: string, today: string): Promise<SiteData> {
       db.from('persons').select('id', { count: 'exact', head: true }).eq('status', 'ACTIVE').not('membership_type', 'is', null),
       db.from('students').select('id', { count: 'exact', head: true }).eq('status', 'ACTIVE'),
     ]);
+    // The hymns of the choir sessions planned for these programs
+    const planned = await hymnsOfSessions(db, { programIds: ((events.data ?? []) as { id: string }[]).map((p) => p.id) }).catch(() => []);
+    const hymnsOf = new Map<string, PublicEvent['hymns']>();
+    for (const session of planned) {
+      const list = hymnsOf.get(session.program_id!) ?? [];
+      for (const h of session.hymns) {
+        if (!list.some((x) => x.id === h.id)) list.push({ id: h.id, title_am: h.title_am, title_en: h.title_en, on_website: h.on_website });
+      }
+      hymnsOf.set(session.program_id!, list);
+    }
     // A new Sunday school has not written its profile yet: its own name, not the default one
     const saved = (parish.data as { value?: Partial<ParishSettings> } | null)?.value;
     return {
@@ -139,6 +153,7 @@ async function load(tenantId: string, today: string): Promise<SiteData> {
         end_date: p.end_date,
         location: p.location ?? '',
         description: p.description ?? '',
+        hymns: hymnsOf.get(p.id!) ?? [],
       })),
       departments: ((units.data ?? []) as { id: string; name_en: string; name_am: string | null }[]).map((u) => ({ ...u, name_am: u.name_am || u.name_en })),
       bot,
@@ -147,7 +162,7 @@ async function load(tenantId: string, today: string): Promise<SiteData> {
   });
 }
 
-const cached = unstable_cache(load, ['public-site-v3'], { revalidate: 300, tags: [SITE_TAG] });
+const cached = unstable_cache(load, ['public-site-v4'], { revalidate: 300, tags: [SITE_TAG] });
 
 export async function publicSite(tenant: TenantInfo): Promise<PublicSite> {
   let data: SiteData;
@@ -269,4 +284,45 @@ export async function publicSignups(tenant: TenantInfo, eventIds: string[]): Pro
     console.error('public sign-up data failed', e);
     return {};
   }
+}
+
+// ── Hymns (migration 048) — the ones the choir put on the website ────────────
+
+export interface PublicHymn {
+  id: string;
+  title_am: string;
+  title_en: string;
+  category: string;
+  feast: string;
+  lyrics: string;
+}
+
+const cachedHymns = unstable_cache(
+  async (tenantId: string): Promise<PublicHymn[]> => {
+    if (!isSupabaseEnabled()) return [];
+    const { data, error } = await tenantClient(tenantId)
+      .from('hymns')
+      .select('id, title_am, title_en, category, feast, lyrics')
+      .eq('on_website', true)
+      .eq('is_active', true)
+      .not('lyrics', 'is', null)
+      .order('title_am')
+      .limit(2000);
+    if (error) return [];
+    return ((data ?? []) as Record<string, string | null>[]).map((h) => ({
+      id: h.id!,
+      title_am: h.title_am!,
+      title_en: h.title_en ?? '',
+      category: h.category!,
+      feast: h.feast ?? '',
+      lyrics: h.lyrics ?? '',
+    }));
+  },
+  ['public-hymns-v1'],
+  { revalidate: 300, tags: [SITE_TAG] }
+);
+
+/** Hymns shown on the website, by title. Empty before migration 048. */
+export async function publicHymns(tenant: TenantInfo): Promise<PublicHymn[]> {
+  return cachedHymns(tenant.id).catch(() => []);
 }
